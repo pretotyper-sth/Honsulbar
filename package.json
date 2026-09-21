@@ -1,0 +1,26 @@
+{
+  "name": "yeopjari",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "test": "node --test tests/*.test.js",
+    "preview": "vite preview --host 0.0.0.0",
+    "toss:dev": "ait dev",
+    "toss:build": "ait build"
+  },
+  "dependencies": {
+    "@apps-in-toss/web-framework": "^2.4.7",
+    "@emotion/react": "^11.14.0",
+    "@toss/tds-mobile": "^2.5.1",
+    "@toss/tds-mobile-ait": "^2.5.1",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "vite": "^6.4.1"
+  }
+}
