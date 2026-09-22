@@ -227,7 +227,7 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .camera-preview { width:min(100%,280px); aspect-ratio:1; margin:18px auto 10px; overflow:hidden; border-radius:24px; background:#191f28; }
 .camera-preview video { width:100%; height:100%; display:block; object-fit:cover; transform:scaleX(-1); }
 .verification-message { min-height:22px; margin:10px auto 16px; max-width:300px; line-height:1.5; }
-.verification-message.is-verified { color:#02a262; }
+.verification-message.is-verified { color:#3182f6; }
 .gender-choice { display:flex; gap:10px; margin:24px 0; }
 .gender-choice button { flex:1; display:flex; align-items:center; justify-content:center; gap:8px; border:1px solid #e5e8eb; border-radius:14px; padding:14px; font-size:15px; }
 .gender-choice .selected { color:#1b64da; border-color:#3182f6; background:#e8f3ff; }
