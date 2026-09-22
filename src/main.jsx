@@ -521,7 +521,7 @@ function App() {
     setTimeout(() => {
       setProfileVerified(true);
       setVerificationState('verified');
-      setVerificationMessage('얼굴 확인 완료 · 촬영본은 바로 삭제했어요.');
+      setVerificationMessage('얼굴을 확인했어요.');
     }, delay);
   }
 
