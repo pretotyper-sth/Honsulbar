@@ -255,6 +255,7 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .profile-field span { display:block; margin-bottom:7px; color:#6b7684; font-size:13px; }
 .profile-field input { width:100%; border:1px solid #e5e8eb; border-radius:12px; padding:12px 14px; color:#191f28; font-size:15px; background:#fff; }
 .profile-field input:focus { outline:2px solid #b7d5ff; border-color:#3182f6; }
+.profile-save-note { margin:0 0 10px; color:#8b95a1; font-size:12px; text-align:center; }
 .guest-drink-note { margin:-3px 0 10px; color:#8b95a1; font-size:12px; text-align:center; }
 .preview-portraits { display:grid; grid-template-columns:repeat(4,1fr); gap:18px 14px; padding:16px 5px 20px; }
 .preview-portraits>div { aspect-ratio:1; border:2px solid #80b8e6; padding:3px; border-radius:50%; }
