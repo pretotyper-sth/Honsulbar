@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import '@tensorflow/tfjs';
+import * as blazeface from '@tensorflow-models/blazeface';
 import { createRoot } from 'react-dom/client';
 import { Button, BottomSheet, Badge } from './ui';
 import { ArrowLeft, ArrowRight, Bell, Camera, Check, ChevronDown, Clock3, DoorOpen, Coins, Headphones, MessageCircleMore, Mic, MicOff, Plus, Volume2, VolumeX, Speaker, Wine, X, Flag, Wallet, Eye, LockKeyhole, ArrowLeftRight, Settings } from 'lucide-react';
@@ -109,6 +111,8 @@ function App() {
   const cameraVideo = useRef(null);
   const cameraCanvas = useRef(null);
   const cameraStream = useRef(null);
+  const faceModel = useRef(null);
+  const faceModelLoading = useRef(null);
   const subscriptionSection = useRef(null);
   const cueContext = useRef(null);
   const orderLock = useRef(false);
@@ -130,6 +134,13 @@ function App() {
   const purchasedPreview = previews[previewKey];
   const dailySwapRewards = swapRewards.date === todayKey() ? swapRewards.count : 0;
   const dailySwapRequests = swapRequests.date === todayKey() ? swapRequests.count : 0;
+
+  async function loadFaceModel() {
+    if (faceModel.current) return faceModel.current;
+    if (!faceModelLoading.current) faceModelLoading.current = blazeface.load();
+    faceModel.current = await faceModelLoading.current;
+    return faceModel.current;
+  }
 
   function playCue(kind) {
     if (!soundOn || typeof window === 'undefined') return;
@@ -216,17 +227,15 @@ function App() {
       setVerificationMessage('이 환경에서는 카메라를 사용할 수 없어 얼굴 확인을 진행할 수 없어요.');
       return undefined;
     }
-    if (!('FaceDetector' in window)) {
-      setVerificationState('unavailable');
-      setVerificationMessage('이 환경에서는 얼굴 검출을 지원하지 않아 인증을 진행할 수 없어요.');
-      return undefined;
-    }
     navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 720 } }, audio: false }).then(stream => {
       if (cancelled) { stream.getTracks().forEach(track => track.stop()); return; }
       cameraStream.current = stream;
       if (cameraVideo.current) { cameraVideo.current.srcObject = stream; cameraVideo.current.play().catch(() => {}); }
-      setVerificationState('ready');
-      setVerificationMessage('얼굴이 화면 안에 보이도록 맞춰 주세요.');
+      loadFaceModel().then(() => {
+        if (!cancelled) { setVerificationState('ready'); setVerificationMessage('얼굴이 화면 안에 보이도록 맞춰 주세요.'); }
+      }).catch(() => {
+        if (!cancelled) { setVerificationState('unavailable'); setVerificationMessage('얼굴 검출 모델을 준비하지 못해 인증을 진행할 수 없어요.'); }
+      });
     }).catch(() => {
       setVerificationState('unavailable');
       setVerificationMessage('카메라 권한이 필요해요. 권한을 허용하거나 사진 확인을 건너뛸 수 있어요.');
@@ -497,11 +506,11 @@ function App() {
     canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
     let hasFace = false;
     try {
-      const detector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 2 });
-      hasFace = (await detector.detect(canvas)).length > 0;
+      const model = await loadFaceModel();
+      hasFace = (await model.estimateFaces(video, false)).length > 0;
       if (hasFace && profile.photo) {
         const image = new Image(); image.src = profile.photo; await image.decode();
-        hasFace = (await detector.detect(image)).length > 0;
+        hasFace = (await model.estimateFaces(image, false)).length > 0;
       }
     } catch { hasFace = false; }
     if (!hasFace) { setVerificationState('ready'); setVerificationMessage('얼굴을 찾지 못했어요. 화면을 바라보고 다시 촬영해 주세요.'); return; }
