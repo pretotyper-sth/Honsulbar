@@ -414,7 +414,7 @@ function App() {
     setSheet('shop');
     setToast('구독을 해지 예약했어요. 이용 기간 마지막 날까지 사용할 수 있어요.');
   }
-  function subscriptionEndLabel() { return subscriptionPeriodEnd ? new Intl.DateTimeFormat('ko-KR',{month:'numeric',day:'numeric'}).format(new Date(subscriptionPeriodEnd)) : ''; }
+  function subscriptionEndLabel() { return subscriptionPeriodEnd ? new Intl.DateTimeFormat('ko-KR',{month:'long',day:'numeric'}).format(new Date(subscriptionPeriodEnd)) : ''; }
   function requestEntry(target) {
     if (!target) return;
     target = rooms[region].find(r => r.number === target.number) || target;
