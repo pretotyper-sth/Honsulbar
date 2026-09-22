@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Button, BottomSheet, Badge } from '@toss/tds-mobile';
+import { Button, BottomSheet, Badge } from './ui';
 import { TDSMobileAITProvider } from '@toss/tds-mobile-ait';
 import { ArrowLeft, ArrowRight, Bell, Camera, Check, ChevronDown, Clock3, DoorOpen, Coins, Headphones, MessageCircleMore, Mic, MicOff, Plus, Volume2, VolumeX, Speaker, Wine, X, Flag, Wallet, Eye, LockKeyhole, ArrowLeftRight, Settings } from 'lucide-react';
 import { REGIONS, CAPACITY, DRINKS, initialWallet, remaining, purchase, changeRole, addArrival, transferPoints } from './model';
