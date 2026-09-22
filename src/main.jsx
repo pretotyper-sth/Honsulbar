@@ -213,7 +213,12 @@ function App() {
     setVerificationMessage('카메라를 준비하고 있어요.');
     if (!navigator.mediaDevices?.getUserMedia) {
       setVerificationState('unavailable');
-      setVerificationMessage('이 환경에서는 카메라를 사용할 수 없어요. 사진 확인을 건너뛰고 운영팀 확인으로 등록할 수 있어요.');
+      setVerificationMessage('이 환경에서는 카메라를 사용할 수 없어 얼굴 확인을 진행할 수 없어요.');
+      return undefined;
+    }
+    if (!('FaceDetector' in window)) {
+      setVerificationState('unavailable');
+      setVerificationMessage('이 환경에서는 얼굴 검출을 지원하지 않아 인증을 진행할 수 없어요.');
       return undefined;
     }
     navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 720 } }, audio: false }).then(stream => {
@@ -490,17 +495,15 @@ function App() {
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 640;
     canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
-    let hasFace = true;
-    if ('FaceDetector' in window) {
-      try {
-        const detector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 2 });
-        hasFace = (await detector.detect(canvas)).length > 0;
-        if (hasFace && profile.photo) {
-          const image = new Image(); image.src = profile.photo; await image.decode();
-          hasFace = (await detector.detect(image)).length > 0;
-        }
-      } catch {}
-    }
+    let hasFace = false;
+    try {
+      const detector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 2 });
+      hasFace = (await detector.detect(canvas)).length > 0;
+      if (hasFace && profile.photo) {
+        const image = new Image(); image.src = profile.photo; await image.decode();
+        hasFace = (await detector.detect(image)).length > 0;
+      }
+    } catch { hasFace = false; }
     if (!hasFace) { setVerificationState('ready'); setVerificationMessage('얼굴을 찾지 못했어요. 화면을 바라보고 다시 촬영해 주세요.'); return; }
     verifyProfilePhoto();
   }
