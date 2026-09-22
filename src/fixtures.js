@@ -5,8 +5,9 @@ const portraits = [
   ['female', 49], ['male', 33], ['female', 68], ['male', 12],
   ['female', 65], ['male', 52], ['male', 13], ['female', 48],
 ];
+const nicknames = ['느긋한 토끼','말랑한 구름','반짝이는 잔','조용한 여우','포근한 오렌지','신나는 산책러','담백한 고양이','달빛 감자','차분한 치즈','몽글한 달팽이','느긋한 잔','반짝이는 여우'];
 export const guestsFor = count => portraits.slice(0, count).map(([gender, number], i) => ({
-  id: `guest-${i}`, seconds: [1140, 45, 1560, 840, 1300, 1700, 600, 950, 400, 1450, 1800, 1100][i], gender, seat: seatOrder[i], drinkId: ['wine', 'highball', 'citrus', 'beer', 'whiskey', 'cocktail'][i % 6],
+  id: `guest-${i}`, nickname: nicknames[i], seconds: [1140, 45, 1560, 840, 1300, 1700, 600, 950, 400, 1450, 1800, 1100][i], gender, seat: seatOrder[i], drinkId: ['wine', 'highball', 'citrus', 'beer', 'whiskey', 'cocktail'][i % 6],
   photo: `https://randomuser.me/api/portraits/${gender === 'female' ? 'women' : 'men'}/${number}.jpg`,
 }));
 export const localProfile = { gender: 'male', photo: 'https://randomuser.me/api/portraits/men/22.jpg' };
