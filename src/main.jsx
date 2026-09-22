@@ -507,7 +507,6 @@ function App() {
     resetConversation();
     setIncoming(null); setOutgoing(null);
     setWallet(v => changeRole(v, index === 11, Date.now())); setNow(Date.now()); setSeat(index); setSheet(null);
-    setToast(index === 11 ? '사장 자리에 앉았어요. 모두의 목소리를 들을 수 있어요.' : '자리를 옮겼어요');
   }
   function requestMove(index) {
     if (seconds === 0 && index !== 11) { open('menu'); return; }
