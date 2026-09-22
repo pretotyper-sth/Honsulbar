@@ -25,8 +25,11 @@ const REGION_REQUEST_GROUPS = [
 const DAILY_SWAP_REWARD_LIMIT = 3;
 const DAILY_SWAP_REQUEST_LIMIT = 5;
 function todayKey() { return new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(new Date()); }
+function initialScreen() {
+  try { return localStorage.getItem('honsulbar:onboarding:v1') === 'done' ? 'lobby' : 'onboarding'; } catch { return 'onboarding'; }
+}
 function App() {
-  const [screen, setScreen] = useState('lobby');
+  const [screen, setScreen] = useState(initialScreen);
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [shopPack, setShopPack] = useState(POINT_PACKS[0]);
   const [ledger, setLedger] = useState([
@@ -430,6 +433,27 @@ function App() {
   const selected = selectedRoom?.region === region ? localRooms.find(r=>r.number===selectedRoom.number) : null;
   const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(new Date(now));
   const guestSeconds = person => Math.max(0,person.seconds-Math.floor((now-enteredAt)/1000));
+
+  function completeOnboarding() {
+    try { localStorage.setItem('honsulbar:onboarding:v1', 'done'); } catch {}
+    setScreen('lobby');
+  }
+
+  if (screen === 'onboarding') return <main className="app onboarding-screen">
+    <div className="onboarding-scroll">
+      <img className="onboarding-logo" src="/honsulbar-logo.png" alt="혼술바" />
+      <p className="eyebrow">혼술바</p>
+      <h1>오늘은 어디서<br/>이야기해 볼까요?</h1>
+      <p className="onboarding-lead">지역별 혼술바에서 목소리로 가볍게 대화해요.</p>
+      <div className="onboarding-points">
+        <div><span>01</span><p><strong>지역과 호점 선택</strong><small>원하는 지역의 빈자리를 골라요.</small></p></div>
+        <div><span>02</span><p><strong>음료로 30분 입장</strong><small>입장 시 포인트가 차감돼요.</small></p></div>
+        <div><span>03</span><p><strong>소리 집중 방향 조절</strong><small>듣고 싶은 쪽에 귀 기울여요.</small></p></div>
+      </div>
+      <div className="onboarding-notice">만 19세 이상만 이용할 수 있어요.</div>
+      <Button size="xlarge" display="block" onClick={completeOnboarding}>시작하기</Button>
+    </div>
+  </main>;
 
   return <main className="app">
     <header>
