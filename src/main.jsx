@@ -114,6 +114,7 @@ function App() {
   const cameraStream = useRef(null);
   const faceModel = useRef(null);
   const faceModelLoading = useRef(null);
+  const profileEditSnapshot = useRef(null);
   const subscriptionSection = useRef(null);
   const cueContext = useRef(null);
   const orderLock = useRef(false);
@@ -211,7 +212,6 @@ function App() {
     }, 80);
     return () => clearTimeout(timer);
   }, [sheet, focusSubscription]);
-  useEffect(() => () => { if (profile.photo?.startsWith('blob:')) URL.revokeObjectURL(profile.photo); }, [profile.photo]);
   useEffect(() => {
     if (sheet !== 'verify-profile') {
       cameraStream.current?.getTracks().forEach(track => track.stop());
@@ -393,6 +393,26 @@ function App() {
     setIncoming(null); setSheet(null); setToast('자리 양보를 부탁했어요. 수락하면 500P가 사용돼요.');
   }
   function open(value) { setError(''); orderLock.current = false; setSheet(value); }
+  function openProfileEditor() {
+    profileEditSnapshot.current = { photo: profile.photo, gender: profile.gender, verified: profileVerified };
+    open('profile');
+  }
+  function closeSheet() {
+    if ((sheet === 'profile' || sheet === 'verify-profile') && profileEditSnapshot.current) {
+      const snapshot = profileEditSnapshot.current;
+      if (profile.photo?.startsWith('blob:') && profile.photo !== snapshot.photo) URL.revokeObjectURL(profile.photo);
+      setProfile({ photo: snapshot.photo, gender: snapshot.gender });
+      setProfileVerified(snapshot.verified);
+      profileEditSnapshot.current = null;
+    }
+    setSheet(null); setError('');
+  }
+  function saveProfile() {
+    const snapshot = profileEditSnapshot.current;
+    if (snapshot?.photo?.startsWith('blob:') && snapshot.photo !== profile.photo) URL.revokeObjectURL(snapshot.photo);
+    profileEditSnapshot.current = null;
+    setSheet(null); setToast('프로필을 저장했어요.');
+  }
   function openSubscriptionManager() { setFocusSubscription(true); open('shop'); }
   function requestSubscriptionChange() { open('subscription-confirm'); }
   function confirmSubscriptionChange() {
@@ -420,7 +440,7 @@ function App() {
     target = rooms[region].find(r => r.number === target.number) || target;
     if (target.count >= CAPACITY) return;
     setRoom({ ...target, region }); setGuestOverrides({}); setGuestBalances({});
-    if (!profile.photo || !profile.gender) { open('profile'); return; }
+    if (!profile.photo || !profile.gender) { openProfileEditor(); return; }
     if (!profileVerified) { open('verify-profile'); return; }
     if (remaining(wallet, Date.now()) === 0) { setSelection('highball'); open('welcome'); }
     else enterRoom(target);
@@ -491,21 +511,26 @@ function App() {
   function completeOnboarding() {
     setProfile(v => ({ ...v, photo: null }));
     setProfileVerified(false);
+    profileEditSnapshot.current = { photo: null, gender: profile.gender, verified: false };
     try { localStorage.setItem('honsulbar:onboarding:v1', 'done'); } catch {}
     setScreen('lobby');
     setSheet('profile');
   }
 
-  function verifyProfilePhoto() {
-    setProfileVerified(true);
-    setVerificationState('verified');
-    setVerificationMessage('얼굴 확인 완료 · 촬영본은 바로 삭제했어요.');
+  function verifyProfilePhoto(delay = 0) {
+    setTimeout(() => {
+      setProfileVerified(true);
+      setVerificationState('verified');
+      setVerificationMessage('얼굴 확인 완료 · 촬영본은 바로 삭제했어요.');
+    }, delay);
   }
 
   async function captureVerification() {
     const video = cameraVideo.current;
     const canvas = cameraCanvas.current;
     if (!video || !canvas || video.readyState < 2) { setVerificationMessage('카메라가 준비될 때까지 잠시만 기다려 주세요.'); return; }
+    const startedAt = Date.now();
+    const finish = (message) => setTimeout(() => { setVerificationState('ready'); setVerificationMessage(message); }, Math.max(0, 2000 - (Date.now() - startedAt)));
     setVerificationState('checking');
     setVerificationMessage('촬영한 얼굴을 확인하고 있어요.');
     canvas.width = video.videoWidth || 640;
@@ -514,14 +539,14 @@ function App() {
     try {
       const model = await loadFaceModel();
       const cameraFaces = await model.estimateFaces(canvas, false);
-      if (!cameraFaces.length) { setVerificationState('ready'); setVerificationMessage('얼굴을 찾지 못했어요. 화면을 바라보고 다시 촬영해 주세요.'); return; }
+      if (!cameraFaces.length) { finish('얼굴을 찾지 못했어요. 화면을 바라보고 다시 촬영해 주세요.'); return; }
       if (profile.photo?.startsWith('blob:') || profile.photo?.startsWith('data:')) {
         const image = new Image(); image.src = profile.photo; await image.decode();
         const profileFaces = await model.estimateFaces(image, false);
-        if (!profileFaces.length) { setVerificationState('ready'); setVerificationMessage('프로필 사진에서 얼굴을 찾지 못했어요. 얼굴이 잘 보이는 사진을 등록해 주세요.'); return; }
+        if (!profileFaces.length) { finish('프로필 사진에서 얼굴을 찾지 못했어요. 얼굴이 잘 보이는 사진을 등록해 주세요.'); return; }
       }
-    } catch { setVerificationState('ready'); setVerificationMessage('얼굴 확인 중 문제가 생겼어요. 얼굴을 화면 가운데에 맞추고 다시 촬영해 주세요.'); return; }
-    verifyProfilePhoto();
+    } catch { finish('얼굴 확인 중 문제가 생겼어요. 얼굴을 화면 가운데에 맞추고 다시 촬영해 주세요.'); return; }
+    verifyProfilePhoto(Math.max(0, 2000 - (Date.now() - startedAt)));
   }
 
   if (screen === 'onboarding') return <main className="app onboarding-screen">
@@ -543,7 +568,7 @@ function App() {
   return <main className="app">
     <header>
       {screen === 'bar' ? <button className="icon-button" aria-label="바 나가기" onClick={()=>open('leave')}><ArrowLeft size={21}/></button> : <button className="point-entry" aria-label={`포인트 상점, ${wallet.balance.toLocaleString()}P`} onClick={()=>open('shop')}><Coins size={17}/><span>{wallet.balance.toLocaleString()}<small> P</small></span></button>}
-      <div className="header-actions"><button className="header-icon-button" aria-label="설정" onClick={()=>open('settings')}><Settings size={18}/></button><button className="notification-button" aria-label={`알림 ${notifications.length}개`} onClick={()=>{setNotifications(v=>v.map(item=>({...item,unread:false})));open('notifications')}}><Bell size={18}/>{notifications.some(item=>item.unread)&&<i/>}</button><button className="profile-button" aria-label="내 프로필" onClick={()=>{if(screen==='lobby') setRoom(null);open('profile');}}><img src={profile.photo} alt="내 프로필"/></button></div>
+      <div className="header-actions"><button className="header-icon-button" aria-label="설정" onClick={()=>open('settings')}><Settings size={18}/></button><button className="notification-button" aria-label={`알림 ${notifications.length}개`} onClick={()=>{setNotifications(v=>v.map(item=>({...item,unread:false})));open('notifications')}}><Bell size={18}/>{notifications.some(item=>item.unread)&&<i/>}</button><button className="profile-button" aria-label="내 프로필" onClick={()=>{if(screen==='lobby') setRoom(null);openProfileEditor();}}><img src={profile.photo} alt="내 프로필"/></button></div>
     </header>
     {screen === 'lobby' ? <section className="lobby">
       <div className="lobby-heading"><h1>오늘은 어디서 마실까요?</h1></div>
@@ -579,7 +604,7 @@ function App() {
           const rotation=(i===11?180:Math.atan2(50-y,50-x)*180/Math.PI+90)+(mine?facing:0);
           return <div key={i} className={`seat-wrap ${i === 11 ? 'host-wrap' : ''} ${talking ? 'is-speaking' : ''} ${mine ? 'my-wrap' : ''} ${paired?'paired-seat':''}`} style={{left:`${x}%`,top:`${y}%`,'--voice':mine ? voice.level : .7,'--facing':`${rotation}deg`}}>
             {mine&&<span className="facing-indicator" aria-hidden="true"/>}
-            <button className={`seat ${occupied ? `occupied ${mine ? profile.gender : person.gender}` : 'empty'} ${mine ? 'mine' : ''} ${talking ? 'speaking' : ''}`} aria-label={mine ? '내 자리' : person ? `${i+1}번 손님 프로필` : i === 11 ? '빈 사장 자리로 이동' : `${i+1}번 빈자리로 이동`} onClick={() => mine ? open('profile') : person ? (setSelectedGuest(person), open('guest')) : requestMove(i)}>{occupied ? <img src={mine ? profile.photo : person.photo} alt={mine ? '내 얼굴' : '손님 얼굴'}/> : <Plus size={18}/>}</button>
+            <button className={`seat ${occupied ? `occupied ${mine ? profile.gender : person.gender}` : 'empty'} ${mine ? 'mine' : ''} ${talking ? 'speaking' : ''}`} aria-label={mine ? '내 자리' : person ? `${i+1}번 손님 프로필` : i === 11 ? '빈 사장 자리로 이동' : `${i+1}번 빈자리로 이동`} onClick={() => mine ? openProfileEditor() : person ? (setSelectedGuest(person), open('guest')) : requestMove(i)}>{occupied ? <img src={mine ? profile.photo : person.photo} alt={mine ? '내 얼굴' : '손님 얼굴'}/> : <Plus size={18}/>}</button>
             {occupied && <span className="seat-drink" title={DRINKS.find(d => d.id === personDrink)?.name}><Glass id={personDrink} seconds={leftTime} host={i===11}/><span className="sr-only">{DRINKS.find(d => d.id === personDrink)?.name}, {i===11?'시간 제한 없음':`${Math.ceil(leftTime/60)}분 남음`}</span></span>}
             {paired&&<span className="pair-marker" title="서로 속삭이는 중"><MessageCircleMore size={12} style={{transform:'scaleX(-1)'}}/><span className="sr-only">서로 속삭이는 중</span></span>}{!mine&&mutedGuests.includes(person?.id)&&<span className="muted-marker" title="음소거됨"><VolumeX size={12}/><span className="sr-only">음소거됨</span></span>}{talking && <Waves/>}{mine && <span className="me-label">나</span>}{i === 11 && <span className="host-label">{occupied ? '사장' : '사장 자리'}</span>}
           </div>;
@@ -599,8 +624,8 @@ function App() {
       {seconds === 0 && seat !== 11 && <p role="status" className="error">이용시간이 끝났어요. 한 잔 더 주문하고 머물러요.</p>}
       <div className="controls"><button className={voice.mic ? 'mic-active' : ''} aria-pressed={voice.mic} onClick={() => seconds === 0 && seat !== 11 ? open('menu') : voice.toggle()}>{voice.mic ? <Mic size={21}/> : <MicOff size={21}/>}<span>{voice.pending ? '연결 중' : voice.mic ? '마이크 켜짐' : '마이크 꺼짐'}</span></button><button className={speaker ? 'speaker-active' : ''} aria-pressed={speaker} onClick={toggleSpeaker}><Speaker size={21}/><span>{speaker ? '스피커 켜짐' : '스피커 꺼짐'}</span></button><button className={soundOn ? 'sound-active' : ''} aria-pressed={soundOn} onClick={() => {setSoundOn(v=>!v);window.speechSynthesis?.cancel();}}>{soundOn ? <Volume2 size={21}/> : <VolumeX size={21}/>}<span>{soundOn ? '소리 켜짐' : '소리 꺼짐'}</span></button><button className="order-control" onClick={() => {setSelection(wallet.drinkId || 'highball'); open('menu');}}><Wine size={21}/><span>한 잔 더</span></button></div>
     </section>}
-      <BottomSheet open={!!sheet} onClose={() => {setSheet(null);setError('');}} ariaLabelledBy="sheet-title" className="app-bottom-sheet" maxHeight={['welcome','menu','shop','preview','profile','guest','settings','region-request'].includes(sheet) ? window.innerHeight * .92 : undefined}>
-      <div className={`sheet sheet-compact ${sheet === 'guest' ? 'sheet-guest' : ''} ${sheet === 'profile' ? 'sheet-profile' : ''} ${sheet === 'region-request' ? 'sheet-region-request' : ''}`}><button className="close icon-button" aria-label="닫기" onClick={() => {setSheet(null);setError('');}}><X size={22}/></button>
+      <BottomSheet open={!!sheet} onClose={closeSheet} ariaLabelledBy="sheet-title" className="app-bottom-sheet" maxHeight={['welcome','menu','shop','preview','profile','guest','settings','region-request'].includes(sheet) ? window.innerHeight * .92 : undefined}>
+      <div className={`sheet sheet-compact ${sheet === 'guest' ? 'sheet-guest' : ''} ${sheet === 'profile' ? 'sheet-profile' : ''} ${sheet === 'region-request' ? 'sheet-region-request' : ''}`}><button className="close icon-button" aria-label="닫기" onClick={closeSheet}><X size={22}/></button>
       {(sheet === 'welcome' || sheet === 'menu') && <><p className="eyebrow">{isWelcome ? `${room?.region} ${room?.number}호점 입장` : '메뉴판'}</p><h2 id="sheet-title">{isWelcome ? '어떤 음료로 시작할까요?' : '한 잔 더 하고 갈까요?'}</h2><p className="sheet-description">{isWelcome ? '입장 시 포인트가 차감돼요.' : '주문한 잔은 내 사진 옆에 놓여요.'}</p><div className="menu">{DRINKS.filter(item => !isWelcome || item.minutes === 30).map(item => <button className={selection === item.id ? 'chosen' : ''} key={item.id} aria-pressed={selection === item.id} onClick={() => {setSelection(item.id);setError('');}}><div className="drink-illustration"><Glass id={item.id}/></div><span><strong>{item.name}</strong><small>{item.note}</small><em>{`+${item.minutes}분`}</em></span><span className="menu-price">{isWelcome ? `입장 ${item.price.toLocaleString()}P` : `${item.price.toLocaleString()} P`}{selection === item.id && <Check size={16}/>}</span></button>)}</div><div className="order-summary"><span>보유 포인트<b>{wallet.balance.toLocaleString()} P</b></span><span>{isWelcome ? '입장 후 남는 포인트' : '주문 후 남는 포인트'}<strong>{Math.max(0,wallet.balance-price).toLocaleString()} P</strong></span></div><p className="digital-note">음료는 취향을 표현하는 아이템이에요.</p>{wallet.balance<price?<><div className="insufficient-state"><strong>{(price-wallet.balance).toLocaleString()}P가 더 필요해요</strong><span>충전 후 {isWelcome ? '입장' : '주문'}할 수 있어요.</span></div><Button className="sheet-recharge-cta" size="xlarge" display="block" onClick={()=>open('shop')}>포인트 충전하기</Button><p className="footnote">포인트를 충전하면 선택한 음료로 바로 이용할 수 있어요.</p></>:<div className="sheet-inline-cta"><Button size="xlarge" display="block" onClick={confirmOrder}>{isWelcome ? `${price.toLocaleString()} 포인트로 ${chosen.minutes}분 입장하기` : `${price.toLocaleString()} 포인트로 주문 · ${chosen.minutes}분 연장`}</Button><p className="footnote">{isWelcome ? '입장한 호점에서만 이용시간이 흐르고, 바를 나가면 이용이 끝나요.' : '주문을 누르면 포인트가 차감되고 이용시간이 늘어나요.'}</p></div>}</>}
       {sheet === 'preview' && previewRoom && <><p className="eyebrow">{previewRoom.region} {previewRoom.number}호점</p><h2 id="sheet-title">{purchasedPreview ? '지금 이 바의 손님들' : '들어가기 전에 살짝 볼까요?'}</h2>{purchasedPreview ? <><p className="sheet-description">구매한 시점의 손님들이에요. 입장할 때는 달라질 수 있어요.</p><div className="preview-portraits">{purchasedPreview.guests.map(g => <div key={g.id} className={g.gender}><img src={g.photo} alt="미리보기 손님"/></div>)}</div>{rooms[previewRoom.region].find(r => r.number === previewRoom.number)?.count === CAPACITY ? <Button size="xlarge" display="block" onClick={() => requestWaitlist(previewRoom)}><Bell size={17}/>빈자리 알림 신청</Button> : <Button size="xlarge" display="block" onClick={() => requestEntry(previewRoom)}>이 바에 입장하기</Button>}</> : <><div className="locked-preview"><LockKeyhole size={29}/><span>사진은 미리보기 구매 후 공개돼요.</span></div><p className="sheet-description">500P로 현재 손님들의 프로필 사진을 확인해요.<br/>미리보기에는 입장이나 자리 예약이 포함되지 않아요.</p><div className="order-summary"><span>보유 포인트<b>{wallet.balance.toLocaleString()} P</b></span><span>구매 후 남는 포인트<strong>{Math.max(0,wallet.balance-500).toLocaleString()} P</strong></span></div><Button size="xlarge" display="block" disabled={wallet.balance < 500} onClick={buyPreview}>500P로 미리보기</Button></>}</>}
       {sheet === 'incoming' && incoming && <><p className="eyebrow">자리 양보 요청</p><h2 id="sheet-title">자리 바꿔주실래요?</h2><p className="sheet-description">다른 손님이 지금 내 자리를 부탁했어요.<br/>{incomingSeconds}초 안에 수락하면 500P를 받아요.<br/>오늘 남은 보상 {Math.max(0,DAILY_SWAP_REWARD_LIMIT-dailySwapRewards)}회</p><div className="swap-reward"><ArrowLeftRight size={24}/><strong>+500 P</strong><span>수락과 동시에 적립</span></div><div className="actions"><Button color="dark" variant="weak" onClick={() => {setIncoming(null);setSheet(null);}}>거절하기</Button><Button size="xlarge" disabled={dailySwapRewards >= DAILY_SWAP_REWARD_LIMIT} onClick={() => settleSwap(incoming)}>{dailySwapRewards >= DAILY_SWAP_REWARD_LIMIT ? '오늘 보상 한도에 도달했어요' : '양보하고 500P 받기'}</Button></div></>}
@@ -614,15 +639,15 @@ function App() {
       {sheet==='charge'&&<><h2 id="sheet-title">포인트 충전</h2><div className="point-balance"><Coins size={24}/><strong>{shopPack.points.toLocaleString()} P</strong></div><div className="order-summary"><span>상품 금액<strong>{shopPack.won.toLocaleString()}원</strong></span><span>충전 후 포인트<b>{(wallet.balance+shopPack.points).toLocaleString()} P</b></span></div><p className="sheet-description">결제 후 {shopPack.points.toLocaleString()}P가 충전돼요. 결제 수단은 토스에서 안전하게 처리돼요.</p><Button display="block" onClick={()=>setToast(`${shopPack.points.toLocaleString()}P 충전을 진행할게요.`)}>결제하고 충전하기</Button><Button display="block" variant="weak" color="dark" onClick={()=>open('shop')}>다른 상품 보기</Button></>}
       {sheet==='subscription-confirm'&&<><p className="eyebrow">정기 구독</p><h2 id="sheet-title">{!subscription?'정기 구독을 시작할까요?':subscriptionCancelAt?'구독을 다시 유지할까요?':'정기 구독을 해지할까요?'}</h2><p className="sheet-description">{!subscription?`매월 ${SUBSCRIPTIONS[0].price.toLocaleString()}원이 자동 결제되고 포인트 차감 없이 이용할 수 있어요.`:subscriptionCancelAt?`${subscriptionEndLabel()}까지 이용할 수 있고, 그 전에 다시 유지할 수 있어요.`:`자동 결제는 멈추지만 ${subscriptionEndLabel()}까지 이용할 수 있어요.`}</p><div className="actions"><Button color="dark" variant="weak" onClick={()=>setSheet('shop')}>취소</Button><Button size="xlarge" onClick={confirmSubscriptionChange}>{!subscription?'구독 시작하기':subscriptionCancelAt?'구독 유지하기':'해지 예약하기'}</Button></div></>}
       {sheet==='notifications'&&<><h2 id="sheet-title">알림</h2>{notifications.length===0?<p className="sheet-description">새로운 알림이 없어요.</p>:<div className="notification-list">{notifications.map(item=><button key={item.id} onClick={()=>{if(item.type==='inquiry'){const inquiry=inquiries.find(entry=>entry.id===item.inquiryId);setSelectedInquiry(inquiry);setSheet('inquiry-detail');}else{setRegion(item.region);setSelectedRoom({region:item.region,number:item.number});setSheet(null);setToast(`${item.region} ${item.number}호점을 선택했어요.`);}}}><Bell size={17}/><span><strong>{item.title}</strong><small>{item.body}</small></span><ArrowRight size={16}/></button>)}</div>}</>}
-      {sheet === 'profile' && <><div className="sheet-heading-row"><div><p className="eyebrow">내 프로필</p><h2 id="sheet-title">내 얼굴 사진을 골라주세요</h2></div></div><p className="sheet-description">함께 앉을 사람들에게 보여줄 사진을 골라요.</p><input ref={upload} hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={choosePhoto}/><button className="upload" onClick={() => upload.current.click()}>{profile.photo ? <img src={profile.photo} alt="선택한 내 사진"/> : <Camera size={30}/>}<span>{profile.photo ? '사진 바꾸기' : '사진 등록하기'}</span></button><p className="photo-note">본인 얼굴 사진을 사용해 주세요.</p><div className="gender-choice">{[['male','남성'],['female','여성']].map(([value,label]) => <button key={value} aria-pressed={profile.gender === value} className={profile.gender === value ? `selected ${value}` : ''} onClick={() => setProfile(v => ({...v,gender:value}))}>{label}{profile.gender === value && <Check size={17}/>}</button>)}</div><Button size="xlarge" display="block" disabled={!profile.photo || !profile.gender} onClick={() => setSheet('verify-profile')}>{profileVerified ? '프로필 저장하기' : '본인 얼굴 확인하기'}</Button></>}
-      {sheet === 'verify-profile' && <><p className="eyebrow">본인 얼굴 확인</p><h2 id="sheet-title">얼굴을 한 번 촬영해 주세요</h2><p className="sheet-description">프로필 사진과 비교하기 위한 촬영이에요.<br/>촬영본은 저장하거나 공개하지 않고 확인 후 바로 삭제해요.</p><div className="camera-preview"><video ref={cameraVideo} playsInline muted aria-label="본인 얼굴 촬영 화면"/><canvas ref={cameraCanvas} hidden/></div><p className={`photo-note verification-message ${verificationState==='verified'?'is-verified':''}`}>{verificationMessage}</p>{verificationState==='verified'?<Button size="xlarge" display="block" onClick={() => { setSheet(null); setToast('프로필 등록이 완료됐어요.'); }}>확인하고 시작하기</Button>:<Button size="xlarge" display="block" disabled={verificationState!=='ready'} onClick={captureVerification}>{verificationState==='checking'?'얼굴 확인 중…':'지금 촬영하기'}</Button>}</>}
+      {sheet === 'profile' && <><div className="sheet-heading-row"><div><p className="eyebrow">내 프로필</p><h2 id="sheet-title">내 얼굴 사진을 골라주세요</h2></div></div><p className="sheet-description">함께 앉을 사람들에게 보여줄 사진을 골라요.</p><input ref={upload} hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={choosePhoto}/><button className="upload" onClick={() => upload.current.click()}>{profile.photo ? <img src={profile.photo} alt="선택한 내 사진"/> : <Camera size={30}/>}<span>{profile.photo ? '사진 바꾸기' : '사진 등록하기'}</span></button><p className="photo-note">본인 얼굴 사진을 사용해 주세요.</p><div className="gender-choice">{[['male','남성'],['female','여성']].map(([value,label]) => <button key={value} aria-pressed={profile.gender === value} className={profile.gender === value ? `selected ${value}` : ''} onClick={() => setProfile(v => ({...v,gender:value}))}>{label}{profile.gender === value && <Check size={17}/>}</button>)}</div><Button size="xlarge" display="block" disabled={!profile.photo || !profile.gender} onClick={() => profileVerified ? saveProfile() : setSheet('verify-profile')}>{profileVerified ? '프로필 저장하기' : '본인 얼굴 확인하기'}</Button></>}
+      {sheet === 'verify-profile' && <><p className="eyebrow">본인 얼굴 확인</p><h2 id="sheet-title">얼굴을 한 번 촬영해 주세요</h2><p className="sheet-description">프로필 사진과 비교하기 위한 촬영이에요.<br/>촬영본은 저장하거나 공개하지 않고 확인 후 바로 삭제해요.</p><div className="camera-preview"><video ref={cameraVideo} playsInline muted aria-label="본인 얼굴 촬영 화면"/><canvas ref={cameraCanvas} hidden/></div><p className={`photo-note verification-message ${verificationState==='verified'?'is-verified':''}`}>{verificationMessage}</p>{verificationState==='verified'?<Button size="xlarge" display="block" onClick={saveProfile}>프로필 저장하기</Button>:<Button size="xlarge" display="block" disabled={verificationState!=='ready'} onClick={captureVerification}>{verificationState==='checking'?'얼굴 확인 중…':'지금 촬영하기'}</Button>}</>}
       {sheet === 'settings' && <><p className="eyebrow">설정</p><h2 id="sheet-title">도움이 필요하신가요?</h2><p className="sheet-description">서비스 이용과 계정을 관리할 수 있어요.</p><div className="settings-group"><span>도움말</span><div className="settings-list"><button onClick={()=>open('support')}>고객센터<ArrowRight size={16}/></button><button onClick={()=>open('inquiry')}>신고·문의<ArrowRight size={16}/></button></div></div><div className="settings-group"><span>계정 및 결제</span><div className="settings-list"><button onClick={openSubscriptionManager}>결제·정기 구독 관리<ArrowRight size={16}/></button><button onClick={()=>open('withdraw')} className="danger-link">회원탈퇴<ArrowRight size={16}/></button></div></div></>}
       {sheet === 'region-request' && <><p className="eyebrow">지역 추가 요청</p><h2 id="sheet-title">어디에서 만나고 싶나요?</h2><p className="sheet-description">원하는 지역을 골라 주세요.</p>{REGION_REQUEST_GROUPS.map(group=><div className="region-request-section" key={group.title}><span>{group.title}</span><div className="region-request-grid">{group.options.map(item=><button key={item} className={requestedRegion===item?'selected':''} onClick={()=>{setRequestedRegion(item);setShowCustomRegion(false);}}>{item}</button>)}{group.title==='주요 도시'&&<button style={{borderStyle:'dashed',borderWidth:'1.5px',borderColor:'#b7c0cb'}} className={`custom-region-toggle ${showCustomRegion?'selected':''}`} onClick={()=>{setShowCustomRegion(v=>!v);setRequestedRegion('');}}>직접 입력</button>}</div></div>)}{showCustomRegion&&<input className="custom-region-input" value={customRegion} onChange={e=>setCustomRegion(e.target.value)} placeholder="지역명을 입력해 주세요" maxLength={20}/>}<Button display="block" disabled={!requestedRegion && !(showCustomRegion&&customRegion.trim())} onClick={()=>{const requested=(showCustomRegion?customRegion:requestedRegion).trim();setRequestedRegion('');setCustomRegion('');setShowCustomRegion(false);setSheet(null);setToast(`${requested} 추가 요청을 접수했어요.`);}}>이 지역 추가 요청하기</Button><p className="digital-note">요청 건수와 우선순위에 따라 지역을 추가해요.</p></>}
       {sheet === 'support' && <><p className="eyebrow">고객센터</p><h2 id="sheet-title">무엇을 도와드릴까요?</h2><p className="sheet-description">혼술바 이용 중 궁금한 점을 확인하거나 문의를 남겨 주세요.</p><div className="settings-list"><button onClick={()=>{setOpenFaq(null);open('faq')}}>자주 묻는 질문<ArrowRight size={16}/></button><button onClick={()=>open('inquiry')}>문의 남기기<ArrowRight size={16}/></button></div></>}
       {sheet === 'faq' && <><p className="eyebrow">자주 묻는 질문</p><h2 id="sheet-title">혼술바 이용 안내</h2><p className="sheet-description">자주 궁금해하는 내용을 모아봤어요.</p><div className="faq-list">{FAQ_ITEMS.map(([question,answer],index)=><div className={`faq-item ${openFaq===index?'open':''}`} key={question}><button onClick={()=>setOpenFaq(openFaq===index?null:index)}><span>{question}</span>{openFaq===index?<ChevronDown size={17}/>:<ArrowRight size={17}/>}</button>{openFaq===index&&<p>{answer}</p>}</div>)}</div><Button display="block" variant="weak" color="dark" onClick={()=>open('inquiry')}>답을 찾지 못했어요 · 문의하기</Button></>}
       {sheet === 'inquiry' && <><p className="eyebrow">신고·문의</p><h2 id="sheet-title">문의 내용을 남겨 주세요</h2><p className="sheet-description">확인 후 운영팀이 순서대로 답변드릴게요.</p><div className="form-choice">{['결제·구독 문의','이용 방법 문의','서비스 신고','기타 문의'].map(item=><button key={item} className={inquiryType===item?'selected':''} onClick={()=>setInquiryType(item)}>{item}</button>)}</div><textarea className="support-textarea" value={inquiryMessage} onChange={e=>setInquiryMessage(e.target.value)} placeholder={inquiryType==='서비스 신고'?'신고할 내용을 자세히 입력해 주세요.':'문의 내용을 입력해 주세요.'} maxLength={500}/><div className="form-footer"><span>{inquiryMessage.length}/500</span><Button size="large" disabled={!inquiryMessage.trim()} onClick={submitInquiry}>{inquiryType==='서비스 신고'?'신고 접수하기':'문의 접수하기'}</Button></div></>}
       {sheet === 'inquiry-detail' && selectedInquiry && <><p className="eyebrow">문의 답변</p><h2 id="sheet-title">운영팀 답변</h2><div className="inquiry-message"><small>{selectedInquiry.type}</small><p>{selectedInquiry.message}</p></div><div className="inquiry-answer"><strong>운영팀</strong><p>{selectedInquiry.answer || '문의 내용을 확인하고 있어요. 답변이 등록되면 알림으로 알려드릴게요.'}</p></div><Button display="block" variant="weak" color="dark" onClick={()=>open('inquiry')}>문의 남기기</Button></>}
-      {sheet === 'withdraw' && <><p className="eyebrow">회원탈퇴</p><h2 id="sheet-title">정말 탈퇴할까요?</h2><p className="sheet-description">프로필과 이용 기록이 삭제되고, 진행 중인 정기 구독은 먼저 해지해야 해요.<br/>삭제된 정보는 복구할 수 없어요.</p><div className="actions"><Button color="dark" variant="weak" onClick={()=>setSheet('profile')}>취소</Button><Button size="xlarge" onClick={()=>{setSheet(null);setToast('탈퇴 요청을 접수했어요.');}}>탈퇴하기</Button></div></>}
+      {sheet === 'withdraw' && <><p className="eyebrow">회원탈퇴</p><h2 id="sheet-title">정말 탈퇴할까요?</h2><p className="sheet-description">프로필과 이용 기록이 삭제되고, 진행 중인 정기 구독은 먼저 해지해야 해요.<br/>삭제된 정보는 복구할 수 없어요.</p><div className="actions"><Button color="dark" variant="weak" onClick={openProfileEditor}>취소</Button><Button size="xlarge" onClick={()=>{setSheet(null);setToast('탈퇴 요청을 접수했어요.');}}>탈퇴하기</Button></div></>}
       {sheet === 'move' && <><h2 id="sheet-title">옆자리 분께 인사하고 갈까요?</h2><p className="sheet-description">가볍게 인사를 건네고 자리를 옮겨요.</p><div className="actions"><Button color="dark" variant="weak" onClick={() => setSheet(null)}>머무르기</Button><Button size="xlarge" onClick={() => commitMove(pendingSeat)}>자리 옮기기</Button></div></>}
       {sheet === 'guest' && selectedGuest && <><div className="guest-photo"><img src={selectedGuest.photo} alt="선택한 손님"/><Glass id={selectedGuest.drinkId}/></div><h2 id="sheet-title">{DRINKS.find(d => d.id === selectedGuest.drinkId)?.name} 마시는 중</h2><p className="sheet-description">{partners[selectedGuest.id]&&partners[selectedGuest.id]!=='me'?'옆자리와 잠시 대화하고 있어요.':`내 자리에서 ${Math.round(audioGain({id:'me',seat},selectedGuest,facing,partners,mutedGuests)*100)}% 크기로 들려요.`}</p>
         {partners[selectedGuest.id]&&partners[selectedGuest.id]!=='me'?<div className="guest-focus-panel"><MessageCircleMore size={18}/><p>지금 1:1로 대화하고 있어요.<br/>다른 사람에게는 목소리가 들리지 않아요.</p><Button size="large" variant="weak" disabled={waveSent.includes(selectedGuest.id)} onClick={()=>{setWaveSent(v=>[...v,selectedGuest.id]);setToast('인사를 남겼어요. 대화가 끝나면 확인할 수 있어요.');}}>{waveSent.includes(selectedGuest.id)?'인사를 남겼어요':'손 흔들기'}</Button></div>:activeFocus===selectedGuest.id?<Button display="block" variant="weak" onClick={()=>{setFocusId(null);setSheet(null);}}>전체 대화로 돌아가기</Button>:<div className="guest-focus-panel"><Button size="large" display="block" disabled={!adjacent(seat,selectedGuest.seat)||!!activeFocus||!!focusRequest||mutedGuests.includes(selectedGuest.id)||seconds===0} onClick={()=>requestFocus(selectedGuest)}>이 옆자리와만 대화하기</Button><p>{!adjacent(seat,selectedGuest.seat)?'바로 옆에 앉아 있을 때 이용할 수 있어요.':'상대가 수락하면 서로의 목소리만 들려요. 자리를 옮기면 전체 대화로 돌아가요.'}</p></div>}
