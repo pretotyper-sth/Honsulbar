@@ -245,9 +245,9 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .sheet-guest .sheet-description { font-size:13px; margin-bottom:16px; }
 .sheet-guest .guest-seat-request { min-height:48px; margin-top:8px; }
 .sheet-guest .footnote { margin-top:12px; }
-.sheet-guest .guest-focus-panel { padding:12px; margin-bottom:16px; }
+.sheet-guest .guest-focus-panel { padding:10px 12px 12px; margin-bottom:14px; background:#f7f9fb; }
 .sheet-guest .guest-focus-panel p { margin-top:6px; }
-.sheet-guest .guest-actions { margin-top:18px; }
+.sheet-guest .guest-actions { margin-top:18px; padding-top:14px; border-top:1px solid #f0f1f3; }
 .sheet-guest .guest-actions button { padding:8px 12px; }
 .sheet-profile .upload { margin-top:16px; margin-bottom:12px; }
 .sheet-profile .gender-choice { margin:18px 0; }
@@ -256,7 +256,8 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .profile-field input { width:100%; border:1px solid #e5e8eb; border-radius:12px; padding:12px 14px; color:#191f28; font-size:15px; background:#fff; }
 .profile-field input:focus { outline:2px solid #b7d5ff; border-color:#3182f6; }
 .profile-save-note { margin:0 0 10px; color:#8b95a1; font-size:12px; text-align:center; }
-.guest-drink-note { margin:-3px 0 10px; color:#8b95a1; font-size:12px; text-align:center; }
+.guest-meta { display:flex; justify-content:center; align-items:center; gap:7px; margin:-1px 0 18px; color:#8b95a1; font-size:12px; line-height:1.4; }
+.guest-meta span { white-space:nowrap; }
 .preview-portraits { display:grid; grid-template-columns:repeat(4,1fr); gap:18px 14px; padding:16px 5px 20px; }
 .preview-portraits>div { aspect-ratio:1; border:2px solid #80b8e6; padding:3px; border-radius:50%; }
 .preview-portraits>div.female { border-color:#e69cba; }
