@@ -49,6 +49,29 @@ function initialProfile() {
   }
   return { ...localProfile, nickname };
 }
+function faceBox(face) {
+  const topLeft = face.topLeft || face.box?.topLeft || [face.box?.xMin || 0, face.box?.yMin || 0];
+  const bottomRight = face.bottomRight || face.box?.bottomRight || [face.box?.xMax || 0, face.box?.yMax || 0];
+  return { left: Number(topLeft[0]), top: Number(topLeft[1]), width: Math.max(1, Number(bottomRight[0]) - Number(topLeft[0])), height: Math.max(1, Number(bottomRight[1]) - Number(topLeft[1])) };
+}
+function faceSignature(face) {
+  const box = faceBox(face);
+  const landmarks = face.landmarks || [];
+  return { box, points: landmarks.map(([x, y]) => [(x - box.left) / box.width, (y - box.top) / box.height]) };
+}
+function faceSimilarity(first, second) {
+  if (!first?.points?.length || first.points.length !== second?.points?.length) return 0;
+  const pointDistance = first.points.reduce((sum, point, index) => sum + Math.hypot(point[0] - second.points[index][0], point[1] - second.points[index][1]), 0) / first.points.length;
+  const aspectDistance = Math.abs((first.box.width / first.box.height) - (second.box.width / second.box.height));
+  return Math.max(0, 1 - pointDistance * 2.2 - aspectDistance * 0.25);
+}
+function faceIsWellFramed(face, width, height) {
+  const box = faceBox(face);
+  const centerX = (box.left + box.width / 2) / width;
+  const centerY = (box.top + box.height / 2) / height;
+  const size = Math.min(box.width / width, box.height / height);
+  return centerX > 0.2 && centerX < 0.8 && centerY > 0.2 && centerY < 0.8 && size > 0.18 && size < 0.82;
+}
 function todayKey() { return new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(new Date()); }
 function initialScreen() {
   try { return localStorage.getItem('honsulbar:onboarding:v1') === 'done' ? 'lobby' : 'onboarding'; } catch { return 'onboarding'; }
@@ -567,12 +590,25 @@ function App() {
     canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
     try {
       const model = await loadFaceModel();
-      const cameraFaces = await model.estimateFaces(canvas, false);
-      if (!cameraFaces.length) { finish('얼굴을 찾지 못했어요. 화면을 바라보고 다시 촬영해 주세요.'); return; }
+      const cameraFrames = [];
+      for (let frame = 0; frame < 3; frame += 1) {
+        if (frame > 0) await new Promise(resolve => setTimeout(resolve, 180));
+        canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const faces = await model.estimateFaces(canvas, false);
+        if (!faces.length) { finish('얼굴을 찾지 못했어요. 화면을 바라보고 다시 촬영해 주세요.'); return; }
+        const face = faces.sort((a, b) => faceBox(b).width - faceBox(a).width)[0];
+        if (!faceIsWellFramed(face, canvas.width, canvas.height)) { finish('얼굴을 화면 가운데에 맞추고 조금 가까이에서 다시 촬영해 주세요.'); return; }
+        cameraFrames.push(faceSignature(face));
+      }
+      const cameraSimilarity = faceSimilarity(cameraFrames[0], cameraFrames[2]);
+      if (cameraSimilarity < 0.72) { finish('얼굴이 흔들렸어요. 화면을 바라보고 다시 촬영해 주세요.'); return; }
       if (profile.photo?.startsWith('blob:') || profile.photo?.startsWith('data:')) {
         const image = new Image(); image.src = profile.photo; await image.decode();
         const profileFaces = await model.estimateFaces(image, false);
         if (!profileFaces.length) { finish('프로필 사진에서 얼굴을 찾지 못했어요. 얼굴이 잘 보이는 사진을 등록해 주세요.'); return; }
+        const profileFace = profileFaces.sort((a, b) => faceBox(b).width - faceBox(a).width)[0];
+        const profileSimilarity = faceSimilarity(faceSignature(profileFace), cameraFrames[1]);
+        if (profileSimilarity < 0.64) { finish('프로필 사진과 얼굴이 충분히 비슷하지 않아요. 본인 사진으로 다시 촬영해 주세요.'); return; }
       }
     } catch { finish('얼굴 확인 중 문제가 생겼어요. 얼굴을 화면 가운데에 맞추고 다시 촬영해 주세요.'); return; }
     verifyProfilePhoto(Math.max(0, 2000 - (Date.now() - startedAt)));
