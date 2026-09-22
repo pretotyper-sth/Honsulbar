@@ -238,17 +238,17 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .guest-photo img { width:100%; height:100%; border-radius:50%; }
 .guest-photo .glass { position:absolute; bottom:0; right:-10px; filter:drop-shadow(0 1px 1px #777); }
 .guest-photo~h2,.guest-photo~.sheet-description { text-align:center; margin-right:0; }
-.sheet-guest { padding-top:18px; }
-.sheet-guest .guest-photo { width:68px; height:68px; margin:2px auto 12px; }
+.sheet-guest { padding-top:24px; padding-bottom:38px; }
+.sheet-guest .guest-photo { width:68px; height:68px; margin:2px auto 16px; }
 .sheet-guest .guest-photo .glass { transform:scale(.85); transform-origin:bottom right; }
 .sheet-guest h2 { font-size:21px; margin-bottom:7px; }
-.sheet-guest .sheet-description { font-size:13px; margin-bottom:12px; }
-.sheet-guest .guest-seat-request { min-height:48px; }
-.sheet-guest .footnote { margin-top:8px; }
-.sheet-guest .guest-focus-panel { padding:10px; margin-bottom:10px; }
+.sheet-guest .sheet-description { font-size:13px; margin-bottom:16px; }
+.sheet-guest .guest-seat-request { min-height:48px; margin-top:8px; }
+.sheet-guest .footnote { margin-top:12px; }
+.sheet-guest .guest-focus-panel { padding:12px; margin-bottom:16px; }
 .sheet-guest .guest-focus-panel p { margin-top:6px; }
-.sheet-guest .guest-actions { margin-top:10px; }
-.sheet-guest .guest-actions button { padding:6px 10px; }
+.sheet-guest .guest-actions { margin-top:18px; }
+.sheet-guest .guest-actions button { padding:8px 12px; }
 .sheet-profile .upload { margin-top:16px; margin-bottom:12px; }
 .sheet-profile .gender-choice { margin:18px 0; }
 .preview-portraits { display:grid; grid-template-columns:repeat(4,1fr); gap:18px 14px; padding:16px 5px 20px; }
