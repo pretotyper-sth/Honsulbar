@@ -78,6 +78,9 @@ function App() {
   const previewLock = useRef(false);
   const latest = useRef(null);
   const [profile, setProfile] = useState(localProfile);
+  const [profileVerified, setProfileVerified] = useState(false);
+  const [verificationState, setVerificationState] = useState('idle');
+  const [verificationMessage, setVerificationMessage] = useState('');
   const [seat, setSeat] = useState(3);
   const [wallet, setWallet] = useState(initialWallet);
   const [now, setNow] = useState(Date.now());
@@ -103,6 +106,9 @@ function App() {
   const [showCustomRegion, setShowCustomRegion] = useState(false);
   const [newRoom, setNewRoom] = useState(null);
   const upload = useRef(null);
+  const cameraVideo = useRef(null);
+  const cameraCanvas = useRef(null);
+  const cameraStream = useRef(null);
   const subscriptionSection = useRef(null);
   const cueContext = useRef(null);
   const orderLock = useRef(false);
@@ -193,7 +199,33 @@ function App() {
     }, 80);
     return () => clearTimeout(timer);
   }, [sheet, focusSubscription]);
-  useEffect(() => () => { if (profile.photo.startsWith('blob:')) URL.revokeObjectURL(profile.photo); }, [profile.photo]);
+  useEffect(() => () => { if (profile.photo?.startsWith('blob:')) URL.revokeObjectURL(profile.photo); }, [profile.photo]);
+  useEffect(() => {
+    if (sheet !== 'verify-profile') {
+      cameraStream.current?.getTracks().forEach(track => track.stop());
+      cameraStream.current = null;
+      return;
+    }
+    let cancelled = false;
+    setVerificationState('starting');
+    setVerificationMessage('카메라를 준비하고 있어요.');
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setVerificationState('unavailable');
+      setVerificationMessage('이 환경에서는 카메라를 사용할 수 없어요. 사진 확인을 건너뛰고 운영팀 확인으로 등록할 수 있어요.');
+      return undefined;
+    }
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 720 } }, audio: false }).then(stream => {
+      if (cancelled) { stream.getTracks().forEach(track => track.stop()); return; }
+      cameraStream.current = stream;
+      if (cameraVideo.current) { cameraVideo.current.srcObject = stream; cameraVideo.current.play().catch(() => {}); }
+      setVerificationState('ready');
+      setVerificationMessage('얼굴이 화면 안에 보이도록 맞춰 주세요.');
+    }).catch(() => {
+      setVerificationState('unavailable');
+      setVerificationMessage('카메라 권한이 필요해요. 권한을 허용하거나 사진 확인을 건너뛸 수 있어요.');
+    });
+    return () => { cancelled = true; };
+  }, [sheet]);
   useEffect(() => {
     if (screen !== 'lobby' || sheet) return;
     const timer = setInterval(() => {
@@ -435,8 +467,39 @@ function App() {
   const guestSeconds = person => Math.max(0,person.seconds-Math.floor((now-enteredAt)/1000));
 
   function completeOnboarding() {
+    setProfile(v => ({ ...v, photo: null }));
+    setProfileVerified(false);
     try { localStorage.setItem('honsulbar:onboarding:v1', 'done'); } catch {}
     setScreen('lobby');
+    setSheet('profile');
+  }
+
+  function verifyProfilePhoto() {
+    setProfileVerified(true);
+    setVerificationState('verified');
+    setVerificationMessage('사진에서 얼굴을 확인했어요. 촬영본은 저장하지 않고 바로 삭제했어요.');
+  }
+
+  async function captureVerification() {
+    const video = cameraVideo.current;
+    const canvas = cameraCanvas.current;
+    if (!video || !canvas || video.readyState < 2) { setVerificationMessage('카메라가 준비될 때까지 잠시만 기다려 주세요.'); return; }
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 640;
+    canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
+    let hasFace = true;
+    if ('FaceDetector' in window) {
+      try {
+        const detector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 2 });
+        hasFace = (await detector.detect(canvas)).length > 0;
+        if (hasFace && profile.photo) {
+          const image = new Image(); image.src = profile.photo; await image.decode();
+          hasFace = (await detector.detect(image)).length > 0;
+        }
+      } catch {}
+    }
+    if (!hasFace) { setVerificationState('ready'); setVerificationMessage('얼굴을 찾지 못했어요. 화면을 바라보고 다시 촬영해 주세요.'); return; }
+    verifyProfilePhoto();
   }
 
   if (screen === 'onboarding') return <main className="app onboarding-screen">
@@ -451,7 +514,7 @@ function App() {
         <div><span>03</span><p><strong>소리 집중 방향 조절</strong><small>듣고 싶은 쪽에 귀 기울여요.</small></p></div>
       </div>
       <div className="onboarding-notice">만 19세 이상만 이용할 수 있어요.</div>
-      <Button size="xlarge" display="block" onClick={completeOnboarding}>시작하기</Button>
+      <Button size="xlarge" display="block" onClick={completeOnboarding}>프로필 등록하고 시작하기</Button>
     </div>
   </main>;
 
@@ -529,7 +592,8 @@ function App() {
       {sheet==='charge'&&<><h2 id="sheet-title">포인트 충전</h2><div className="point-balance"><Coins size={24}/><strong>{shopPack.points.toLocaleString()} P</strong></div><div className="order-summary"><span>상품 금액<strong>{shopPack.won.toLocaleString()}원</strong></span><span>충전 후 포인트<b>{(wallet.balance+shopPack.points).toLocaleString()} P</b></span></div><p className="sheet-description">결제 후 {shopPack.points.toLocaleString()}P가 충전돼요. 결제 수단은 토스에서 안전하게 처리돼요.</p><Button display="block" onClick={()=>setToast(`${shopPack.points.toLocaleString()}P 충전을 진행할게요.`)}>결제하고 충전하기</Button><Button display="block" variant="weak" color="dark" onClick={()=>open('shop')}>다른 상품 보기</Button></>}
       {sheet==='subscription-confirm'&&<><p className="eyebrow">정기 구독</p><h2 id="sheet-title">{!subscription?'정기 구독을 시작할까요?':subscriptionCancelAt?'구독을 다시 유지할까요?':'정기 구독을 해지할까요?'}</h2><p className="sheet-description">{!subscription?`매월 ${SUBSCRIPTIONS[0].price.toLocaleString()}원이 자동 결제되고 포인트 차감 없이 이용할 수 있어요.`:subscriptionCancelAt?`${subscriptionEndLabel()}까지 이용할 수 있고, 그 전에 다시 유지할 수 있어요.`:`자동 결제는 멈추지만 ${subscriptionEndLabel()}까지 이용할 수 있어요.`}</p><div className="actions"><Button color="dark" variant="weak" onClick={()=>setSheet('shop')}>취소</Button><Button size="xlarge" onClick={confirmSubscriptionChange}>{!subscription?'구독 시작하기':subscriptionCancelAt?'구독 유지하기':'해지 예약하기'}</Button></div></>}
       {sheet==='notifications'&&<><h2 id="sheet-title">알림</h2>{notifications.length===0?<p className="sheet-description">새로운 알림이 없어요.</p>:<div className="notification-list">{notifications.map(item=><button key={item.id} onClick={()=>{if(item.type==='inquiry'){const inquiry=inquiries.find(entry=>entry.id===item.inquiryId);setSelectedInquiry(inquiry);setSheet('inquiry-detail');}else{setRegion(item.region);setSelectedRoom({region:item.region,number:item.number});setSheet(null);setToast(`${item.region} ${item.number}호점을 선택했어요.`);}}}><Bell size={17}/><span><strong>{item.title}</strong><small>{item.body}</small></span><ArrowRight size={16}/></button>)}</div>}</>}
-      {sheet === 'profile' && <><div className="sheet-heading-row"><div><p className="eyebrow">내 프로필</p><h2 id="sheet-title">내 얼굴 사진을 골라주세요</h2></div></div><p className="sheet-description">함께 앉을 사람들에게 보여줄 사진을 골라요.</p><input ref={upload} hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={choosePhoto}/><button className="upload" onClick={() => upload.current.click()}>{profile.photo ? <img src={profile.photo} alt="선택한 내 사진"/> : <Camera size={30}/>}<span>사진 바꾸기</span></button><p className="photo-note">본인 얼굴 사진을 사용해 주세요.</p><div className="gender-choice">{[['male','남성'],['female','여성']].map(([value,label]) => <button key={value} aria-pressed={profile.gender === value} className={profile.gender === value ? `selected ${value}` : ''} onClick={() => setProfile(v => ({...v,gender:value}))}>{label}{profile.gender === value && <Check size={17}/>}</button>)}</div><Button size="xlarge" display="block" disabled={!profile.photo || !profile.gender} onClick={() => screen === 'lobby' && room ? requestEntry(room) : setSheet(null)}>프로필 저장하기</Button></>}
+      {sheet === 'profile' && <><div className="sheet-heading-row"><div><p className="eyebrow">내 프로필</p><h2 id="sheet-title">내 얼굴 사진을 골라주세요</h2></div></div><p className="sheet-description">함께 앉을 사람들에게 보여줄 사진을 골라요.</p><input ref={upload} hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={choosePhoto}/><button className="upload" onClick={() => upload.current.click()}>{profile.photo ? <img src={profile.photo} alt="선택한 내 사진"/> : <Camera size={30}/>}<span>{profile.photo ? '사진 바꾸기' : '사진 등록하기'}</span></button><p className="photo-note">본인 얼굴 사진을 사용해 주세요.</p><div className="gender-choice">{[['male','남성'],['female','여성']].map(([value,label]) => <button key={value} aria-pressed={profile.gender === value} className={profile.gender === value ? `selected ${value}` : ''} onClick={() => setProfile(v => ({...v,gender:value}))}>{label}{profile.gender === value && <Check size={17}/>}</button>)}</div><Button size="xlarge" display="block" disabled={!profile.photo || !profile.gender} onClick={() => setSheet('verify-profile')}>{profileVerified ? '프로필 저장하기' : '본인 얼굴 확인하기'}</Button></>}
+      {sheet === 'verify-profile' && <><p className="eyebrow">본인 얼굴 확인</p><h2 id="sheet-title">얼굴을 한 번 촬영해 주세요</h2><p className="sheet-description">프로필 사진과 비교하기 위한 촬영이에요. 촬영본은 저장하거나 공개하지 않고 확인 후 바로 삭제해요.</p><div className="camera-preview"><video ref={cameraVideo} playsInline muted aria-label="본인 얼굴 촬영 화면"/><canvas ref={cameraCanvas} hidden/></div><p className={`photo-note verification-message ${verificationState==='verified'?'is-verified':''}`}>{verificationMessage}</p>{verificationState==='verified'?<Button size="xlarge" display="block" onClick={() => { setSheet(null); setToast('프로필 등록이 완료됐어요.'); }}>확인하고 시작하기</Button>:<><Button size="xlarge" display="block" disabled={verificationState!=='ready'} onClick={captureVerification}>지금 촬영하기</Button><Button variant="weak" color="dark" display="block" onClick={() => { setProfileVerified(false); setSheet(null); setToast('프로필을 저장했어요. 본인 확인은 설정에서 이어서 할 수 있어요.'); }}>나중에 확인하기</Button></>}</>}
       {sheet === 'settings' && <><p className="eyebrow">설정</p><h2 id="sheet-title">도움이 필요하신가요?</h2><p className="sheet-description">서비스 이용과 계정을 관리할 수 있어요.</p><div className="settings-group"><span>도움말</span><div className="settings-list"><button onClick={()=>open('support')}>고객센터<ArrowRight size={16}/></button><button onClick={()=>open('inquiry')}>신고·문의<ArrowRight size={16}/></button></div></div><div className="settings-group"><span>계정 및 결제</span><div className="settings-list"><button onClick={openSubscriptionManager}>결제·정기 구독 관리<ArrowRight size={16}/></button><button onClick={()=>open('withdraw')} className="danger-link">회원탈퇴<ArrowRight size={16}/></button></div></div></>}
       {sheet === 'region-request' && <><p className="eyebrow">지역 추가 요청</p><h2 id="sheet-title">어디에서 만나고 싶나요?</h2><p className="sheet-description">원하는 지역을 골라 주세요.</p>{REGION_REQUEST_GROUPS.map(group=><div className="region-request-section" key={group.title}><span>{group.title}</span><div className="region-request-grid">{group.options.map(item=><button key={item} className={requestedRegion===item?'selected':''} onClick={()=>{setRequestedRegion(item);setShowCustomRegion(false);}}>{item}</button>)}{group.title==='주요 도시'&&<button style={{borderStyle:'dashed',borderWidth:'1.5px',borderColor:'#b7c0cb'}} className={`custom-region-toggle ${showCustomRegion?'selected':''}`} onClick={()=>{setShowCustomRegion(v=>!v);setRequestedRegion('');}}>직접 입력</button>}</div></div>)}{showCustomRegion&&<input className="custom-region-input" value={customRegion} onChange={e=>setCustomRegion(e.target.value)} placeholder="지역명을 입력해 주세요" maxLength={20}/>}<Button display="block" disabled={!requestedRegion && !(showCustomRegion&&customRegion.trim())} onClick={()=>{const requested=(showCustomRegion?customRegion:requestedRegion).trim();setRequestedRegion('');setCustomRegion('');setShowCustomRegion(false);setSheet(null);setToast(`${requested} 추가 요청을 접수했어요.`);}}>이 지역 추가 요청하기</Button><p className="digital-note">요청 건수와 우선순위에 따라 지역을 추가해요.</p></>}
       {sheet === 'support' && <><p className="eyebrow">고객센터</p><h2 id="sheet-title">무엇을 도와드릴까요?</h2><p className="sheet-description">혼술바 이용 중 궁금한 점을 확인하거나 문의를 남겨 주세요.</p><div className="settings-list"><button onClick={()=>{setOpenFaq(null);open('faq')}}>자주 묻는 질문<ArrowRight size={16}/></button><button onClick={()=>open('inquiry')}>문의 남기기<ArrowRight size={16}/></button></div></>}
