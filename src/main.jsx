@@ -204,6 +204,8 @@ function App() {
     if (sheet !== 'verify-profile') {
       cameraStream.current?.getTracks().forEach(track => track.stop());
       cameraStream.current = null;
+      const context = cameraCanvas.current?.getContext('2d');
+      if (context && cameraCanvas.current) context.clearRect(0, 0, cameraCanvas.current.width, cameraCanvas.current.height);
       return;
     }
     let cancelled = false;
