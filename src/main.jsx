@@ -53,6 +53,8 @@ function App() {
   const [waitlist, setWaitlist] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [subscription, setSubscription] = useState(false);
+  const [subscriptionPeriodEnd, setSubscriptionPeriodEnd] = useState(null);
+  const [subscriptionCancelAt, setSubscriptionCancelAt] = useState(null);
   const [region, setRegion] = useState('서울');
   const [rooms, setRooms] = useState(() => Object.fromEntries(REGIONS.map((r, i) => [r, [{ number: 1, count: 12 }, { number: 2, count: i === 0 ? 8 : 5 + i }]])));
   const [room, setRoom] = useState(null);
@@ -327,10 +329,25 @@ function App() {
   function open(value) { setError(''); orderLock.current = false; setSheet(value); }
   function requestSubscriptionChange() { open('subscription-confirm'); }
   function confirmSubscriptionChange() {
-    setSubscription(v => !v);
+    if (!subscription) {
+      setSubscription(true);
+      setSubscriptionPeriodEnd(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      setSubscriptionCancelAt(null);
+      setSheet('shop');
+      setToast('정기 구독을 시작했어요.');
+      return;
+    }
+    if (subscriptionCancelAt) {
+      setSubscriptionCancelAt(null);
+      setSheet('shop');
+      setToast('정기 구독 자동 결제를 다시 유지해요.');
+      return;
+    }
+    setSubscriptionCancelAt(subscriptionPeriodEnd || Date.now() + 30 * 24 * 60 * 60 * 1000);
     setSheet('shop');
-    setToast(subscription ? '정기 구독을 해지했어요.' : '정기 구독을 시작했어요.');
+    setToast('구독을 해지 예약했어요. 이용 기간 마지막 날까지 사용할 수 있어요.');
   }
+  function subscriptionEndLabel() { return subscriptionPeriodEnd ? new Intl.DateTimeFormat('ko-KR',{month:'numeric',day:'numeric'}).format(new Date(subscriptionPeriodEnd)) : ''; }
   function requestEntry(target) {
     if (!target) return;
     target = rooms[region].find(r => r.number === target.number) || target;
@@ -472,10 +489,10 @@ function App() {
         <h3 className="section-title">포인트 모으기</h3><div className="earn-row"><span><strong>매일 출석</strong><small>하루 한 번 1,000P</small></span><Button size="small" variant="weak" disabled={wallet.attendanceDate===today} onClick={attendance}>{wallet.attendanceDate===today?'오늘 받았어요':'1,000P 받기'}</Button></div>
         <div className="earn-row"><span><strong>자리 양보</strong><small>요청을 수락하고 서로 자리를 바꾸면</small></span><b>+500P</b></div>
         <h3 className="section-title">포인트 충전</h3><p className="shop-note">많이 충전할수록 추가 포인트를 받아요.</p><div className="point-packs">{POINT_PACKS.map(pack=><button key={pack.points} onClick={()=>{setShopPack(pack);open('charge');}}><span>{pack.points.toLocaleString()} P {pack.bonus>0&&<em>{pack.label}</em>}</span><strong>{pack.won.toLocaleString()}원 <ArrowRight size={15}/></strong></button>)}</div>
-        <h3 className="section-title">정기 구독</h3><div className="subscription-card"><div><strong>{SUBSCRIPTIONS[0].name}</strong><small>{SUBSCRIPTIONS[0].description}</small></div><b>{subscription?'이용 중':`${SUBSCRIPTIONS[0].price.toLocaleString()}원/월`}</b><Button size="small" variant="weak" onClick={requestSubscriptionChange}>{subscription?'해지하기':'시작하기'}</Button></div><p className="shop-note">매월 자동 결제되며 언제든 해지할 수 있어요.</p><h3 className="section-title">이렇게 사용해요</h3><div className="point-uses"><span>입장<strong>500P</strong></span><span>시간 연장<strong>30분마다 500P</strong></span><span>입장 전 손님 미리보기<strong>500P</strong></span><span>자리 양보 부탁하기<strong>수락 시 500P</strong></span></div>
+        <h3 className="section-title">정기 구독</h3><div className={`subscription-card ${subscriptionCancelAt?'is-canceling':''}`}><div><strong>{SUBSCRIPTIONS[0].name}</strong><small>{subscriptionCancelAt?`${subscriptionEndLabel()}까지 이용할 수 있어요.`:SUBSCRIPTIONS[0].description}</small></div><b>{subscription?subscriptionCancelAt?'해지 예약됨':'이용 중':`${SUBSCRIPTIONS[0].price.toLocaleString()}원/월`}</b><Button size="small" variant="weak" onClick={requestSubscriptionChange}>{subscription?(subscriptionCancelAt?'해지 취소':'해지하기'):'시작하기'}</Button></div><p className="shop-note">매월 자동 결제되며, 해지해도 이용 기간 마지막 날까지 사용할 수 있어요.</p><h3 className="section-title">이렇게 사용해요</h3><div className="point-uses"><span>입장<strong>500P</strong></span><span>시간 연장<strong>30분마다 500P</strong></span><span>입장 전 손님 미리보기<strong>500P</strong></span><span>자리 양보 부탁하기<strong>수락 시 500P</strong></span></div>
         <h3 className="section-title">최근 내역 <small className="history-limit">{historyLimit===10?'최근 10건':`${Math.min(historyLimit,ledger.length)}건`}</small></h3><div className="point-history">{ledger.slice(0,historyLimit).map((item,index)=><div key={item.id}><span className="history-item-label"><strong>{item.label}</strong><small>{formatHistoryDate(item.date || Date.now() - index * 86400000)}</small></span><b className={item.amount>0?'earned':''}>{item.amount>0?'+':''}{item.amount.toLocaleString()} P</b></div>)}</div>{ledger.length>10&&<div className="history-actions">{historyLimit===10?<Button size="small" variant="weak" display="block" onClick={()=>setHistoryLimit(Math.min(30,ledger.length))}>전체 내역 보기</Button>:<>{historyLimit>=ledger.length&&<p className="history-complete">모든 내역을 보고 있어요.</p>}<Button size="small" variant="weak" display="block" onClick={()=>setHistoryLimit(10)}>최근 10건만 보기</Button>{historyLimit<ledger.length&&<Button size="small" variant="weak" display="block" onClick={()=>setHistoryLimit(v=>Math.min(v+20,ledger.length))}>더 불러오기</Button>}</>}</div>}</>}
       {sheet==='charge'&&<><h2 id="sheet-title">포인트 충전</h2><div className="point-balance"><Coins size={24}/><strong>{shopPack.points.toLocaleString()} P</strong></div><div className="order-summary"><span>상품 금액<strong>{shopPack.won.toLocaleString()}원</strong></span><span>충전 후 포인트<b>{(wallet.balance+shopPack.points).toLocaleString()} P</b></span></div><p className="sheet-description">결제 후 {shopPack.points.toLocaleString()}P가 충전돼요. 결제 수단은 토스에서 안전하게 처리돼요.</p><Button display="block" onClick={()=>setToast(`${shopPack.points.toLocaleString()}P 충전을 진행할게요.`)}>결제하고 충전하기</Button><Button display="block" variant="weak" color="dark" onClick={()=>open('shop')}>다른 상품 보기</Button></>}
-      {sheet==='subscription-confirm'&&<><p className="eyebrow">정기 구독</p><h2 id="sheet-title">{subscription?'정기 구독을 해지할까요?':'정기 구독을 시작할까요?'}</h2><p className="sheet-description">{subscription?'다음 결제일부터 자동 결제가 멈춰요.':`매월 ${SUBSCRIPTIONS[0].price.toLocaleString()}원이 자동 결제되고 포인트 차감 없이 이용할 수 있어요.`}</p><div className="actions"><Button color="dark" variant="weak" onClick={()=>setSheet('shop')}>취소</Button><Button size="xlarge" onClick={confirmSubscriptionChange}>{subscription?'해지하기':'구독 시작하기'}</Button></div></>}
+      {sheet==='subscription-confirm'&&<><p className="eyebrow">정기 구독</p><h2 id="sheet-title">{!subscription?'정기 구독을 시작할까요?':subscriptionCancelAt?'구독을 다시 유지할까요?':'정기 구독을 해지할까요?'}</h2><p className="sheet-description">{!subscription?`매월 ${SUBSCRIPTIONS[0].price.toLocaleString()}원이 자동 결제되고 포인트 차감 없이 이용할 수 있어요.`:subscriptionCancelAt?`${subscriptionEndLabel()}까지 이용할 수 있고, 그 전에 다시 유지할 수 있어요.`:`자동 결제는 멈추지만 ${subscriptionEndLabel()}까지 이용할 수 있어요.`}</p><div className="actions"><Button color="dark" variant="weak" onClick={()=>setSheet('shop')}>취소</Button><Button size="xlarge" onClick={confirmSubscriptionChange}>{!subscription?'구독 시작하기':subscriptionCancelAt?'구독 유지하기':'해지 예약하기'}</Button></div></>}
       {sheet==='notifications'&&<><h2 id="sheet-title">알림</h2>{notifications.length===0?<p className="sheet-description">새로운 알림이 없어요.</p>:<div className="notification-list">{notifications.map(item=><button key={item.id} onClick={()=>{if(item.type==='inquiry'){const inquiry=inquiries.find(entry=>entry.id===item.inquiryId);setSelectedInquiry(inquiry);setSheet('inquiry-detail');}else{setRegion(item.region);setSelectedRoom({region:item.region,number:item.number});setSheet(null);setToast(`${item.region} ${item.number}호점을 선택했어요.`);}}}><Bell size={17}/><span><strong>{item.title}</strong><small>{item.body}</small></span><ArrowRight size={16}/></button>)}</div>}</>}
       {sheet === 'profile' && <><div className="sheet-heading-row"><div><p className="eyebrow">내 프로필</p><h2 id="sheet-title">내 얼굴 사진을 골라주세요</h2></div></div><p className="sheet-description">함께 앉을 사람들에게 보여줄 사진을 골라요.</p><input ref={upload} hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={choosePhoto}/><button className="upload" onClick={() => upload.current.click()}>{profile.photo ? <img src={profile.photo} alt="선택한 내 사진"/> : <Camera size={30}/>}<span>사진 바꾸기</span></button><p className="photo-note">본인 얼굴 사진을 사용해 주세요.</p><div className="gender-choice">{[['male','남성'],['female','여성']].map(([value,label]) => <button key={value} aria-pressed={profile.gender === value} className={profile.gender === value ? `selected ${value}` : ''} onClick={() => setProfile(v => ({...v,gender:value}))}>{label}{profile.gender === value && <Check size={17}/>}</button>)}</div><Button size="xlarge" display="block" disabled={!profile.photo || !profile.gender} onClick={() => screen === 'lobby' && room ? requestEntry(room) : setSheet(null)}>프로필 저장하기</Button></>}
       {sheet === 'settings' && <><p className="eyebrow">설정</p><h2 id="sheet-title">도움이 필요하신가요?</h2><p className="sheet-description">서비스 이용과 계정을 관리할 수 있어요.</p><div className="settings-group"><span>도움말</span><div className="settings-list"><button onClick={()=>open('support')}>고객센터<ArrowRight size={16}/></button><button onClick={()=>open('inquiry')}>신고·문의<ArrowRight size={16}/></button></div></div><div className="settings-group"><span>계정 및 결제</span><div className="settings-list"><button onClick={()=>open('shop')}>결제·정기 구독 관리<ArrowRight size={16}/></button><button onClick={()=>open('withdraw')} className="danger-link">회원탈퇴<ArrowRight size={16}/></button></div></div></>}
