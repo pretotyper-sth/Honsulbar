@@ -1,9 +1,9 @@
 import { defineConfig } from '@apps-in-toss/web-framework/config';
 
 export default defineConfig({
-  appName: 'yeopjari',
+  appName: 'honsulbar',
   brand: {
-    displayName: '혼술바 - 옆자리',
+    displayName: '혼술바',
     primaryColor: '#3182f6',
     icon: process.env.TOSS_BRAND_ICON || '',
   },
