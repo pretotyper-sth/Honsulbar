@@ -13,7 +13,7 @@
 - 메서드: `POST`
 - Basic Auth 헤더 입력란: `username:password` 형태의 충분히 긴 임의 값. `Basic ` 접두어 또는 Base64 인코딩값을 입력하지 않습니다.
 - Vercel Production 환경변수 `TOSS_UNLINK_BASIC_AUTH`: 콘솔에 입력한 값과 동일하게 Secret으로 설정합니다.
-- Vercel Production 환경변수 `SUPABASE_SERVICE_ROLE_KEY`: Supabase의 `service_role` 키를 Secret으로 설정합니다. `VITE_` 접두어를 붙이지 않습니다.
+- Vercel Production 환경변수 `SUPABASE_SERVICE_ROLE_KEY`: Supabase API Keys 화면의 서버용 `Secret key`(또는 기존 `service_role` 키)를 Secret으로 설정합니다. `VITE_` 접두어를 붙이지 않습니다.
 - Supabase URL은 기존 `VITE_SUPABASE_URL`을 사용하거나 `SUPABASE_URL`을 설정합니다.
 - 세 환경변수 설정 후 Vercel 재배포와 토스 콘솔의 `테스트하기` 성공을 확인합니다. 키 자체는 GitHub, 채팅, 로그에 넣지 않습니다.
 
