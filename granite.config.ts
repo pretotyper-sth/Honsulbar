@@ -5,7 +5,7 @@ export default defineConfig({
   brand: {
     displayName: '혼술바',
     primaryColor: '#3182f6',
-    icon: process.env.TOSS_BRAND_ICON || '',
+    icon: process.env.TOSS_BRAND_ICON || 'https://honsulbar-app.vercel.app/honsulbar-logo.png',
   },
   web: {
     host: process.env.TOSS_DEV_HOST || 'localhost',
