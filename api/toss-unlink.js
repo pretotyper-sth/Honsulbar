@@ -26,7 +26,7 @@ export default async function handler(req, res) {
 
   const received = req.headers.authorization || '';
   const encoded = `Basic ${Buffer.from(credential, 'utf8').toString('base64')}`;
-  if (!equalSecret(received, encoded)) return res.status(401).end();
+  if (!equalSecret(received, encoded) && !equalSecret(received, `Basic ${credential}`)) return res.status(401).end();
 
   let body = req.body || {};
   if (typeof body === 'string') {

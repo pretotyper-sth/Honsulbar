@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import handler from '../api/toss-unlink.js';
 
@@ -9,13 +9,22 @@ function response() {
 const credential = 'test-user:test-password';
 const authorization = `Basic ${Buffer.from(credential).toString('base64')}`;
 
-test('rejects callbacks without the configured Basic credential', async () => {
+beforeEach(() => {
   process.env.TOSS_UNLINK_BASIC_AUTH = credential;
   process.env.SUPABASE_URL = 'https://example.supabase.co';
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-key';
+});
+
+test('rejects callbacks without the configured Basic credential', async () => {
   const res = response();
   await handler({ method: 'POST', headers: { authorization: 'Basic invalid' }, body: { userKey: '123', referrer: 'UNLINK' } }, res);
   assert.equal(res.code, 401);
+});
+
+test('accepts the console test header without mutating data', async () => {
+  const res = response();
+  await handler({ method: 'GET', headers: { authorization: `Basic ${credential}` }, query: { userKey: '0', referrer: 'UNLINK' } }, res);
+  assert.equal(res.code, 204);
 });
 
 test('records a valid unlink and treats console test user as a no-op', async () => {
