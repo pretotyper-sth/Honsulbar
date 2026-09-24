@@ -2,13 +2,13 @@ import { proximity } from './model.js';
 
 export const SEATS = [[17,12],[17,29],[17,46],[20,64],[32,79],[50,85],[68,79],[80,64],[83,46],[83,29],[83,12],[50,44]];
 export const POINT_PACKS = [
-  {points:1000,won:1000,bonus:0,label:'기본'},
-  {points:3300,won:3000,bonus:10,label:'+10%'},
-  {points:6500,won:5500,bonus:18,label:'+18%'},
-  {points:10000,won:8000,bonus:25,label:'+25%'},
-  {points:20000,won:15000,bonus:33,label:'+33%'}
+  {points:1000,won:1100,bonus:0,label:'기본'},
+  {points:3300,won:3300,bonus:10,label:'+10%'},
+  {points:6000,won:5500,bonus:20,label:'+20%'},
+  {points:10000,won:8800,bonus:25,label:'+25%'},
+  {points:20000,won:16500,bonus:33,label:'+33%'}
 ];
-export const SUBSCRIPTIONS = [{id:'monthly',name:'정기 구독',price:14900,description:'포인트 차감 없이 입장·시간 연장·미리보기 이용'}];
+export const SUBSCRIPTIONS = [{id:'monthly',name:'정기 구독',price:13200,description:'포인트 차감 없이 입장·시간 연장·미리보기 이용'}];
 export const adjacent = (a,b) => a !== 11 && b !== 11 && Math.abs(a-b) === 1;
 export function drinkLevel(seconds, host = false) {
   return { fill:host ? 1 : Math.max(0,Math.min(1,seconds/1800)), low:!host && seconds > 0 && seconds <= 60 };
