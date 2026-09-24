@@ -1,4 +1,4 @@
-import {AppError,authenticate,admin,database,rpc,toss,decryptField,isAdult,newToken,hash,dispatchOutbox,sbUrl,signPhoto,photoMatches,skuPoints} from '../server/platform.js';
+import {AppError,authenticate,admin,database,rpc,toss,decryptField,isAdult,newToken,hash,dispatchOutbox,sbUrl,signPhoto,photoMatches,skuPoints,rewardedAdGroupId} from '../server/platform.js';
 const allowedActions=new Set(['state','profile','ticket','read','region','waitlist','enter','order','leave','heartbeat','move','request','respond','cancel','focus-end','preview','signal','ad-start','ad-claim']);
 const origins=new Set(['https://honsulbar-app.vercel.app','https://honsulbar.apps.tossmini.com','https://honsulbar.private-apps.tossmini.com']);
 function withPhotos(value){
@@ -33,7 +33,7 @@ export default async function handler(req,res) {
   let body=req.body||{};if(typeof body==='string')body=JSON.parse(body);
   if(JSON.stringify(body).length>1500000)throw new AppError('요청이 너무 커요.',413);
   const action=req.method==='GET'?'config':body.action;
-  if(action==='config')return res.json({apiReady:!!(sbUrl()&&process.env.SUPABASE_SERVICE_ROLE_KEY),loginReady:!!(process.env.TOSS_CLIENT_CERT_BASE64&&process.env.TOSS_CLIENT_KEY_BASE64&&process.env.TOSS_DECRYPTION_KEY&&process.env.TOSS_AAD),devLogin:process.env.HB_DEV_LOGIN==='1',supabaseUrl:sbUrl(),supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_ANON_KEY||'',adGroupId:process.env.TOSS_REWARDED_AD_GROUP_ID||'',products:Object.keys(skuPoints()).length?skuPoints():null,iceServers:process.env.WEBRTC_ICE_SERVERS?JSON.parse(process.env.WEBRTC_ICE_SERVERS):[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]});
+  if(action==='config')return res.json({apiReady:!!(sbUrl()&&process.env.SUPABASE_SERVICE_ROLE_KEY),loginReady:!!(process.env.TOSS_CLIENT_CERT_BASE64&&process.env.TOSS_CLIENT_KEY_BASE64&&process.env.TOSS_DECRYPTION_KEY&&process.env.TOSS_AAD),devLogin:process.env.HB_DEV_LOGIN==='1',supabaseUrl:sbUrl(),supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_ANON_KEY||'',adGroupId:rewardedAdGroupId(),products:skuPoints(),iceServers:process.env.WEBRTC_ICE_SERVERS?JSON.parse(process.env.WEBRTC_ICE_SERVERS):[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]});
   if(action==='login'){
    if(typeof body.authorizationCode!=='string'||body.authorizationCode.length>2048||!['DEFAULT','SANDBOX'].includes(body.referrer))throw new AppError('로그인 정보를 확인해 주세요.');
    const token=await toss('/api-partner/v1/apps-in-toss/user/oauth2/generate-token',{authorizationCode:body.authorizationCode,referrer:body.referrer});
@@ -95,7 +95,6 @@ export default async function handler(req,res) {
    const data=body.data||{};
    if('photo' in data&&(typeof data.photo!=='string'||!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(data.photo)||data.photo.length>400000))throw new AppError('프로필 사진을 다시 선택해 주세요.');
   }
-  if(['ad-start','ad-claim'].includes(action)&&!process.env.TOSS_REWARDED_AD_GROUP_ID&&process.env.HB_DEV_LOGIN!=='1')throw new AppError('광고 등록을 준비 중이에요.',503);
   const result=await rpc('hb_action',{p_member:member,p_action:action,p_data:body.data||{}});
   if(action==='ticket')await dispatchOutbox().catch(()=>{});
   if(action==='signal')return res.json({ok:true});

@@ -4,8 +4,20 @@ export class AppError extends Error { constructor(message,status=400){super(mess
 export const hash = value => createHash('sha256').update(value).digest('hex');
 export const signPhoto = (id,v) => createHmac('sha256',`photo:${process.env.SUPABASE_SERVICE_ROLE_KEY||''}`).update(`${id}.${v}`).digest('base64url').slice(0,22);
 export const photoMatches = (id,v,s) => typeof s==='string'&&s.length===22&&timingSafeEqual(Buffer.from(s),Buffer.from(signPhoto(id,v)));
+const DEFAULT_PRODUCTS = {
+  honsulbar_p1000: {points:1000,won:1000},
+  honsulbar_p3300: {points:3300,won:3000},
+  honsulbar_p6500: {points:6500,won:5500},
+  honsulbar_p10000: {points:10000,won:8000},
+  honsulbar_p20000: {points:20000,won:15000},
+};
 export function skuPoints() {
- try{const value=JSON.parse(process.env.TOSS_IAP_PRODUCTS||'{}');return value&&typeof value==='object'?value:{};}catch{return {};}
+ try{const value=JSON.parse(process.env.TOSS_IAP_PRODUCTS||'{}');if(value&&typeof value==='object'&&Object.keys(value).length)return value;}catch{}
+ return DEFAULT_PRODUCTS;
+}
+export const TEST_REWARDED_AD_GROUP_ID = 'ait-ad-test-rewarded-id';
+export function rewardedAdGroupId() {
+ return process.env.TOSS_REWARDED_AD_GROUP_ID || TEST_REWARDED_AD_GROUP_ID;
 }
 export const newToken = () => randomBytes(32).toString('base64url');
 export const sbUrl = () => (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/,'');

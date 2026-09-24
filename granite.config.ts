@@ -12,6 +12,6 @@ export default defineConfig({
     port: 5173,
     commands: { dev: 'npm run dev', build: 'npm run build' },
   },
-  permissions: [],
+  permissions: [{ name: 'camera', access: 'access' }],
   outdir: 'dist',
 });

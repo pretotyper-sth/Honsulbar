@@ -1,4 +1,9 @@
 {
   "appName": "honsulbar",
-  "permissions": []
+  "permissions": [
+    {
+      "name": "camera",
+      "access": "access"
+    }
+  ]
 }

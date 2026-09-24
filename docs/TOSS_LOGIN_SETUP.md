@@ -8,13 +8,15 @@
 
 ## 연결 끊기 콜백
 
-- URL: `https://honsulbar-app.vercel.app/api/toss-unlink`
-- 메서드: `POST`
-- Basic Auth 헤더 입력란: `username:password` 형태의 충분히 긴 임의 값. `Basic ` 접두어 또는 Base64 인코딩값을 입력하지 않습니다.
-- Vercel Production 환경변수 `TOSS_UNLINK_BASIC_AUTH`: 콘솔에 입력한 값과 동일하게 Secret으로 설정합니다.
-- Vercel Production 환경변수 `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_URL` 또는 `VITE_SUPABASE_URL`.
+토스 로그인 정책상 필수입니다. 생년월일을 받는 경우에도 필수이고, 콜백이 없으면 번들 업로드·출시가 막힙니다. 서버는 `api/toss-unlink.js`로 이미 배포되어 있습니다. 2026-09-24 기준 인증 헤더 없이 호출하면 503이 아니라 401이 나와, Vercel Production에 `TOSS_UNLINK_BASIC_AUTH`와 Supabase 키가 들어가 있는 상태입니다.
 
-콜백은 Basic Auth를 확인하고 사용자 키가 `0`인 콘솔 시험 요청은 저장하지 않습니다. `UNLINK`는 연결 상태를 해제하고, `WITHDRAWAL_TERMS`·`WITHDRAWAL_TOSS`는 회원과 링크 기록을 삭제합니다.
+콘솔 입력값:
+
+- 콜백 URL: `https://honsulbar-app.vercel.app/api/toss-unlink`
+- HTTP 메서드: `POST`
+- Basic Auth 헤더: Vercel의 `TOSS_UNLINK_BASIC_AUTH`와 **같은** `username:password`. `Basic ` 접두어나 Base64 값을 넣지 않습니다.
+
+콘솔의 `테스트하기`는 `userKey=0`을 보냅니다. 서버는 이 시험 요청을 저장하지 않고 204를 줍니다. 실제 `UNLINK`는 세션만 끊고, `WITHDRAWAL_TERMS`·`WITHDRAWAL_TOSS`는 회원을 삭제합니다.
 
 ## 동의 항목
 
@@ -23,6 +25,47 @@
 - 이메일, 성별, 내·외국인 정보, 휴대전화번호, CI: 사용 안 함. 성별은 앱 프로필에서 선택합니다.
 - 마케팅 정보 수신 동의: 광고성 알림을 실제 발송하기 전까지 등록하지 않습니다.
 
-## 남은 콘솔 작업
+## 로그인 연동 상태 (2026-09-24)
 
-앱인토스 콘솔에서 mTLS 인증서와 복호화 키를 받아 Vercel Secret으로 넣습니다. 생년월일 동의가 필수인지, 연결 끊기 콜백 테스트가 성공하는지를 확인합니다.
+Vercel Production에서 `loginReady`가 true입니다. 연결 끊기 콜백 테스트도 성공했습니다. 남은 것은 토스 앱에 번들을 올려 실기기 로그인 확인입니다.
+
+## 한 번에 시험하려면 콘솔에 더 넣을 것
+
+번들은 로컬 `honsulbar.ait`로 이미 빌드되어 있습니다. 콘솔 값을 넣은 뒤 이 파일을 업로드하면 로그인·좌석·출석 광고·충전을 한 번에 볼 수 있습니다. 샌드박스 앱이 아니라 토스 앱 QR로 엽니다.
+
+### 1. 인앱 결제 소모품 5개
+
+정산 정보 검토는 영업일 2~3일이 걸립니다. 상품은 지금 등록해 두면 됩니다. 정기 구독은 등록하지 않습니다. 콘솔에는 **공급가**만 넣고, 판매가는 자동 계산됩니다. 10원 단위만 됩니다.
+
+| SKU | 상품명 | 유형 | 공급가 | 판매가(자동) | 지급 |
+|---|---|---|---|---|---|
+| `honsulbar_p1000` | 혼술바 1,000P | 소모품 | 910 | 1,001원 | 1000P |
+| `honsulbar_p3300` | 혼술바 3,300P | 소모품 | 2,730 | 3,003원 | 3300P |
+| `honsulbar_p6500` | 혼술바 6,500P | 소모품 | 5,000 | 5,500원 | 6500P |
+| `honsulbar_p10000` | 혼술바 10,000P | 소모품 | 7,270 | 7,997원 | 10000P |
+| `honsulbar_p20000` | 혼술바 20,000P | 소모품 | 13,640 | 15,004원 | 20000P |
+
+이미지 있으면 1024×1024. 없어도 등록은 됩니다. SKU 철자가 서버 기본값과 같아야 충전이 됩니다.
+
+### 2. 보상형 광고
+
+첫 시험은 운영 광고 ID를 쓰지 않습니다. 서버가 테스트 ID `ait-ad-test-rewarded-id`를 씁니다. 운영 그룹은 나중에 만들어 Vercel `TOSS_REWARDED_AD_GROUP_ID`에 넣으면 됩니다.
+
+나중에 운영 그룹을 만들 때: 이름 `출석_리워드`, 유형 리워드, 보상명 `출석 포인트`, 수량 `1000`. 구글 등록에 최대 2시간, 송출 승인에 최대 24시간이 걸릴 수 있습니다.
+
+### 3. 스마트 발송 (검수 후)
+
+기능성 템플릿 두 개. 승인 전에는 테스트 발송도 안 됩니다. 한 번에 시험하는 날까지 승인이 없으면 빈자리 알림·답변 푸시만 빠지고 나머지는 됩니다.
+
+- 빈자리 알림 → 승인된 `templateSetCode`를 Vercel `TOSS_PUSH_AVAILABLE_TEMPLATE`
+- 문의 답변 → 승인된 `templateSetCode`를 Vercel `TOSS_PUSH_REPLY_TEMPLATE`
+
+알림 동의문이 필요하면 캠페인에 연결합니다. 광고성 캠페인은 만들지 않습니다.
+
+### 4. 관리자 화면
+
+Supabase Authentication URL에 `https://honsulbar-app.vercel.app/?admin=1`을 넣습니다.
+
+### 5. 번들 업로드
+
+앱인토스 콘솔 → 앱 출시 → `honsulbar.ait` 업로드. 프로젝트 루트에 있습니다. 카메라 권한(`camera`)이 번들에 들어가 있습니다.
