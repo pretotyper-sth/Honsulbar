@@ -1,0 +1,57 @@
+import { appLogin } from '@apps-in-toss/web-framework';
+
+const TOKEN_KEY = 'honsulbar:session:v1';
+const DEV_KEY = 'honsulbar:dev-user:v1';
+const localHost = /(^localhost$|^127\.0\.0\.1$|^192\.168\.|vercel\.app$)/.test(location.hostname);
+export const API_BASE = import.meta.env.VITE_API_BASE ?? (localHost ? '' : 'https://honsulbar-app.vercel.app');
+export const assetUrl = path => (typeof path === 'string' && path.startsWith('/api/') ? API_BASE + path : path);
+export const insideToss = () => typeof window !== 'undefined' && !!window.ReactNativeWebView;
+
+let token = null;
+try { token = localStorage.getItem(TOKEN_KEY); } catch {}
+
+export class ApiError extends Error { constructor(message, status) { super(message); this.status = status; } }
+export const hasSession = () => !!token;
+function setToken(value) {
+  token = value;
+  try { value ? localStorage.setItem(TOKEN_KEY, value) : localStorage.removeItem(TOKEN_KEY); } catch {}
+}
+export const clearSession = () => setToken(null);
+
+async function request(body, method = 'POST') {
+  let response;
+  try {
+    response = await fetch(`${API_BASE}/api/service`, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: method === 'POST' ? JSON.stringify(body) : undefined,
+    });
+  } catch { throw new ApiError('인터넷 연결을 확인해 주세요.', 0); }
+  const data = await response.json().catch(() => ({}));
+  if (response.status === 401 && body?.action !== 'login') setToken(null);
+  if (!response.ok) throw new ApiError(data.error || '요청을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.', response.status);
+  return data;
+}
+
+export const getConfig = () => request(null, 'GET');
+export const call = (action, data, extra = {}) => request({ action, data, ...extra });
+
+export async function login(config) {
+  let result;
+  if (insideToss()) {
+    const { authorizationCode, referrer } = await appLogin();
+    result = await request({ action: 'login', authorizationCode, referrer });
+  } else if (config?.devLogin) {
+    let key = null;
+    try { key = localStorage.getItem(DEV_KEY); } catch {}
+    if (!key) { key = `9${Math.floor(Math.random() * 1e8)}`; try { localStorage.setItem(DEV_KEY, key); } catch {} }
+    result = await request({ action: 'dev-login', key });
+  } else throw new ApiError('토스 앱에서 혼술바를 열어 주세요.', 400);
+  setToken(result.token);
+  return result.state;
+}
+
+export async function logout() {
+  try { await call('logout'); } catch {}
+  setToken(null);
+}

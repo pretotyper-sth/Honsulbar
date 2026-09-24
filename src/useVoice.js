@@ -4,6 +4,7 @@ export function useVoice(enabled, onError) {
   const [mic, setMic] = useState(false);
   const [pending, setPending] = useState(false);
   const [level, setLevel] = useState(0);
+  const [stream, setStream] = useState(null);
   const resources = useRef(null);
   const generation = useRef(0);
   const acquiring = useRef(false);
@@ -18,7 +19,7 @@ export function useVoice(enabled, onError) {
       value.context.close().catch(() => {});
       resources.current = null;
     }
-    setMic(false); setLevel(0); setPending(false);
+    setMic(false); setLevel(0); setPending(false); setStream(null);
   }, []);
   useEffect(() => { if (!enabled) stop(); return stop; }, [enabled, stop]);
   async function toggle() {
@@ -51,7 +52,7 @@ export function useVoice(enabled, onError) {
       };
       resource.frame = requestAnimationFrame(sample);
       stream.getAudioTracks()[0].onended = stop;
-      setMic(true);
+      setMic(true); setStream(stream);
     } catch (error) {
       stream?.getTracks().forEach(track => track.stop());
       context?.close().catch(() => {});
@@ -63,5 +64,5 @@ export function useVoice(enabled, onError) {
       if (token === generation.current) { acquiring.current = false; setPending(false); }
     }
   }
-  return { mic, pending, level, toggle, stop };
+  return { mic, pending, level, stream, toggle, stop };
 }
