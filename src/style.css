@@ -186,8 +186,8 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .region-list button { display:flex; align-items:center; gap:12px; width:100%; padding:18px 0; font-size:16px; text-align:left; border-bottom:1px solid #f2f4f6; }
 .region-list button>svg:last-child { margin-left:auto; color:#3182f6; }
 .settings-list { display:flex; flex-direction:column; gap:2px; margin-top:28px; }
-.settings-list button { display:flex; align-items:center; justify-content:space-between; width:100%; padding:16px 2px; border-bottom:1px solid #f2f4f6; color:#333d4b; font-size:14px; text-align:left; }
-.settings-list button svg { color:#8b95a1; }
+.settings-list button, .settings-list a { display:flex; align-items:center; justify-content:space-between; width:100%; padding:16px 2px; border-bottom:1px solid #f2f4f6; color:#333d4b; font-size:14px; text-align:left; text-decoration:none; }
+.settings-list button svg, .settings-list a svg { color:#8b95a1; }
 .settings-list .danger-link { color:#d22030; }
 .form-choice { display:flex; flex-wrap:wrap; gap:8px; margin:20px 0 14px; }
 .form-choice button { padding:10px 12px; border:1px solid #e5e8eb; border-radius:10px; color:#6b7684; background:#fff; font-size:12px; }
