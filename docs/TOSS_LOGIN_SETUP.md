@@ -63,22 +63,36 @@ Vercel Production에서 `loginReady`가 true입니다. 연결 끊기 콜백 테�
 
 ### 2. 보상형 광고
 
-첫 시험은 운영 광고 ID를 쓰지 않습니다. 서버가 테스트 ID `ait-ad-test-rewarded-id`를 씁니다. 운영 그룹은 나중에 만들어 Vercel `TOSS_REWARDED_AD_GROUP_ID`에 넣으면 됩니다.
+앱인토스 콘솔 → 해당 미니앱 → 인앱 광고 → 광고 그룹 생성.
 
-나중에 운영 그룹을 만들 때: 이름 `출석_리워드`, 유형 리워드, 보상명 `출석 포인트`, 수량 `1000`. 구글 등록에 최대 2시간, 송출 승인에 최대 24시간이 걸릴 수 있습니다.
+| 항목 | 값 |
+|---|---|
+| 광고 그룹 이름 | `출석_리워드` |
+| 광고 유형 | 리워드 |
+| 보상명 | `출석 포인트` |
+| 수량 | `1000` |
 
-### 3. 스마트 발송 (검수 후)
+만든 뒤 상세 화면의 광고 그룹 ID를 Vercel `TOSS_REWARDED_AD_GROUP_ID`에 넣습니다. 구글 등록에 최대 2시간, 송출 승인에 최대 24시간이 걸릴 수 있습니다. 첫 시험은 운영 ID 대신 테스트 ID `ait-ad-test-rewarded-id`를 씁니다. 운영 ID로 테스트하면 제재될 수 있습니다.
 
-기능성 템플릿 두 개. 승인 전에는 테스트 발송도 안 됩니다. 한 번에 시험하는 날까지 승인이 없으면 빈자리 알림·답변 푸시만 빠지고 나머지는 됩니다.
+### 3. 스마트 발송 (지금 검수 요청)
 
-- 빈자리 알림 → 승인된 `templateSetCode`를 Vercel `TOSS_PUSH_AVAILABLE_TEMPLATE`
-- 문의 답변 → 승인된 `templateSetCode`를 Vercel `TOSS_PUSH_REPLY_TEMPLATE`
+앱인토스 콘솔 → 스마트 발송 → 기능성. 광고성 캠페인은 만들지 않습니다. 승인 전에는 발송이 안 되므로 지금 올려 두는 것이 맞습니다.
 
-알림 동의문이 필요하면 캠페인에 연결합니다. 광고성 캠페인은 만들지 않습니다.
+빈자리 알림은 특정 시점에 보내므로 알림 동의문을 먼저 만들고 캠페인에 연결합니다.
+
+| 용도 | 이름 | 제목 | 본문 |
+|---|---|---|---|
+| 빈자리 알림 | 빈자리 알림 | 빈자리 안내 | 신청한 혼술바에 자리가 생겼어요. |
+| 문의 답변 | 문의 답변 | 문의 답변 | 남겨주신 문의에 답변이 도착했어요. |
+
+승인된 `templateSetCode`를 Vercel `TOSS_PUSH_AVAILABLE_TEMPLATE`, `TOSS_PUSH_REPLY_TEMPLATE`에 넣습니다.
 
 ### 4. 관리자 화면
 
-Supabase Authentication URL에 `https://honsulbar-app.vercel.app/?admin=1`을 넣습니다.
+지금 열린 Users 화면이 아닙니다. 왼쪽 **CONFIGURATION → URL Configuration**입니다.
+
+- Site URL: `https://honsulbar-app.vercel.app`
+- Redirect URLs: `https://honsulbar-app.vercel.app/?admin=1`
 
 ### 5. 번들 업로드
 

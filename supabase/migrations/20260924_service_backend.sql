@@ -132,8 +132,8 @@ declare mid uuid; begin
  if mid is null then select id into mid from hb_members where toss_key=p_key; return mid; end if;
  insert into hb_bonus_claims(key_hash) values(encode(sha256(convert_to('hb:'||p_key,'UTF8')),'hex')) on conflict do nothing;
  if found then
-  update hb_members set balance=balance+1000 where id=mid;
-  insert into hb_ledger(member_id,label,amount,reference) values(mid,'가입 축하 포인트',1000,'welcome:'||mid);
+  update hb_members set balance=balance+2000 where id=mid;
+  insert into hb_ledger(member_id,label,amount,reference) values(mid,'가입 축하 포인트',2000,'welcome:'||mid);
  end if;
  return mid;
 end $$;

@@ -22,7 +22,7 @@ test('signup bonus is granted once per toss account, even after withdrawal', asy
   const { db, login, snapshot } = await setup();
   const first = await login('1001');
   assert.equal(await login('1001'), first);
-  assert.equal((await snapshot(first)).member.balance, 1000);
+  assert.equal((await snapshot(first)).member.balance, 2000);
   await db.query(`select apply_toss_login_disconnect('1001','withdraw')`);
   const again = await login('1001');
   assert.notEqual(again, first);
@@ -36,7 +36,7 @@ test('entering, ordering, moving to the host seat and leaving', async () => {
   await ready(me, '느긋한 토끼');
   await action(me, 'enter', { region: '서울', number: 1, drinkId: 'highball' });
   let state = await snapshot(me);
-  assert.equal(state.member.balance, 500);
+  assert.equal(state.member.balance, 1500);
   assert.equal(state.visit.seat, 0);
   assert.ok(state.visit.seconds > 1790 && state.visit.seconds <= 1800);
   assert.equal(state.rooms.find(r => r.region === '서울' && r.number === 1).count, 1);
@@ -48,7 +48,7 @@ test('entering, ordering, moving to the host seat and leaving', async () => {
   await action(me, 'order', { drinkId: 'wine' });
   state = await snapshot(me);
   assert.equal(state.visit.seconds, held + 1800);
-  assert.equal(state.member.balance, 0);
+  assert.equal(state.member.balance, 1000);
   await action(me, 'move', { seat: 4 });
   state = await snapshot(me);
   assert.equal(state.visit.seat, 4);
@@ -73,7 +73,7 @@ test('seat swap moves points and seats atomically, focus pairs neighbours', asyn
   await action(b, 'respond', { id, accept: true });
   sa = await snapshot(a); sb = await snapshot(b);
   assert.equal(sa.visit.seat, 1); assert.equal(sb.visit.seat, 5);
-  assert.equal(sa.member.balance, 0); assert.equal(sb.member.balance, 1000);
+  assert.equal(sa.member.balance, 1000); assert.equal(sb.member.balance, 2000);
   assert.equal(sb.swapRewardsToday, 1);
   await assert.rejects(action(a, 'request', { targetId: b, kind: 'focus' }), /옆자리/);
   await action(a, 'move', { seat: 4 });
@@ -104,7 +104,7 @@ test('preview, waitlist and daily ad reward', async () => {
   await action(guest, 'enter', { region: '대구', number: 1, drinkId: 'citrus' });
   const preview = await action(me, 'preview', { region: '대구', number: 1 });
   assert.equal(preview.length, 1);
-  assert.equal((await snapshot(me)).member.balance, 500);
+  assert.equal((await snapshot(me)).member.balance, 1500);
   await action(me, 'waitlist', { region: '대구', number: 1 });
   assert.deepEqual((await snapshot(me)).waitlist, ['대구:1']);
   const { id } = await action(me, 'ad-start');
@@ -112,7 +112,7 @@ test('preview, waitlist and daily ad reward', async () => {
   await db.query(`update hb_ad_claims set created_at=now()-interval '30 seconds' where id=$1`, [id]);
   await action(me, 'ad-claim', { id });
   const state = await snapshot(me);
-  assert.equal(state.member.balance, 1500);
+  assert.equal(state.member.balance, 2500);
   assert.equal(state.attendanceDate, new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(new Date()));
   await assert.rejects(action(me, 'ad-start'), /이미/);
 });
@@ -121,5 +121,5 @@ test('credited orders are idempotent', async () => {
   const { login, snapshot, db } = await setup();
   const me = await login('6001');
   for (let i = 0; i < 2; i++) await db.query(`select hb_credit_order($1,'order-1','sku',3300,3000)`, [me]);
-  assert.equal((await snapshot(me)).member.balance, 4300);
+  assert.equal((await snapshot(me)).member.balance, 5300);
 });
