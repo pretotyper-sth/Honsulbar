@@ -11,9 +11,22 @@ const DEFAULT_PRODUCTS = {
   honsulbar_p10000: {points:10000,won:8800},
   honsulbar_p20000: {points:20000,won:16500},
 };
+export const SUBSCRIPTION_SKU = 'honsulbar_sub_monthly';
+export const SUBSCRIPTION_WON = 13200;
 export function skuPoints() {
  try{const value=JSON.parse(process.env.TOSS_IAP_PRODUCTS||'{}');if(value&&typeof value==='object'&&Object.keys(value).length)return value;}catch{}
  return DEFAULT_PRODUCTS;
+}
+export function subscriptionSku() {
+ return process.env.TOSS_SUBSCRIPTION_SKU || SUBSCRIPTION_SKU;
+}
+export function isSubscriptionSku(sku) {
+ return sku === subscriptionSku();
+}
+export function parseTossTime(value) {
+ if(!value) return null;
+ const text=String(value);
+ return /Z$|[+-]\d{2}:\d{2}$/.test(text) ? text : `${text}Z`;
 }
 export const TEST_REWARDED_AD_GROUP_ID = 'ait-ad-test-rewarded-id';
 export function rewardedAdGroupId() {

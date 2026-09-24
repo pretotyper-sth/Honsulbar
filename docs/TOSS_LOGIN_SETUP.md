@@ -59,7 +59,16 @@ Vercel Production에서 `loginReady`가 true입니다. 연결 끊기 콜백 테�
 
 이미지: `docs/iap-images/honsulbar_sub_monthly.png`
 
-결제 알림 URL은 서버 웹훅을 붙인 뒤에 넣는다. 상품만 먼저 등록해도 된다. 앱의 시작하기는 아직 `준비 중`이며, `createSubscriptionPurchaseOrder`와 웹훅을 연동해야 실제 결제가 된다. 샌드박스에서는 구독 시험을 할 수 없고 토스 앱에서만 된다.
+앱의 시작하기는 `createSubscriptionPurchaseOrder`로 연결되어 있습니다. 첫 결제는 토스 앱에서 바로 되고, 갱신·해지는 결제 알림 URL이 있어야 서버에 반영됩니다. 샌드박스에서는 구독 시험을 할 수 없고 토스 앱에서만 됩니다.
+
+콘솔 → 인앱 결제 → 결제 알림 URL:
+
+| 항목 | 값 |
+|---|---|
+| 결제 알림 URL | `https://honsulbar-app.vercel.app/api/toss-iap` |
+| Basic Auth | 지금은 비워 두세요. 나중에 Vercel `TOSS_IAP_BASIC_AUTH`에 `username:password`를 넣은 뒤 같은 값을 여기에도 넣습니다. |
+
+URL을 저장하면 토스가 `callback.registration_verification`을 보냅니다. 서버가 204를 주면 활성화됩니다.
 
 ### 2. 보상형 광고
 
@@ -76,16 +85,34 @@ Vercel Production에서 `loginReady`가 true입니다. 연결 끊기 콜백 테�
 
 ### 3. 스마트 발송 (지금 검수 요청)
 
-앱인토스 콘솔 → 스마트 발송 → 기능성. 광고성 캠페인은 만들지 않습니다. 승인 전에는 발송이 안 되므로 지금 올려 두는 것이 맞습니다.
+앱인토스 콘솔 → 스마트 발송 → **기능성**. 광고성 캠페인은 만들지 않습니다. 발송 방식은 **직접 API로 발송하기**. 승인 전에는 테스트 발송도 안 됩니다.
 
-빈자리 알림은 특정 시점에 보내므로 알림 동의문을 먼저 만들고 캠페인에 연결합니다.
+제목 7자, 본문 25자(공백 포함). 제목은 명사형, 본문은 `~요.` 체. 검수는 영업일 1~2일입니다.
 
-| 용도 | 이름 | 제목 | 본문 |
-|---|---|---|---|
-| 빈자리 알림 | 빈자리 알림 | 빈자리 안내 | 신청한 혼술바에 자리가 생겼어요. |
-| 문의 답변 | 문의 답변 | 문의 답변 | 남겨주신 문의에 답변이 도착했어요. |
+#### 3-1. 알림 동의문 (빈자리만, 먼저 만들기)
 
-승인된 `templateSetCode`를 Vercel `TOSS_PUSH_AVAILABLE_TEMPLATE`, `TOSS_PUSH_REPLY_TEMPLATE`에 넣습니다.
+빈자리는 사용자가 신청한 시점에 보내므로 동의문이 필요합니다. 문의 답변은 서비스 이행 필수 정보라 동의문이 없습니다.
+
+| 항목 | 값 |
+|---|---|
+| 알림 동의문 이름 | `빈자리 알림 동의` |
+| 알림 발송 시점 | `신청한 호점에 빈자리가 생겼을 때` |
+| 알림 발송 방법 | `특정 조건 충족` |
+| 조건 | `빈자리 알림을 신청한 호점에 자리가 생겼을 때` |
+
+#### 3-2. 기능성 캠페인 2개
+
+| 항목 | 빈자리 알림 | 문의 답변 |
+|---|---|---|
+| 캠페인 제목 | `빈자리 알림` | `문의 답변` |
+| 제목 | `빈자리 안내` (6자) | `문의 답변` (5자) |
+| 내용 | `신청한 바에 자리가 생겼어요.` (16자) | `문의에 답변이 도착했어요.` (14자) |
+| 이동 URL | `https://honsulbar-app.vercel.app` | `https://honsulbar-app.vercel.app` |
+| 발송 코드 | `honsulbar-seat-open` | `honsulbar-inquiry-reply` |
+| 알림 동의문 | `빈자리 알림 동의` 연결 | 없음 |
+| 발송 방식 | 직접 API로 발송하기 | 직접 API로 발송하기 |
+
+저장 후 **문구 검수 요청**. 승인된 발송 코드(또는 화면에 보이는 `templateSetCode`)를 Vercel `TOSS_PUSH_AVAILABLE_TEMPLATE`=`honsulbar-seat-open`, `TOSS_PUSH_REPLY_TEMPLATE`=`honsulbar-inquiry-reply`에 넣습니다.
 
 ### 4. 관리자 화면
 

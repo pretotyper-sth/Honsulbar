@@ -1,4 +1,4 @@
-import {AppError,authenticate,admin,database,rpc,toss,decryptField,isAdult,newToken,hash,dispatchOutbox,sbUrl,signPhoto,photoMatches,skuPoints,rewardedAdGroupId} from '../server/platform.js';
+import {AppError,authenticate,admin,database,rpc,toss,decryptField,isAdult,newToken,hash,dispatchOutbox,sbUrl,signPhoto,photoMatches,skuPoints,rewardedAdGroupId,subscriptionSku,isSubscriptionSku,parseTossTime} from '../server/platform.js';
 const allowedActions=new Set(['state','profile','ticket','read','region','waitlist','enter','order','leave','heartbeat','move','request','respond','cancel','focus-end','preview','signal','ad-start','ad-claim']);
 const origins=new Set(['https://honsulbar-app.vercel.app','https://honsulbar.apps.tossmini.com','https://honsulbar.private-apps.tossmini.com']);
 function withPhotos(value){
@@ -33,7 +33,7 @@ export default async function handler(req,res) {
   let body=req.body||{};if(typeof body==='string')body=JSON.parse(body);
   if(JSON.stringify(body).length>1500000)throw new AppError('요청이 너무 커요.',413);
   const action=req.method==='GET'?'config':body.action;
-  if(action==='config')return res.json({apiReady:!!(sbUrl()&&process.env.SUPABASE_SERVICE_ROLE_KEY),loginReady:!!(process.env.TOSS_CLIENT_CERT_BASE64&&process.env.TOSS_CLIENT_KEY_BASE64&&process.env.TOSS_DECRYPTION_KEY&&process.env.TOSS_AAD),devLogin:process.env.HB_DEV_LOGIN==='1',supabaseUrl:sbUrl(),supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_ANON_KEY||'',adGroupId:rewardedAdGroupId(),products:skuPoints(),iceServers:process.env.WEBRTC_ICE_SERVERS?JSON.parse(process.env.WEBRTC_ICE_SERVERS):[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]});
+  if(action==='config')return res.json({apiReady:!!(sbUrl()&&process.env.SUPABASE_SERVICE_ROLE_KEY),loginReady:!!(process.env.TOSS_CLIENT_CERT_BASE64&&process.env.TOSS_CLIENT_KEY_BASE64&&process.env.TOSS_DECRYPTION_KEY&&process.env.TOSS_AAD),devLogin:process.env.HB_DEV_LOGIN==='1',supabaseUrl:sbUrl(),supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_ANON_KEY||'',adGroupId:rewardedAdGroupId(),products:skuPoints(),subscriptionSku:subscriptionSku(),iceServers:process.env.WEBRTC_ICE_SERVERS?JSON.parse(process.env.WEBRTC_ICE_SERVERS):[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]});
   if(action==='login'){
    if(typeof body.authorizationCode!=='string'||body.authorizationCode.length>2048||!['DEFAULT','SANDBOX'].includes(body.referrer))throw new AppError('로그인 정보를 확인해 주세요.');
    const token=await toss('/api-partner/v1/apps-in-toss/user/oauth2/generate-token',{authorizationCode:body.authorizationCode,referrer:body.referrer});
@@ -84,6 +84,11 @@ export default async function handler(req,res) {
    if(typeof body.orderId!=='string'||!/^[\w-]{8,80}$/.test(body.orderId))throw new AppError('주문 정보를 확인해 주세요.');
    const [m]=await database(`hb_members?id=eq.${member}&select=toss_key`);
    const order=await toss('/api-partner/v1/apps-in-toss/order/get-order-status',{orderId:body.orderId},{'x-toss-user-key':m.toss_key});
+   if(isSubscriptionSku(order?.sku)){
+    if(!['PAYMENT_COMPLETED','PURCHASED','ACTIVE'].includes(order.status))throw new AppError('결제가 완료되지 않았어요.',409);
+    await rpc('hb_apply_subscription',{p_member:member,p_order:body.orderId,p_sku:order.sku,p_access:true,p_auto_renew:true,p_expires:parseTossTime(order.expiresAt||order.expires_at)});
+    return res.json({ok:true,state:withPhotos(await rpc('hb_snapshot',{p_member:member}))});
+   }
    const product=products[order?.sku];
    if(!product)throw new AppError('등록되지 않은 상품이에요. 고객센터에 문의해 주세요.',400);
    if(!['PAYMENT_COMPLETED','PURCHASED'].includes(order.status))throw new AppError('결제가 완료되지 않았어요.',409);

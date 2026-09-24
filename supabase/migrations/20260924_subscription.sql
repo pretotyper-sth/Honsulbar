@@ -1,155 +1,9 @@
 begin;
-create table if not exists public.hb_members (
- id uuid primary key default gen_random_uuid(), toss_key text unique not null,
- nickname text not null default '느긋한 구름', gender text, photo text,
- adult boolean not null default false, photo_checked boolean not null default false,
- balance integer not null default 0 check(balance>=0), banned_until timestamptz,
- sub_sku text, sub_order_id text, sub_access boolean not null default false,
- sub_auto_renew boolean not null default false, sub_expires_at timestamptz,
- created_at timestamptz not null default now(), updated_at timestamptz not null default now()
-);
-create table if not exists public.hb_sessions (
- token_hash text primary key, member_id uuid not null references hb_members on delete cascade,
- expires_at timestamptz not null default now()+interval '7 days'
-);
-create table if not exists public.hb_ledger (
- id uuid primary key default gen_random_uuid(), member_id uuid references hb_members on delete set null,
- label text not null, amount integer not null, reference text unique,
- created_at timestamptz not null default now()
-);
-create table if not exists public.hb_tickets (
- id uuid primary key default gen_random_uuid(), member_id uuid references hb_members on delete set null,
- kind text not null check(kind in ('inquiry','report')), category text not null,
- message text not null check(length(message) between 1 and 2000), target_id uuid,
- status text not null default 'pending' check(status in ('pending','reviewing','answered','closed')),
- answer text, answered_at timestamptz, answered_by text,
- created_at timestamptz not null default now(), updated_at timestamptz not null default now()
-);
-create table if not exists public.hb_notifications (
- id uuid primary key default gen_random_uuid(), member_id uuid not null references hb_members on delete cascade,
- kind text not null, title text not null, body text not null, data jsonb not null default '{}',
- read_at timestamptz, created_at timestamptz not null default now()
-);
-create table if not exists public.hb_outbox (
- id uuid primary key default gen_random_uuid(), kind text not null, data jsonb not null,
- dedupe text unique not null, attempts integer not null default 0, sent_at timestamptz,
- next_attempt_at timestamptz not null default now(), locked_until timestamptz, last_error text,
- created_at timestamptz not null default now()
-);
-create table if not exists public.hb_rooms (
- id uuid primary key default gen_random_uuid(), region text not null, number integer not null,
- unique(region,number)
-);
-insert into hb_rooms(region,number) select r,1 from unnest(array['서울','경기','인천','부산','대구']) r on conflict do nothing;
-create table if not exists public.hb_visits (
- member_id uuid primary key references hb_members on delete cascade,
- id uuid unique not null default gen_random_uuid(), room_id uuid not null references hb_rooms,
- seat integer not null check(seat between 0 and 11), drink_id text not null,
- expires_at timestamptz not null, joined_at timestamptz not null default now(),
- heartbeat_at timestamptz not null default now(), speaker boolean not null default false,
- held integer,
- constraint hb_visits_room_seat unique(room_id,seat) deferrable initially immediate
-);
-create table if not exists public.hb_bonus_claims (
- key_hash text primary key, created_at timestamptz not null default now()
-);
-create table if not exists public.hb_requests (
- id uuid primary key default gen_random_uuid(), sender uuid not null references hb_members on delete cascade,
- receiver uuid not null references hb_members on delete cascade, room_id uuid not null references hb_rooms,
- kind text not null check(kind in ('swap','focus','wave')), sender_seat integer not null, receiver_seat integer not null,
- status text not null default 'pending', created_at timestamptz not null default now(), expires_at timestamptz not null default now()+interval '30 seconds',
- check(sender<>receiver)
-);
-create table if not exists public.hb_focus (
- member_id uuid primary key references hb_members on delete cascade,
- partner_id uuid unique not null references hb_members on delete cascade, check(member_id<>partner_id)
-);
-create table if not exists public.hb_waitlist (
- member_id uuid not null references hb_members on delete cascade, room_id uuid not null references hb_rooms,
- created_at timestamptz not null default now(), primary key(member_id,room_id)
-);
-create table if not exists public.hb_regions (
- member_id uuid not null references hb_members on delete cascade, region text not null,
- created_at timestamptz not null default now(), primary key(member_id,region)
-);
-create table if not exists public.hb_signals (
- id bigint generated always as identity primary key, sender uuid not null references hb_members on delete cascade,
- receiver uuid not null references hb_members on delete cascade, data jsonb not null,
- created_at timestamptz not null default now()
-);
-create table if not exists public.hb_orders (
- order_id text primary key, member_id uuid references hb_members on delete set null,
- sku text not null, points integer not null, amount integer not null, status text not null default 'paid',
- created_at timestamptz not null default now()
-);
-create table if not exists public.hb_ad_claims (
- id uuid primary key default gen_random_uuid(), member_id uuid not null references hb_members on delete cascade,
- created_at timestamptz not null default now(), claimed_at timestamptz
-);
-create index if not exists hb_tickets_member_date on hb_tickets(member_id,created_at desc);
-create index if not exists hb_notifications_member_date on hb_notifications(member_id,created_at desc);
-create index if not exists hb_ledger_member_date on hb_ledger(member_id,created_at desc);
-create index if not exists hb_signals_receiver on hb_signals(receiver,id);
-create index if not exists hb_outbox_pending on hb_outbox(next_attempt_at) where sent_at is null;
-
-do $$ declare t text; begin
- for t in select tablename from pg_tables where schemaname='public' and tablename like 'hb_%' loop
- execute format('alter table public.%I enable row level security',t);
- execute format('revoke all on public.%I from anon, authenticated',t);
- execute format('grant all on public.%I to service_role',t);
- end loop;
-end $$;
-
-create or replace function public.hb_notify(p_member uuid,p_kind text,p_title text,p_body text,p_data jsonb default '{}') returns uuid
-language plpgsql security definer set search_path=public as $$
-declare nid uuid; begin
- insert into hb_notifications(member_id,kind,title,body,data) values(p_member,p_kind,p_title,p_body,p_data) returning id into nid;
- insert into hb_outbox(kind,data,dedupe) values('push',jsonb_build_object('memberId',p_member,'kind',p_kind,'notificationId',nid),nid::text);
- return nid;
-end $$;
-
-create or replace function public.hb_ticket_answered() returns trigger language plpgsql security definer set search_path=public as $$
-begin
- if new.answer is distinct from old.answer and nullif(trim(new.answer),'') is not null then
- new.answered_at=now(); new.updated_at=now(); new.status='answered';
- if new.member_id is not null then perform hb_notify(new.member_id,'inquiry','문의 답변이 도착했어요','운영팀의 답변을 확인해 주세요.',jsonb_build_object('inquiryId',new.id)); end if;
- end if;
- return new;
-end $$;
-drop trigger if exists hb_ticket_answer on hb_tickets;
-create trigger hb_ticket_answer before update on hb_tickets for each row execute function hb_ticket_answered();
-
-create or replace function public.hb_seconds(v hb_visits) returns integer language sql stable as $$
- select case when v.seat=11 then coalesce(v.held,0) else greatest(0,ceil(extract(epoch from v.expires_at-now())))::integer end;
-$$;
-create or replace function public.hb_seat_update(p_member uuid,p_seat integer,p_seconds integer) returns void language sql security definer set search_path=public as $$
- update hb_visits set seat=p_seat,held=case when p_seat=11 then p_seconds else null end,
- expires_at=case when p_seat=11 then 'infinity'::timestamptz else now()+make_interval(secs=>p_seconds) end where member_id=p_member;
-$$;
-create or replace function public.hb_login(p_key text) returns uuid language plpgsql security definer set search_path=public as $$
-declare mid uuid; begin
- select id into mid from hb_members where toss_key=p_key;
- if mid is not null then return mid; end if;
- insert into hb_members(toss_key,adult) values(p_key,true) on conflict(toss_key) do nothing returning id into mid;
- if mid is null then select id into mid from hb_members where toss_key=p_key; return mid; end if;
- insert into hb_bonus_claims(key_hash) values(encode(sha256(convert_to('hb:'||p_key,'UTF8')),'hex')) on conflict do nothing;
- if found then
-  update hb_members set balance=balance+2000 where id=mid;
-  insert into hb_ledger(member_id,label,amount,reference) values(mid,'가입 축하 포인트',2000,'welcome:'||mid);
- end if;
- return mid;
-end $$;
-
-create or replace function public.hb_cleanup() returns void language plpgsql security definer set search_path=public as $$
-declare r record; begin
- delete from hb_visits where heartbeat_at<now()-interval '90 seconds' or expires_at<=now()-interval '3 minutes';
- delete from hb_focus f where not exists(select 1 from hb_visits a join hb_visits b on a.room_id=b.room_id where a.member_id=f.member_id and b.member_id=f.partner_id and a.seat<>11 and b.seat<>11 and abs(a.seat-b.seat)=1);
- update hb_requests set status='expired' where status='pending' and expires_at<now();
- for r in select w.member_id,w.room_id,v.region,v.number from hb_waitlist w join hb_rooms v on v.id=w.room_id where (select count(*) from hb_visits where room_id=w.room_id)<12 for update of w skip locked loop
- perform hb_notify(r.member_id,'available',r.region||' '||r.number||'호점','빈자리가 생겼어요. 지금 입장할 수 있어요.',jsonb_build_object('region',r.region,'number',r.number));
- delete from hb_waitlist where member_id=r.member_id and room_id=r.room_id;
- end loop;
-end $$;
+alter table public.hb_members add column if not exists sub_sku text;
+alter table public.hb_members add column if not exists sub_order_id text;
+alter table public.hb_members add column if not exists sub_access boolean not null default false;
+alter table public.hb_members add column if not exists sub_auto_renew boolean not null default false;
+alter table public.hb_members add column if not exists sub_expires_at timestamptz;
 
 create or replace function public.hb_action(p_member uuid,p_action text,p_data jsonb default '{}') returns jsonb
 language plpgsql security definer set search_path=public as $$
@@ -312,8 +166,7 @@ declare v hb_visits; output jsonb; begin
  'swapRequestsToday',(select count(*) from hb_requests where sender=p_member and kind='swap' and created_at>date_trunc('day',now() at time zone 'Asia/Seoul') at time zone 'Asia/Seoul'),
  'swapRewardsToday',(select count(*) from hb_ledger where member_id=p_member and label='자리 양보 보상' and created_at>date_trunc('day',now() at time zone 'Asia/Seoul') at time zone 'Asia/Seoul'),
  'requestedSeats',coalesce((select jsonb_agg(distinct receiver||':'||receiver_seat) from hb_requests where sender=p_member and kind='swap'),'[]'),
- 'rooms',coalesce((select jsonb_agg(x) from(select r.region,r.number,r.id,count(hv.member_id)::integer as count,coalesce(bool_or(hv.member_id in (select t.target_id from hb_tickets t where t.member_id=p_member and t.kind='report' and t.target_id is not null)),false) as "hasReportedGuest" from hb_rooms r left join hb_visits hv on hv.room_id=r.id group by r.id order by r.region,r.number)x),'[]'),
- 'reportedIds',coalesce((select jsonb_agg(distinct target_id) from hb_tickets where member_id=p_member and kind='report' and target_id is not null),'[]'),
+ 'rooms',coalesce((select jsonb_agg(x) from(select r.region,r.number,r.id,count(hv.member_id)::integer as count from hb_rooms r left join hb_visits hv on hv.room_id=r.id group by r.id order by r.region,r.number)x),'[]'),
  'guests',coalesce((select jsonb_agg(jsonb_build_object('id',m.id,'nickname',m.nickname,'photo',case when m.photo is null then null else floor(extract(epoch from m.updated_at))::bigint end,'gender',m.gender,'seat',a.seat,'drinkId',a.drink_id,'seconds',hb_seconds(a),'speaker',a.speaker)) from hb_visits a join hb_members m on m.id=a.member_id where a.room_id=v.room_id and m.id<>p_member),'[]'),
  'partners',coalesce((select jsonb_object_agg(member_id,partner_id) from hb_focus where member_id in(select member_id from hb_visits where room_id=v.room_id)),'{}'),
  'requests',coalesce((select jsonb_agg(r) from hb_requests r where (receiver=p_member or sender=p_member) and status='pending' and kind<>'wave'),'[]'),
@@ -343,52 +196,10 @@ begin
  end if;
 end $$;
 
-create or replace function public.hb_credit_order(p_member uuid,p_order text,p_sku text,p_points integer,p_amount integer) returns void language plpgsql security definer set search_path=public as $$
-begin
- perform pg_advisory_xact_lock(73124);
- if p_points<=0 or p_amount<=0 then raise exception 'Invalid purchase'; end if;
- if exists(select 1 from hb_orders where order_id=p_order and member_id is distinct from p_member) then raise exception 'Order owner mismatch'; end if;
- insert into hb_orders(order_id,member_id,sku,points,amount) values(p_order,p_member,p_sku,p_points,p_amount) on conflict do nothing;
- if found then
- update hb_members set balance=balance+p_points where id=p_member;
- insert into hb_ledger(member_id,label,amount,reference) values(p_member,'포인트 충전',p_points,'order:'||p_order);
- end if;
-end $$;
-
-create or replace function public.hb_claim_outbox() returns setof hb_outbox language sql security definer set search_path=public as $$
- update hb_outbox set locked_until=now()+interval '2 minutes',attempts=attempts+1 where id in(select id from hb_outbox where sent_at is null and next_attempt_at<=now() and (locked_until is null or locked_until<now()) and attempts<10 order by created_at limit 20 for update skip locked) returning *;
-$$;
-create or replace function public.hb_retention() returns void language plpgsql security definer set search_path=public as $$
-begin
- perform hb_cleanup();
- delete from hb_sessions where expires_at<now();
- delete from hb_signals where created_at<now()-interval '2 minutes';
- delete from hb_ad_claims where created_at<now()-interval '1 day';
- delete from hb_notifications where created_at<now()-interval '90 days';
- delete from hb_requests where created_at<now()-interval '1 year';
- delete from hb_tickets where updated_at<now()-interval '3 years' and status in('answered','closed');
- delete from hb_ledger where created_at<now()-interval '5 years';
- delete from hb_orders where created_at<now()-interval '5 years';
- delete from hb_outbox where sent_at<now()-interval '30 days';
- delete from hb_waitlist where created_at<now()-interval '7 days';
- delete from hb_regions where created_at<now()-interval '1 year';
-end $$;
-create or replace function public.apply_toss_login_disconnect(p_user_key text,p_action text) returns void language plpgsql security definer set search_path=public as $$
-begin
- if p_user_key !~ '^[0-9]{1,30}$' or p_user_key='0' then raise exception 'Invalid user key'; end if;
- delete from hb_sessions where member_id in(select id from hb_members where toss_key=p_user_key);
- delete from hb_visits where member_id in(select id from hb_members where toss_key=p_user_key);
- if p_action='withdraw' then
- delete from hb_members where toss_key=p_user_key;
- delete from toss_login_links where user_key=p_user_key;
- elsif p_action='unlink' then
- insert into toss_login_links(user_key,is_connected,disconnected_at) values(p_user_key,false,now()) on conflict(user_key) do update set is_connected=false,disconnected_at=now();
- else raise exception 'Invalid action'; end if;
-end $$;
-do $$ declare f record; begin
- for f in select p.oid::regprocedure as signature from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname like 'hb_%' loop
- execute format('revoke all on function %s from public,anon,authenticated',f.signature);
- execute format('grant execute on function %s to service_role',f.signature);
- end loop;
-end $$;
+revoke all on function public.hb_apply_subscription(uuid,text,text,boolean,boolean,timestamptz) from public, anon, authenticated;
+grant execute on function public.hb_apply_subscription(uuid,text,text,boolean,boolean,timestamptz) to service_role;
+revoke all on function public.hb_action(uuid,text,jsonb) from public, anon, authenticated;
+grant execute on function public.hb_action(uuid,text,jsonb) to service_role;
+revoke all on function public.hb_snapshot(uuid,bigint,integer) from public, anon, authenticated;
+grant execute on function public.hb_snapshot(uuid,bigint,integer) to service_role;
 commit;

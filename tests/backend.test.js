@@ -97,6 +97,20 @@ test('tickets notify the member when answered and queue an email', async () => {
   assert.equal((await one(`select count(*)::int as n from hb_outbox where kind='push'`)).n, 1);
 });
 
+test('reported guests are listed and marked on their current room', async () => {
+  const { action, snapshot, login, ready } = await setup();
+  const me = await login('8001'), other = await login('8002');
+  await ready(me, '차분한 산책러');
+  await ready(other, '반짝이는 치즈');
+  await action(other, 'enter', { region: '서울', number: 1, drinkId: 'beer' });
+  assert.deepEqual((await snapshot(me)).reportedIds, []);
+  assert.equal((await snapshot(me)).rooms.find(r => r.region === '서울' && r.number === 1).hasReportedGuest, false);
+  await action(me, 'ticket', { kind: 'report', category: '욕설·불쾌한 발언', message: '불편한 말이 오갔어요.', targetId: other });
+  const state = await snapshot(me);
+  assert.deepEqual(state.reportedIds.map(String), [String(other)]);
+  assert.equal(state.rooms.find(r => r.region === '서울' && r.number === 1).hasReportedGuest, true);
+});
+
 test('preview, waitlist and daily ad reward', async () => {
   const { action, snapshot, login, ready, db } = await setup();
   const guest = await login('5001'), me = await login('5002');
@@ -115,6 +129,34 @@ test('preview, waitlist and daily ad reward', async () => {
   assert.equal(state.member.balance, 2500);
   assert.equal(state.attendanceDate, new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul' }).format(new Date()));
   await assert.rejects(action(me, 'ad-start'), /이미/);
+});
+
+test('subscription covers enter, order and preview without spending points', async () => {
+  const { action, snapshot, login, ready, db } = await setup();
+  const me = await login('7001');
+  await ready(me, '느긋한 달팽이');
+  await db.query(`select hb_apply_subscription($1,'sub-order-1','honsulbar_sub_monthly',true,true,now()+interval '30 days')`, [me]);
+  let state = await snapshot(me);
+  assert.equal(state.member.subscribed, true);
+  assert.equal(state.member.subAutoRenew, true);
+  assert.equal(state.member.balance, 2000);
+  await action(me, 'enter', { region: '서울', number: 1, drinkId: 'highball' });
+  state = await snapshot(me);
+  assert.equal(state.member.balance, 2000);
+  await action(me, 'order', { drinkId: 'wine' });
+  assert.equal((await snapshot(me)).member.balance, 2000);
+  const guest = await login('7002');
+  await ready(guest, '포근한 치즈');
+  await action(guest, 'enter', { region: '인천', number: 1, drinkId: 'beer' });
+  await action(me, 'leave');
+  await action(me, 'preview', { region: '인천', number: 1 });
+  assert.equal((await snapshot(me)).member.balance, 2000);
+  await db.query(`select hb_apply_subscription($1,'sub-order-1','honsulbar_sub_monthly',true,false,now()+interval '1 day')`, [me]);
+  state = await snapshot(me);
+  assert.equal(state.member.subscribed, true);
+  assert.equal(state.member.subAutoRenew, false);
+  await db.query(`select hb_apply_subscription($1,'sub-order-1','honsulbar_sub_monthly',false,false,now()-interval '1 hour')`, [me]);
+  assert.equal((await snapshot(me)).member.subscribed, false);
 });
 
 test('credited orders are idempotent', async () => {
