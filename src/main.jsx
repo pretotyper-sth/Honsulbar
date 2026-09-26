@@ -318,6 +318,9 @@ function App() {
   const signalCursor = useRef(0);
   const previousState = useRef(null);
   const leaving = useRef(false);
+  const pendingMove = useRef(null);
+  const freezeTimer = useRef(0);
+  const [seatFrozen, setSeatFrozen] = useState(false);
   const stateHandler = useRef(null);
   const sheetStack = useRef([]);
 
@@ -426,6 +429,11 @@ function App() {
       mesh.receive(fresher.filter(s => ids.has(s.sender)));
     }
     if (!fresh) return;
+    const target = pendingMove.current;
+    if (target != null && state.visit) {
+      if (state.visit.seat === target) pendingMove.current = null;
+      else state = { ...state, visit: { ...state.visit, seat: target } };
+    }
     const before = previousState.current;
     previousState.current = state;
     setServer(state); setSyncedAt(Date.now()); setNow(Date.now());
@@ -467,7 +475,8 @@ function App() {
       mark();
       if (!insideToss()) return;
       const top = Math.max(Number(insets?.top) || 0, 0);
-      if (top > 103) document.documentElement.style.setProperty('--ait-chrome-top', `${top}px`);
+      const chrome = top >= 80 ? top : Math.max(top, 44) + 48;
+      document.documentElement.style.setProperty('--ait-chrome-top', `${chrome}px`);
     };
     mark();
     try { apply(SafeAreaInsets.get()); } catch {}
@@ -499,7 +508,7 @@ function App() {
     timer = setTimeout(loop, screen === 'bar' ? 400 : 6000);
     return () => { stopped = true; clearTimeout(timer); };
   }, [screen, speaker, voice.mic]);
-  useEffect(() => { if (screen === 'lobby' || screen === 'bar') run('state').catch(() => {}); }, [historyLimit]);
+  useEffect(() => { if (screen === 'lobby') run('state').catch(() => {}); }, [historyLimit]);
   useEffect(() => {
     if (waitlist.length && !waitlistAlerts) {
       setWaitlistAlerts(true);
@@ -540,7 +549,7 @@ function App() {
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [screen]);
   useEffect(() => {
     let id = 0;
-    const pulse = () => { setNow(Date.now()); id = window.setTimeout(pulse, 250); };
+    const pulse = () => { setNow(Date.now()); id = window.setTimeout(pulse, 1000); };
     pulse();
     return () => clearTimeout(id);
   }, []);
@@ -1120,18 +1129,28 @@ function App() {
       setError(e.message === '사진을 읽지 못했어요. 다른 사진을 골라주세요.' ? e.message : '사진을 확인하지 못했어요. 다른 사진을 골라 주세요.');
     }
   }
+  function freezeSeats() {
+    setSeatFrozen(true);
+    clearTimeout(freezeTimer.current);
+    freezeTimer.current = window.setTimeout(() => setSeatFrozen(false), 1500);
+  }
   async function commitMove(index) {
+    if (index == null || index === seat || pendingMove.current != null) return;
     const previous = seat;
+    pendingMove.current = index;
     setServer(s => s?.visit ? { ...s, visit: { ...s.visit, seat: index } } : s);
     resetConversation();
     setSheet(null);
+    freezeSeats();
     try { await run('move', { seat: index }); }
     catch (e) {
+      pendingMove.current = null;
       setServer(s => s?.visit ? { ...s, visit: { ...s.visit, seat: previous } } : s);
       setToast(e.message);
     }
   }
   function requestMove(index) {
+    if (seatFrozen || pendingMove.current != null) return;
     if (seconds === 0 && index !== 11) { open('menu'); return; }
     if (seat !== 11 && guests.some(g => g.seat !== 11 && Math.abs(g.seat - seat) === 1)) {
       setPendingSeat(index); open('move');
@@ -1141,7 +1160,12 @@ function App() {
     resetConversation();
     voice.stop(); setSpeaker(false); setSoundOn(true); setSheet(null);
     leaving.current = true;
-    try { await run('leave'); setEntryRoom(null); } catch (e) { setToast(e.message); }
+    setServer(s => s?.visit ? { ...s, visit: { ...s.visit, away: true } } : s);
+    try { await run('leave'); setEntryRoom(null); }
+    catch (e) {
+      setServer(s => s?.visit ? { ...s, visit: { ...s.visit, away: false } } : s);
+      setToast(e.message);
+    }
     finally { leaving.current = false; }
   }
   function toggleSpeaker() {
@@ -1275,7 +1299,7 @@ function App() {
           const rotation=(i===11?180:Math.atan2(50-y,50-x)*180/Math.PI+90)+(mine?facing:0);
           return <div key={i} className={`seat-wrap ${i === 11 ? 'host-wrap' : ''} ${talking ? 'is-speaking' : ''} ${mine ? 'my-wrap' : ''} ${paired?'paired-seat':''}`} style={{left:`${x}%`,top:`${y}%`,'--voice':mine ? voice.level : .7,'--facing':`${rotation}deg`}}>
             {mine&&<span className="facing-indicator" aria-hidden="true"/>}
-            <button className={`seat ${occupied ? `occupied ${mine ? profile.gender : person.gender}` : 'empty'} ${mine ? 'mine' : ''} ${talking ? 'speaking' : ''}`} aria-label={mine ? '내 자리' : person ? `${i+1}번 손님 프로필` : i === 11 ? '빈 사장 자리로 이동' : `${i+1}번 빈자리로 이동`} onClick={() => mine ? openProfileEditor() : person ? (setSelectedGuest(person), open('guest')) : requestMove(i)}>{occupied ? <img src={mine ? myPhoto : person.photo} alt={mine ? '내 얼굴' : '손님 얼굴'}/> : <Plus size={18}/>}</button>
+            <button className={`seat ${occupied ? `occupied ${mine ? profile.gender : person.gender}` : 'empty'} ${mine ? 'mine' : ''} ${talking ? 'speaking' : ''}`} aria-label={mine ? '내 자리' : person ? `${i+1}번 손님 프로필` : i === 11 ? '빈 사장 자리로 이동' : `${i+1}번 빈자리로 이동`} disabled={!occupied && seatFrozen} onClick={() => mine ? openProfileEditor() : person ? (setSelectedGuest(person), open('guest')) : requestMove(i)}>{occupied ? <img src={mine ? myPhoto : person.photo} alt={mine ? '내 얼굴' : '손님 얼굴'}/> : <Plus size={18}/>}</button>
             {occupied && <span className="seat-drink" title={DRINKS.find(d => d.id === personDrink)?.name}><Glass id={personDrink} seconds={leftTime} host={i===11}/><span className="sr-only">{DRINKS.find(d => d.id === personDrink)?.name}, {i===11?'시간 제한 없음':`${Math.ceil(leftTime/60)}분 남음`}</span></span>}
             {paired&&<span className="pair-marker" title="서로 속삭이는 중"><MessageCircleMore size={12} style={{transform:'scaleX(-1)'}}/><span className="sr-only">서로 속삭이는 중</span></span>}{!mine&&person&&mutedGuests.includes(person.id)?<span className="muted-marker" title={reportedIds.has(person.id)?'신고로 들리지 않아요':'음소거됨'}><VolumeX size={12}/><span className="sr-only">{reportedIds.has(person.id)?'신고로 들리지 않아요':'음소거됨'}</span></span>:!mine&&person&&person.mic===false?<span className="muted-marker mic-off-marker" title="마이크 꺼짐"><MicOff size={12}/><span className="sr-only">마이크 꺼짐</span></span>:null}{talking && <Waves/>}{mine && <span className="me-label">나</span>}{i === 11 && <span className="host-label">{occupied ? '사장' : '사장 자리'}</span>}
           </div>;
