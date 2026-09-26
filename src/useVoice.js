@@ -1,13 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ensureTossMediaPermission } from './permissions';
 
 const MIC_KEY = 'honsulbar:mic:v1';
 
-function readMicPref() {
-  try { return localStorage.getItem(MIC_KEY) === '1'; } catch { return false; }
-}
 function writeMicPref(on) {
-  try { localStorage.setItem(MIC_KEY, on ? '1' : '0'); } catch {}
+  try { on ? localStorage.setItem(MIC_KEY, '1') : localStorage.removeItem(MIC_KEY); } catch {}
 }
 
 export function useVoice(enabled, onError, live = true) {
@@ -38,14 +34,6 @@ export function useVoice(enabled, onError, live = true) {
     acquiring.current = true; setPending(true);
     let stream, context;
     try {
-      const granted = await ensureTossMediaPermission('microphone');
-      if (token !== generation.current) return;
-      if (granted !== 'allowed') {
-        writeMicPref(false);
-        stop();
-        onError('마이크 권한을 허용하면 이야기할 수 있어요.');
-        return;
-      }
       stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
       if (token !== generation.current) { stream.getTracks().forEach(track => track.stop()); return; }
       context = new (window.AudioContext || window.webkitAudioContext)();
@@ -87,10 +75,6 @@ export function useVoice(enabled, onError, live = true) {
     return start();
   }, [start, stop]);
   useEffect(() => { if (!enabled) stop(); return stop; }, [enabled, stop]);
-  useEffect(() => {
-    if (!enabled) return;
-    if (!live) { stop(); return; }
-    if (readMicPref()) start();
-  }, [enabled, live, start, stop]);
+  useEffect(() => { if (enabled && !live) stop(); }, [enabled, live, stop]);
   return { mic, pending, level, stream, toggle, stop };
 }
