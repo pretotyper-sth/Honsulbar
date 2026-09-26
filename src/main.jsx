@@ -219,7 +219,7 @@ function App() {
     const before = previousState.current;
     previousState.current = state;
     setServer(state); setSyncedAt(Date.now()); setNow(Date.now());
-    setScreen(current => ['loading', 'lobby', 'bar'].includes(current) ? (state.visit ? 'bar' : 'lobby') : current);
+    setScreen(current => ['loading', 'onboarding', 'lobby', 'bar'].includes(current) ? (state.visit ? 'bar' : 'lobby') : current);
     if (!before) return;
     if (before.visit && !state.visit && !leaving.current) { voice.stop(); setSpeaker(false); setSheet(null); setToast('이용시간이 끝나 바에서 나왔어요. 다시 입장해 주세요.'); }
     const seen = new Set((before.notifications || []).map(n => n.id));
