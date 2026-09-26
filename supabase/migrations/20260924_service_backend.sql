@@ -46,7 +46,7 @@ create table if not exists public.hb_visits (
  id uuid unique not null default gen_random_uuid(), room_id uuid not null references hb_rooms,
  seat integer not null check(seat between 0 and 11), drink_id text not null,
  expires_at timestamptz not null, joined_at timestamptz not null default now(),
- heartbeat_at timestamptz not null default now(), speaker boolean not null default false,
+ heartbeat_at timestamptz not null default now(), speaker boolean not null default false, mic boolean not null default false,
  held integer,
  constraint hb_visits_room_seat unique(room_id,seat) deferrable initially immediate
 );
@@ -219,7 +219,7 @@ begin
  update hb_requests set status='cancelled' where status='pending' and (sender=p_member or receiver=p_member);
  perform hb_cleanup();
  elsif p_action='heartbeat' then
- update hb_visits set heartbeat_at=now(),speaker=coalesce((p_data->>'speaker')::boolean,false) where member_id=p_member;
+ update hb_visits set heartbeat_at=now(),speaker=coalesce((p_data->>'speaker')::boolean,false),mic=coalesce((p_data->>'mic')::boolean,false) where member_id=p_member;
  elsif p_action='move' then
  s=(p_data->>'seat')::integer;
  if v.id is null or s not between 0 and 11 then raise exception '이동할 자리를 확인해 주세요.'; end if;
@@ -314,7 +314,7 @@ declare v hb_visits; output jsonb; begin
  'requestedSeats',coalesce((select jsonb_agg(distinct receiver||':'||receiver_seat) from hb_requests where sender=p_member and kind='swap'),'[]'),
  'rooms',coalesce((select jsonb_agg(x) from(select r.region,r.number,r.id,count(hv.member_id)::integer as count,coalesce(bool_or(hv.member_id in (select t.target_id from hb_tickets t where t.member_id=p_member and t.kind='report' and t.target_id is not null)),false) as "hasReportedGuest" from hb_rooms r left join hb_visits hv on hv.room_id=r.id group by r.id order by r.region,r.number)x),'[]'),
  'reportedIds',coalesce((select jsonb_agg(distinct target_id) from hb_tickets where member_id=p_member and kind='report' and target_id is not null),'[]'),
- 'guests',coalesce((select jsonb_agg(jsonb_build_object('id',m.id,'nickname',m.nickname,'photo',case when m.photo is null then null else floor(extract(epoch from m.updated_at))::bigint end,'gender',m.gender,'seat',a.seat,'drinkId',a.drink_id,'seconds',hb_seconds(a),'speaker',a.speaker)) from hb_visits a join hb_members m on m.id=a.member_id where a.room_id=v.room_id and m.id<>p_member),'[]'),
+ 'guests',coalesce((select jsonb_agg(jsonb_build_object('id',m.id,'nickname',m.nickname,'photo',case when m.photo is null then null else floor(extract(epoch from m.updated_at))::bigint end,'gender',m.gender,'seat',a.seat,'drinkId',a.drink_id,'seconds',hb_seconds(a),'speaker',a.speaker,'mic',coalesce(a.mic,false))) from hb_visits a join hb_members m on m.id=a.member_id where a.room_id=v.room_id and m.id<>p_member),'[]'),
  'partners',coalesce((select jsonb_object_agg(member_id,partner_id) from hb_focus where member_id in(select member_id from hb_visits where room_id=v.room_id)),'{}'),
  'requests',coalesce((select jsonb_agg(r) from hb_requests r where (receiver=p_member or sender=p_member) and status='pending' and kind<>'wave'),'[]'),
  'notifications',coalesce((select jsonb_agg(x) from(select * from hb_notifications where member_id=p_member order by created_at desc limit 100)x),'[]'),

@@ -4,7 +4,7 @@
 
 ## 실행
 
-`npm install` 후 `.env.local`을 `.env.example` 기준으로 채우고 `npm run dev`로 웹과 로컬 API를 함께 연다. `npm run build`는 웹 빌드, `npm run toss:build`는 앱인토스 번들 빌드다. 실제 기기 개발은 `TOSS_DEV_HOST`에 개발 기기가 접근할 수 있는 주소를 설정하고 `npm run toss:dev`로 실행한다.
+`npm install` 후 `.env.local`을 `.env.example` 기준으로 채우고 `npm run dev`로 웹과 로컬 API를 함께 연다. `npm run build`는 웹 빌드, `npm run toss:build`는 앱인토스 번들 빌드다. `AIT_API_KEY`가 있으면 빌드 후 메모와 함께 콘솔로 자동 업로드한다. 실제 기기 개발은 `TOSS_DEV_HOST`에 개발 기기가 접근할 수 있는 주소를 설정하고 `npm run toss:dev`로 실행한다.
 
 ## 현재 동작
 

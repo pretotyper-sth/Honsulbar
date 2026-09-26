@@ -28,9 +28,18 @@ export function parseTossTime(value) {
  const text=String(value);
  return /Z$|[+-]\d{2}:\d{2}$/.test(text) ? text : `${text}Z`;
 }
+export function pushAvailableTemplate() {
+ return process.env.TOSS_PUSH_AVAILABLE_TEMPLATE || 'honsulbar-seat-open';
+}
+export function pushReplyTemplate() {
+ return process.env.TOSS_PUSH_REPLY_TEMPLATE || 'honsulbar-inquiry-reply';
+}
 export const TEST_REWARDED_AD_GROUP_ID = 'ait-ad-test-rewarded-id';
+export const LIVE_REWARDED_AD_GROUP_ID = 'ait.v2.live.2b2d1c7fbd1a451b';
 export function rewardedAdGroupId() {
- return process.env.TOSS_REWARDED_AD_GROUP_ID || TEST_REWARDED_AD_GROUP_ID;
+ const value=process.env.TOSS_REWARDED_AD_GROUP_ID;
+ if(typeof value==='string'&&/^ait[.-]/.test(value)&&value.length>12)return value;
+ return LIVE_REWARDED_AD_GROUP_ID;
 }
 export const newToken = () => randomBytes(32).toString('base64url');
 export const sbUrl = () => (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/,'');
@@ -93,7 +102,7 @@ export async function dispatchOutbox() {
  const jobs=await rpc('hb_claim_outbox',{});
  for(const job of jobs||[]) {
   const emailReady=process.env.RESEND_API_KEY&&process.env.SUPPORT_FROM_EMAIL;
-  const template=job.data.kind==='available'?process.env.TOSS_PUSH_AVAILABLE_TEMPLATE:process.env.TOSS_PUSH_REPLY_TEMPLATE;
+  const template=job.data.kind==='available'?pushAvailableTemplate():pushReplyTemplate();
   if((job.kind==='email'&&!emailReady)||(job.kind==='push'&&(!template||!process.env.TOSS_CLIENT_CERT_BASE64))) {
    await database(`hb_outbox?id=eq.${job.id}`,{method:'PATCH',body:{attempts:job.attempts-1,locked_until:null,next_attempt_at:new Date(Date.now()+3600000).toISOString(),last_error:'configuration_required'}}); continue;
   }

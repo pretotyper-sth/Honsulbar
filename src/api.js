@@ -7,6 +7,29 @@ export const API_BASE = import.meta.env.VITE_API_BASE ?? (localHost ? '' : 'http
 export const assetUrl = path => (typeof path === 'string' && path.startsWith('/api/') ? API_BASE + path : path);
 export const insideToss = () => typeof window !== 'undefined' && !!window.ReactNativeWebView;
 
+function graniteEmitter() {
+  return typeof window !== 'undefined' ? window.__GRANITE_NATIVE_EMITTER : null;
+}
+
+export function requestPushAgreement(templateCode, { onEvent, onError } = {}) {
+  const webView = typeof window !== 'undefined' ? window.ReactNativeWebView : null;
+  const emitter = graniteEmitter();
+  if (!webView || !emitter || !templateCode) {
+    onError?.(new Error('unsupported'));
+    return () => {};
+  }
+  const eventId = Math.random().toString(36).slice(2, 15);
+  const method = 'requestNotificationAgreement';
+  const offEvent = emitter.on(`${method}/onEvent/${eventId}`, data => onEvent?.(data));
+  const offError = emitter.on(`${method}/onError/${eventId}`, error => onError?.(error));
+  webView.postMessage(JSON.stringify({ type: 'addEventListener', functionName: method, eventId, args: { templateCode } }));
+  return () => {
+    try { webView.postMessage(JSON.stringify({ type: 'removeEventListener', functionName: method, eventId })); } catch {}
+    offEvent?.();
+    offError?.();
+  };
+}
+
 let token = null;
 try { token = localStorage.getItem(TOKEN_KEY); } catch {}
 

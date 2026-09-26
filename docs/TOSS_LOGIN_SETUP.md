@@ -81,7 +81,7 @@ URL을 저장하면 토스가 `callback.registration_verification`을 보냅니�
 | 보상명 | `출석 포인트` |
 | 수량 | `1000` |
 
-만든 뒤 상세 화면의 광고 그룹 ID를 Vercel `TOSS_REWARDED_AD_GROUP_ID`에 넣습니다. 구글 등록에 최대 2시간, 송출 승인에 최대 24시간이 걸릴 수 있습니다. 첫 시험은 운영 ID 대신 테스트 ID `ait-ad-test-rewarded-id`를 씁니다. 운영 ID로 테스트하면 제재될 수 있습니다.
+운영 광고 그룹 ID `ait.v2.live.2b2d1c7fbd1a451b`를 서버 기본값으로 쓰고 있습니다. 로컬 시험만 할 때는 `TOSS_REWARDED_AD_GROUP_ID=ait-ad-test-rewarded-id`를 씁니다.
 
 ### 3. 스마트 발송 (지금 검수 요청)
 
@@ -121,6 +121,19 @@ URL을 저장하면 토스가 `callback.registration_verification`을 보냅니�
 - Site URL: `https://honsulbar-app.vercel.app`
 - Redirect URLs: `https://honsulbar-app.vercel.app/?admin=1`
 
-### 5. 번들 업로드
+### 5. 번들 업로드 (한 번만 키 발급)
 
-앱인토스 콘솔 → 앱 출시 → `honsulbar.ait` 업로드. 프로젝트 루트에 있습니다. 카메라 권한(`camera`)이 번들에 들어가 있습니다.
+콘솔에 직접 올릴 필요 없습니다. CLI `ait deploy`가 공식 CI/CD 경로입니다. 문서: https://developers-apps-in-toss.toss.im/guide/operation/toss
+
+직접 할 일(최초 1회):
+
+1. 앱인토스 콘솔 → 워크스페이스 선택 → 왼쪽 메뉴 **키**
+2. API 키 발급. 권한은 `honsulbar` 또는 전체 앱
+3. 키를 아래에 넣기
+   - 이 맥: `.env.local`에 `AIT_API_KEY=발급키` 또는 `npx ait token add default 발급키`
+   - GitHub: 저장소 Settings → Secrets and variables → Actions → `AIT_API_KEY`
+4. 키를 넣은 뒤 `npm run toss:release` 한 번, 또는 main에 푸시
+
+이후 `npm run toss:build`는 번들을 만들고, 키가 있으면 커밋 제목으로 메모(`-m`, 최대 1000자)를 붙여 자동 업로드합니다. 올리기만 하려면 `npm run toss:upload`. 업로드를 건너뛰려면 `AIT_AUTO_DEPLOY=0 npm run toss:build`.
+
+카메라 권한(`camera`)은 번들에 들어 있습니다. 웹 Vercel 배포와 `.ait` 업로드는 별개입니다. 토스 앱에서 보려면 번들이 올라가야 합니다.

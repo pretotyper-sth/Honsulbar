@@ -10,6 +10,7 @@ async function setup() {
   await db.exec(`create role anon; create role authenticated; create role service_role;`);
   await db.exec(sql('20260924_toss_login_disconnect.sql'));
   await db.exec(sql('20260924_service_backend.sql'));
+  await db.exec(sql('20260924_admin_ops.sql'));
   const one = async (query, params) => (await db.query(query, params)).rows[0];
   const action = async (member, name, data = {}) => (await one('select hb_action($1,$2,$3::jsonb) as r', [member, name, JSON.stringify(data)])).r;
   const snapshot = async member => (await one('select hb_snapshot($1) as s', [member])).s;
@@ -157,6 +158,48 @@ test('subscription covers enter, order and preview without spending points', asy
   assert.equal(state.member.subAutoRenew, false);
   await db.query(`select hb_apply_subscription($1,'sub-order-1','honsulbar_sub_monthly',false,false,now()-interval '1 hour')`, [me]);
   assert.equal((await snapshot(me)).member.subscribed, false);
+});
+
+test('report stores room context, events stay cheap, and restrict kicks the guest', async () => {
+  const { action, snapshot, login, ready, db, one } = await setup();
+  const me = await login('8101'), other = await login('8102');
+  assert.equal((await one(`select count(*)::int as n from hb_events where name='signup' and member_id=$1`, [me])).n, 1);
+  await login('8101');
+  assert.equal((await one(`select count(*)::int as n from hb_events where name='login' and member_id=$1`, [me])).n, 1);
+  await ready(me, '차분한 바다');
+  await ready(other, '반짝이는 숲');
+  await action(other, 'enter', { region: '서울', number: 1, drinkId: 'beer' });
+  await action(me, 'enter', { region: '서울', number: 1, drinkId: 'wine' });
+  const { id } = await action(me, 'ticket', { kind: 'report', category: '조건만남·성매매 시도', message: '외부 연락처를 요구했어요. 010-1234-5678', targetId: other });
+  const ticket = await one(`select kind,category,message,context from hb_tickets where id=$1`, [id]);
+  assert.equal(ticket.message.includes('010-1234-5678'), true);
+  assert.equal(ticket.context.region, '서울');
+  assert.equal(ticket.context.number, 1);
+  assert.equal(ticket.context.sameRoom, true);
+  assert.equal(ticket.context.targetDrink, 'beer');
+  assert.ok(ticket.context.reporterSeat != null && ticket.context.targetSeat != null);
+  assert.equal((await one(`select count(*)::int as n from hb_events where name='report' and member_id=$1`, [me])).n, 1);
+  assert.ok((await one(`select count(*)::int as n from hb_events where name='enter'`)).n >= 2);
+  await db.query(`select hb_restrict($1, now()+interval '1 day', true, '반복 위반', true)`, [other]);
+  assert.equal((await one(`select count(*)::int as n from hb_visits where member_id=$1`, [other])).n, 0);
+  await assert.rejects(action(other, 'enter', { region: '서울', number: 1, drinkId: 'beer' }), /이용이 제한/);
+  assert.equal((await snapshot(me)).rooms.find(r => r.region === '서울' && r.number === 1).count, 1);
+  const stats = (await one(`select hb_admin_stats() as s`)).s;
+  assert.equal(stats.openReports, 1);
+  assert.equal(stats.banned, 1);
+});
+
+test('heartbeat publishes mic so guests can see a silent seat', async () => {
+  const { action, snapshot, login, ready } = await setup();
+  const me = await login('8201'), other = await login('8202');
+  await ready(me, '느긋한 마이크');
+  await ready(other, '조용한 스피커');
+  await action(other, 'enter', { region: '서울', number: 1, drinkId: 'beer' });
+  await action(me, 'enter', { region: '서울', number: 1, drinkId: 'wine' });
+  await action(other, 'heartbeat', { speaker: false, mic: false });
+  await action(me, 'heartbeat', { speaker: false, mic: true });
+  assert.equal((await snapshot(me)).guests.find(g => String(g.id) === String(other)).mic, false);
+  assert.equal((await snapshot(other)).guests.find(g => String(g.id) === String(me)).mic, true);
 });
 
 test('credited orders are idempotent', async () => {

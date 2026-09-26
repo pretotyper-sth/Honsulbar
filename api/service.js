@@ -1,4 +1,4 @@
-import {AppError,authenticate,admin,database,rpc,toss,decryptField,isAdult,newToken,hash,dispatchOutbox,sbUrl,signPhoto,photoMatches,skuPoints,rewardedAdGroupId,subscriptionSku,isSubscriptionSku,parseTossTime} from '../server/platform.js';
+import {AppError,authenticate,admin,database,rpc,toss,decryptField,isAdult,newToken,hash,dispatchOutbox,sbUrl,signPhoto,photoMatches,skuPoints,rewardedAdGroupId,subscriptionSku,isSubscriptionSku,parseTossTime,pushAvailableTemplate,pushReplyTemplate} from '../server/platform.js';
 const allowedActions=new Set(['state','profile','ticket','read','region','waitlist','enter','order','leave','heartbeat','move','request','respond','cancel','focus-end','preview','signal','ad-start','ad-claim']);
 const origins=new Set(['https://honsulbar-app.vercel.app','https://honsulbar.apps.tossmini.com','https://honsulbar.private-apps.tossmini.com']);
 function withPhotos(value){
@@ -33,7 +33,7 @@ export default async function handler(req,res) {
   let body=req.body||{};if(typeof body==='string')body=JSON.parse(body);
   if(JSON.stringify(body).length>1500000)throw new AppError('요청이 너무 커요.',413);
   const action=req.method==='GET'?'config':body.action;
-  if(action==='config')return res.json({apiReady:!!(sbUrl()&&process.env.SUPABASE_SERVICE_ROLE_KEY),loginReady:!!(process.env.TOSS_CLIENT_CERT_BASE64&&process.env.TOSS_CLIENT_KEY_BASE64&&process.env.TOSS_DECRYPTION_KEY&&process.env.TOSS_AAD),devLogin:process.env.HB_DEV_LOGIN==='1',supabaseUrl:sbUrl(),supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_ANON_KEY||'',adGroupId:rewardedAdGroupId(),products:skuPoints(),subscriptionSku:subscriptionSku(),iceServers:process.env.WEBRTC_ICE_SERVERS?JSON.parse(process.env.WEBRTC_ICE_SERVERS):[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]});
+  if(action==='config')return res.json({apiReady:!!(sbUrl()&&process.env.SUPABASE_SERVICE_ROLE_KEY),loginReady:!!(process.env.TOSS_CLIENT_CERT_BASE64&&process.env.TOSS_CLIENT_KEY_BASE64&&process.env.TOSS_DECRYPTION_KEY&&process.env.TOSS_AAD),devLogin:process.env.HB_DEV_LOGIN==='1',supabaseUrl:sbUrl(),supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_ANON_KEY||'',adGroupId:rewardedAdGroupId(),products:skuPoints(),subscriptionSku:subscriptionSku(),pushAvailableTemplate:pushAvailableTemplate(),pushReplyTemplate:pushReplyTemplate(),iceServers:process.env.WEBRTC_ICE_SERVERS?JSON.parse(process.env.WEBRTC_ICE_SERVERS):[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]});
   if(action==='login'){
    if(typeof body.authorizationCode!=='string'||body.authorizationCode.length>2048||!['DEFAULT','SANDBOX'].includes(body.referrer))throw new AppError('로그인 정보를 확인해 주세요.');
    const token=await toss('/api-partner/v1/apps-in-toss/user/oauth2/generate-token',{authorizationCode:body.authorizationCode,referrer:body.referrer});
@@ -56,8 +56,15 @@ export default async function handler(req,res) {
    if(action==='admin-list'){
     const page=Math.max(0,Math.min(10000,Number(body.page)||0));
     const status=['pending','reviewing','answered','closed'].includes(body.status)?`&status=eq.${body.status}`:'';
-    const [tickets,outbox]=await Promise.all([database(`hb_tickets?select=*&order=created_at.desc&limit=21&offset=${page*20}${status}`),database('hb_outbox?sent_at=is.null&select=id,kind,attempts,last_error,created_at&limit=30')]);
-    return res.json({tickets:tickets.slice(0,20),hasMore:tickets.length>20,outbox,email});
+    const [tickets,outbox,stats]=await Promise.all([
+     database(`hb_tickets?select=*&order=created_at.desc&limit=21&offset=${page*20}${status}`),
+     database('hb_outbox?sent_at=is.null&select=id,kind,attempts,last_error,created_at&limit=30'),
+     rpc('hb_admin_stats').catch(()=>({}))
+    ]);
+    const ids=[...new Set(tickets.flatMap(t=>[t.member_id,t.target_id]).filter(Boolean))];
+    const rows=ids.length?await database(`hb_members?id=in.(${ids.join(',')})&select=id,nickname,gender,banned_until`):[];
+    const members=Object.fromEntries((rows||[]).map(m=>[m.id,{id:m.id,nickname:m.nickname,gender:m.gender,banned_until:m.banned_until}]));
+    return res.json({tickets:tickets.slice(0,20),hasMore:tickets.length>20,outbox,email,members,stats});
    }
    if(action==='admin-reply'){
     if(!/^[\da-f-]{36}$/.test(body.id)||typeof body.answer!=='string'||!body.answer.trim()||body.answer.length>5000)throw new AppError('답변 내용을 확인해 주세요.');
@@ -68,6 +75,20 @@ export default async function handler(req,res) {
    if(action==='admin-status'){
     if(!/^[\da-f-]{36}$/.test(body.id)||!['pending','reviewing','closed'].includes(body.status))throw new AppError('상태를 확인해 주세요.');
     await database(`hb_tickets?id=eq.${body.id}`,{method:'PATCH',body:{status:body.status,updated_at:new Date().toISOString()}});
+    return res.json({ok:true});
+   }
+   if(action==='admin-restrict'){
+    if(!/^[\da-f-]{36}$/.test(body.memberId))throw new AppError('회원을 확인해 주세요.');
+    if(!['24h','7d','perm','clear','kick'].includes(body.until))throw new AppError('제한 기간을 확인해 주세요.');
+    const reason=typeof body.reason==='string'?body.reason.slice(0,80):'';
+    const until={
+     '24h':new Date(Date.now()+24*3600*1000).toISOString(),
+     '7d':new Date(Date.now()+7*24*3600*1000).toISOString(),
+     perm:'9999-12-31T00:00:00.000Z',
+     clear:null,
+     kick:null
+    }[body.until];
+    await rpc('hb_restrict',{p_member:body.memberId,p_until:until,p_kick:body.until!=='clear',p_reason:reason,p_set_ban:body.until!=='kick'});
     return res.json({ok:true});
    }
    throw new AppError('지원하지 않는 관리자 요청이에요.');
@@ -101,6 +122,7 @@ export default async function handler(req,res) {
    if('photo' in data&&(typeof data.photo!=='string'||!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(data.photo)||data.photo.length>400000))throw new AppError('프로필 사진을 다시 선택해 주세요.');
   }
   const result=await rpc('hb_action',{p_member:member,p_action:action,p_data:body.data||{}});
+  if(action==='heartbeat'&&typeof (body.data||{}).mic==='boolean')await rpc('hb_set_mic',{p_member:member,p_mic:!!body.data.mic}).catch(()=>{});
   if(action==='ticket')await dispatchOutbox().catch(()=>{});
   if(action==='signal')return res.json({ok:true});
   const state=await rpc('hb_snapshot',{p_member:member,p_after:Math.max(0,Number(body.after)||0),p_limit:Math.min(100,Math.max(10,Number(body.limit)||10))});

@@ -1,0 +1,24 @@
+name: Toss bundle
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Build and upload .ait
+        env:
+          AIT_API_KEY: ${{ secrets.AIT_API_KEY }}
+          AIT_REQUIRE_UPLOAD: '1'
+          AIT_DEPLOY_MEMO: ${{ github.event.head_commit.message }}
+        run: node scripts/toss-release.js --require-upload

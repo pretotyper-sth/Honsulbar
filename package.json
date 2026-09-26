@@ -11,7 +11,9 @@
     "test": "node --test tests/*.test.js",
     "preview": "vite preview --host 0.0.0.0",
     "toss:dev": "ait dev",
-    "toss:build": "ait build"
+    "toss:build": "node scripts/toss-release.js",
+    "toss:upload": "node scripts/toss-release.js --upload-only --require-upload",
+    "toss:release": "node scripts/toss-release.js --require-upload"
   },
   "dependencies": {
     "@apps-in-toss/web-framework": "^2.4.7",

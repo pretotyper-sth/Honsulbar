@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-export function useVoice(enabled, onError) {
+const MIC_KEY = 'honsulbar:mic:v1';
+
+function readMicPref() {
+  try { return localStorage.getItem(MIC_KEY) === '1'; } catch { return false; }
+}
+function writeMicPref(on) {
+  try { localStorage.setItem(MIC_KEY, on ? '1' : '0'); } catch {}
+}
+
+export function useVoice(enabled, onError, live = true) {
   const [mic, setMic] = useState(false);
   const [pending, setPending] = useState(false);
   const [level, setLevel] = useState(0);
@@ -21,10 +30,8 @@ export function useVoice(enabled, onError) {
     }
     setMic(false); setLevel(0); setPending(false); setStream(null);
   }, []);
-  useEffect(() => { if (!enabled) stop(); return stop; }, [enabled, stop]);
-  async function toggle() {
-    if (resources.current || acquiring.current) { stop(); return; }
-    if (!enabled) return;
+  const start = useCallback(async () => {
+    if (resources.current || acquiring.current || !enabled) return;
     if (!navigator.mediaDevices?.getUserMedia) { onError('이 브라우저에서는 마이크를 사용할 수 없어요. HTTPS나 localhost에서 열어주세요.'); return; }
     const token = ++generation.current;
     acquiring.current = true; setPending(true);
@@ -58,11 +65,23 @@ export function useVoice(enabled, onError) {
       context?.close().catch(() => {});
       if (token === generation.current) {
         stop();
+        writeMicPref(false);
         onError(error.name === 'NotAllowedError' ? '마이크 권한을 허용하면 이야기할 수 있어요.' : '마이크를 연결하지 못했어요. 연결 상태를 확인해 주세요.');
       }
     } finally {
       if (token === generation.current) { acquiring.current = false; setPending(false); }
     }
-  }
+  }, [enabled, onError, stop]);
+  const toggle = useCallback(() => {
+    if (resources.current || acquiring.current) { writeMicPref(false); stop(); return; }
+    writeMicPref(true);
+    return start();
+  }, [start, stop]);
+  useEffect(() => { if (!enabled) stop(); return stop; }, [enabled, stop]);
+  useEffect(() => {
+    if (!enabled) return;
+    if (!live) { stop(); return; }
+    if (readMicPref()) start();
+  }, [enabled, live, start, stop]);
   return { mic, pending, level, stream, toggle, stop };
 }
