@@ -78,24 +78,39 @@ function faceProbability(face) {
 function isLikelyRealFace(face, width, height) {
   const box = faceBox(face);
   const probability = faceProbability(face);
-  if (!Number.isFinite(probability) || probability < 0.72) return false;
+  if (!Number.isFinite(probability) || probability < 0.82) return false;
   const size = Math.min(box.width / width, box.height / height);
-  if (size < 0.12 || size > 0.95) return false;
+  if (size < 0.16 || size > 0.95) return false;
   const aspect = box.width / box.height;
   if (aspect < 0.52 || aspect > 1.38) return false;
+  const centerY = (box.top + box.height / 2) / height;
+  if (centerY < 0.12 || centerY > 0.72) return false;
+  if (size < 0.22 && (box.top + box.height) / height < 0.3) return false;
   const landmarks = face.landmarks || [];
   if (landmarks.length < 4) return false;
   const [rightEye, leftEye, nose, mouth] = landmarks;
   if (![rightEye, leftEye, nose, mouth].every(point => Array.isArray(point) && point.length >= 2)) return false;
+  const relY = (y) => (y - box.top) / box.height;
   const eyeY = (rightEye[1] + leftEye[1]) / 2;
+  if (relY(eyeY) > 0.48 || relY(mouth[1]) < 0.5) return false;
+  if (relY(mouth[1]) - relY(eyeY) < 0.24) return false;
   const eyeDist = Math.hypot(leftEye[0] - rightEye[0], leftEye[1] - rightEye[1]);
-  if (eyeDist < box.width * 0.2 || eyeDist > box.width * 0.7) return false;
-  if (Math.abs(leftEye[1] - rightEye[1]) > box.height * 0.2) return false;
-  if (mouth[1] < eyeY + box.height * 0.14) return false;
+  if (eyeDist < box.width * 0.22 || eyeDist > box.width * 0.66) return false;
+  if (Math.abs(leftEye[1] - rightEye[1]) > box.height * 0.16) return false;
+  if (mouth[1] < eyeY + box.height * 0.18) return false;
   if (nose[1] <= eyeY || nose[1] >= mouth[1]) return false;
   const midX = (leftEye[0] + rightEye[0]) / 2;
-  if (Math.abs(nose[0] - midX) > box.width * 0.26) return false;
-  if (Math.abs(mouth[0] - midX) > box.width * 0.3) return false;
+  if (Math.abs(nose[0] - midX) > box.width * 0.22) return false;
+  if (Math.abs(mouth[0] - midX) > box.width * 0.26) return false;
+  return true;
+}
+function faceRegionLooksLikeSkin(canvas, face) {
+  const stats = regionStats(canvas, cheekRect(face)) || regionStats(canvas, innerFaceRect(face));
+  if (!stats) return false;
+  const mean = (stats.meanR + stats.meanG + stats.meanB) / 3;
+  if (mean < 48 || mean > 242) return false;
+  if (stats.meanB > stats.meanR + 8) return false;
+  if (stats.meanR - stats.meanB < 5 && mean < 120) return false;
   return true;
 }
 function innerFaceRect(face) {
@@ -838,7 +853,7 @@ function App() {
       faceModelLoading.current = null;
       faces = await detect();
     }
-    return (faces || []).some(face => isLikelyRealFace(face, canvas.width, canvas.height) && !looksLikeIllustration(canvas, face));
+    return (faces || []).some(face => isLikelyRealFace(face, canvas.width, canvas.height) && faceRegionLooksLikeSkin(canvas, face) && !looksLikeIllustration(canvas, face));
   }
   async function choosePhoto(event) {
     const file = event.target.files?.[0]; event.target.value = ''; if (!file) return;
