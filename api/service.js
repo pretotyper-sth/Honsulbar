@@ -35,15 +35,17 @@ export default async function handler(req,res) {
   const action=req.method==='GET'?'config':body.action;
   if(action==='config')return res.json({apiReady:!!(sbUrl()&&process.env.SUPABASE_SERVICE_ROLE_KEY),loginReady:!!(process.env.TOSS_CLIENT_CERT_BASE64&&process.env.TOSS_CLIENT_KEY_BASE64&&process.env.TOSS_DECRYPTION_KEY&&process.env.TOSS_AAD),devLogin:process.env.HB_DEV_LOGIN==='1',supabaseUrl:sbUrl(),supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_ANON_KEY||'',adGroupId:rewardedAdGroupId(),products:skuPoints(),subscriptionSku:subscriptionSku(),pushAvailableTemplate:pushAvailableTemplate(),pushReplyTemplate:pushReplyTemplate(),iceServers:process.env.WEBRTC_ICE_SERVERS?JSON.parse(process.env.WEBRTC_ICE_SERVERS):[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]});
   if(action==='login'){
-   if(typeof body.authorizationCode!=='string'||body.authorizationCode.length>2048||!['DEFAULT','SANDBOX'].includes(body.referrer))throw new AppError('로그인 정보를 확인해 주세요.');
-   const token=await toss('/api-partner/v1/apps-in-toss/user/oauth2/generate-token',{authorizationCode:body.authorizationCode,referrer:body.referrer});
-   const info=await toss('/api-partner/v1/apps-in-toss/user/oauth2/login-me',undefined,{Authorization:`Bearer ${token.accessToken}`});
-   if(!/^\d{1,30}$/.test(String(info.userKey))||!info.birthday)throw new AppError('생년월일 동의 후 다시 로그인해 주세요.',403);
+   const code=typeof body.authorizationCode==='string'?body.authorizationCode.trim():'';
+   const referrer=String(body.referrer||'').trim().toUpperCase();
+   if(!code||code.length>8192||!['DEFAULT','SANDBOX'].includes(referrer))throw new AppError('로그인 정보를 확인해 주세요.');
+   const token=await toss('/api-partner/v1/apps-in-toss/user/oauth2/generate-token',{authorizationCode:code,referrer});
+   const info=await toss('/api-partner/v1/apps-in-toss/user/oauth2/login-me',undefined,{Authorization:`Bearer ${token?.accessToken||token?.access_token||''}`});
+   if(!info||!/^\d{1,30}$/.test(String(info.userKey||''))||!info.birthday)throw new AppError('생년월일 동의 후 다시 로그인해 주세요.',403);
    if(!isAdult(decryptField(info.birthday)))throw new AppError('혼술바는 만 19세 이상만 이용할 수 있어요.',403);
    const memberId=await rpc('hb_login',{p_key:String(info.userKey)});
    const [member]=await database(`hb_members?id=eq.${memberId}&select=banned_until`);
    if(member?.banned_until&&new Date(member.banned_until)>new Date())throw new AppError('이용이 제한된 계정이에요.',403);
-   await database('toss_login_links?on_conflict=user_key',{method:'POST',headers:{Prefer:'resolution=merge-duplicates'},body:{user_key:String(info.userKey),is_connected:true,disconnected_at:null}});
+   await database('toss_login_links?on_conflict=user_key',{method:'POST',headers:{Prefer:'resolution=merge-duplicates'},body:{user_key:String(info.userKey),is_connected:true,disconnected_at:null}}).catch(()=>{});
    return await startSession(res,memberId);
   }
   if(action==='dev-login'){
@@ -127,5 +129,5 @@ export default async function handler(req,res) {
   if(action==='signal')return res.json({ok:true});
   const state=await rpc('hb_snapshot',{p_member:member,p_after:Math.max(0,Number(body.after)||0),p_limit:Math.min(100,Math.max(10,Number(body.limit)||10))});
   return res.json({result:withPhotos(result),state:withPhotos(state)});
- }catch(error){return res.status(error.status||500).json({error:error instanceof AppError?error.message:'요청을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.'});}
+ }catch(error){console.error(error);return res.status(error.status||500).json({error:error instanceof AppError?error.message:'요청을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.'});}
 }

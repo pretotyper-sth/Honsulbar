@@ -62,8 +62,18 @@ export const call = (action, data, extra = {}) => request({ action, data, ...ext
 export async function login(config) {
   let result;
   if (insideToss()) {
-    const { authorizationCode, referrer } = await appLogin();
-    result = await request({ action: 'login', authorizationCode, referrer });
+    let authorizationCode, referrer;
+    try {
+      const granted = await appLogin();
+      authorizationCode = granted?.authorizationCode;
+      referrer = granted?.referrer;
+    } catch (error) {
+      const message = String(error?.message || error?.code || '');
+      if (/cancel|canceled|CANCELED|USER_DECLINED|거부/i.test(message)) throw new ApiError('로그인을 취소했어요. 다시 시작해 주세요.', 400);
+      throw new ApiError('로그인을 완료하지 못했어요. 다시 시도해 주세요.', 400);
+    }
+    if (!authorizationCode) throw new ApiError('로그인 정보를 받아오지 못했어요. 다시 시도해 주세요.', 400);
+    result = await request({ action: 'login', authorizationCode, referrer: referrer || 'DEFAULT' });
   } else if (config?.devLogin) {
     let key = null;
     try { key = localStorage.getItem(DEV_KEY); } catch {}

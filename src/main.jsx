@@ -746,7 +746,7 @@ function App() {
         <div><span>03</span><p><strong>소리 집중 방향 조절</strong><small>듣고 싶은 쪽에 귀 기울여요.</small></p></div>
       </div>
       <div className="onboarding-notice">만 19세 이상만 이용할 수 있어요.</div>
-      <Button size="xlarge" display="block" disabled={busy} onClick={completeOnboarding}>{busy ? '토스로 로그인하는 중…' : '토스로 시작하기'}</Button>    </div>
+      <Button size="xlarge" display="block" disabled={busy} onClick={completeOnboarding}>{busy ? '로그인하는 중…' : '시작하기'}</Button>    </div>
     {toast && <div className="toast" role="status">{toast}</div>}
   </main>;
 

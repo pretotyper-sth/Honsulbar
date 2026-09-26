@@ -46,7 +46,9 @@ export const sbUrl = () => (process.env.SUPABASE_URL || process.env.VITE_SUPABAS
 export async function database(path,{method='GET',body,headers={}}={}) {
  const key=process.env.SUPABASE_SERVICE_ROLE_KEY;
  if(!sbUrl()||!key) throw new AppError('서비스 연결을 준비 중이에요. 잠시 후 다시 시도해 주세요.',503);
- const response=await fetch(`${sbUrl()}/rest/v1/${path}`,{method,headers:{apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(12000)});
+ let response;
+ try{response=await fetch(`${sbUrl()}/rest/v1/${path}`,{method,headers:{apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(12000)});}
+ catch{throw new AppError('서비스 연결을 준비 중이에요. 잠시 후 다시 시도해 주세요.',503);}
  const text=await response.text(); let data; try{data=text?JSON.parse(text):null;}catch{data=null;}
  if(!response.ok) throw new AppError(data?.code==='P0001'?data.message:'요청을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.',data?.code==='P0001'?400:503);
  return data;
@@ -69,14 +71,25 @@ export async function admin(req) {
  if(!r.ok||!user.email_confirmed_at||!allowed.includes(user.email?.toLowerCase())) throw new AppError('관리자 권한이 없어요.',403);
  return user.email;
 }
+function envValue(name) {
+ return String(process.env[name]||'').trim().replace(/^['"]|['"]$/g,'');
+}
 export function decryptField(value) {
- const key=Buffer.from(process.env.TOSS_DECRYPTION_KEY||'','base64');
- if(key.length!==32||!process.env.TOSS_AAD) throw new AppError('로그인 정보 복호화 설정이 필요해요.',503);
- const buf=Buffer.from(value,'base64');
- if(buf.length<29) throw new AppError('사용자 정보를 확인하지 못했어요.',401);
- const decipher=createDecipheriv('aes-256-gcm',key,buf.subarray(0,12));
- decipher.setAuthTag(buf.subarray(-16));decipher.setAAD(Buffer.from(process.env.TOSS_AAD,'utf8'));
- return Buffer.concat([decipher.update(buf.subarray(12,-16)),decipher.final()]).toString('utf8');
+ const key=Buffer.from(envValue('TOSS_DECRYPTION_KEY').replace(/\s+/g,''),'base64');
+ const aad=envValue('TOSS_AAD');
+ if(key.length!==32||!aad) throw new AppError('로그인 정보 복호화 설정이 필요해요.',503);
+ const text=String(value||'').trim();
+ const plain=text.replace(/-/g,'');
+ if(/^\d{8}$/.test(plain)) return plain;
+ try {
+  const buf=Buffer.from(text,'base64');
+  if(buf.length<29) throw new Error('short');
+  const decipher=createDecipheriv('aes-256-gcm',key,buf.subarray(0,12));
+  decipher.setAuthTag(buf.subarray(-16));decipher.setAAD(Buffer.from(aad,'utf8'));
+  return Buffer.concat([decipher.update(buf.subarray(12,-16)),decipher.final()]).toString('utf8');
+ } catch {
+  throw new AppError('생년월일을 확인하지 못했어요. 다시 로그인해 주세요.',401);
+ }
 }
 export function isAdult(birthday,now=new Date()) {
  const clean=String(birthday).replace(/-/g,'');

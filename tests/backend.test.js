@@ -208,3 +208,17 @@ test('credited orders are idempotent', async () => {
   for (let i = 0; i < 2; i++) await db.query(`select hb_credit_order($1,'order-1','sku',3300,3000)`, [me]);
   assert.equal((await snapshot(me)).member.balance, 5300);
 });
+
+test('decryptField accepts plaintext birthdays and quoted env values', async () => {
+  const { createCipheriv, randomBytes } = await import('node:crypto');
+  const { decryptField, isAdult } = await import('../server/platform.js');
+  process.env.TOSS_DECRYPTION_KEY = `"${Buffer.alloc(32, 7).toString('base64')}"`;
+  process.env.TOSS_AAD = '"toss-aad"';
+  assert.equal(decryptField('1990-01-01'), '19900101');
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', Buffer.alloc(32, 7), iv);
+  cipher.setAAD(Buffer.from('toss-aad', 'utf8'));
+  const enc = Buffer.concat([iv, cipher.update('20010315', 'utf8'), cipher.final(), cipher.getAuthTag()]);
+  assert.equal(decryptField(enc.toString('base64')), '20010315');
+  assert.equal(isAdult('20010315', new Date('2026-09-26T00:00:00+09:00')), true);
+});
