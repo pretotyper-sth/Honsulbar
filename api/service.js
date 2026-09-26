@@ -101,9 +101,20 @@ export default async function handler(req,res) {
   const member=await authenticate(req);
   if(action==='logout'){await database(`hb_sessions?token_hash=eq.${hash(req.headers.authorization.slice(7))}`,{method:'DELETE'});return res.json({ok:true});}
   if(action==='withdraw'){
-   const [m]=await database(`hb_members?id=eq.${member}&select=toss_key`);
+   const [m]=await database(`hb_members?id=eq.${member}&select=toss_key,sub_access,sub_auto_renew,sub_expires_at`);
+   const live=!!m.sub_access&&(!m.sub_expires_at||new Date(m.sub_expires_at)>new Date());
+   if(live&&m.sub_auto_renew!==false)throw new AppError('정기 구독을 먼저 해지해 주세요.');
    if(!m.toss_key.startsWith('9')||process.env.HB_DEV_LOGIN!=='1')await toss('/api-partner/v1/apps-in-toss/user/oauth2/access/remove-by-user-key',{userKey:Number(m.toss_key)}).catch(()=>{});
    await rpc('apply_toss_login_disconnect',{p_user_key:m.toss_key,p_action:'withdraw'});return res.json({ok:true});
+  }
+  if(action==='waitlist-off'){
+   const region=typeof body.data?.region==='string'?body.data.region:'';
+   const number=Number(body.data?.number);
+   if(region&&number>0){
+    const [room]=await database(`hb_rooms?region=eq.${encodeURIComponent(region)}&number=eq.${number}&select=id&limit=1`);
+    if(room?.id)await database(`hb_waitlist?member_id=eq.${member}&room_id=eq.${room.id}`,{method:'DELETE'});
+   }else await database(`hb_waitlist?member_id=eq.${member}`,{method:'DELETE'});
+   return res.json({result:{},state:withPhotos(await rpc('hb_snapshot',{p_member:member,p_after:Math.max(0,Number(body.after)||0),p_limit:Math.min(100,Math.max(10,Number(body.limit)||10))})});
   }
   if(action==='purchase'){
    const products=skuPoints();

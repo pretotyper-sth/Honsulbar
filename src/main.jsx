@@ -21,6 +21,15 @@ const FAQ_ITEMS = [
   ['입장 전에 손님 사진을 볼 수 있나요?', '미리보기 상품을 구매하면 현재 호점에 있는 손님들의 사진을 확인할 수 있어요. 미리보기는 입장이나 자리 예약을 포함하지 않아요.'],
   ['목소리가 불편한 손님은 어떻게 신고하나요?', '손님 프로필에서 신고를 선택하고 사유와 내용을 접수해 주세요. 신고한 손님의 목소리는 바로 들리지 않고, 그 손님이 있는 바에 입장할 때는 미리 알려드려요.'],
   ['정기 구독은 어떻게 해지하나요?', '토스 앱 전체에서 결제 내역을 연 뒤 혼술바 정기 구독을 해지하면 돼요. 해지해도 이번 기간이 끝날 때까지는 이용할 수 있고, 다시 이어가려면 같은 결제 내역에서 자동 결제를 켜면 돼요.'],
+  ['빈자리 알림은 어떻게 끄나요?', '설정에서 빈자리 알림 끄기를 누르면 신청한 호점 알림이 해제돼요. 토스 푸시 자체를 끄려면 토스 앱 알림 설정에서 바꿀 수 있어요.'],
+  ['회원탈퇴는 어떻게 하나요?', '정기 구독이 유지 중이면 탈퇴할 수 없어요. 토스 결제 내역에서 구독을 먼저 해지한 뒤 설정에서 탈퇴해 주세요.'],
+];
+const LEGAL_DOCS = [
+  ['이용약관', '/legal/terms.html'],
+  ['개인정보처리방침', '/legal/privacy.html'],
+  ['커뮤니티 운영정책', '/legal/community.html'],
+  ['결제·환불 정책', '/legal/refund.html'],
+  ['성인 이용·청소년 보호', '/legal/age-safety.html'],
 ];
 const REGION_REQUEST_GROUPS = [
   {title:'광역시·특별자치도', options:['광주','울산','세종','제주']},
@@ -78,40 +87,21 @@ function faceProbability(face) {
 function isLikelyRealFace(face, width, height) {
   const box = faceBox(face);
   const probability = faceProbability(face);
-  if (!Number.isFinite(probability) || probability < 0.82) return false;
+  if (Number.isFinite(probability) && probability < 0.5) return false;
   const sizeW = box.width / width;
   const sizeH = box.height / height;
-  if (sizeW < 0.2 || sizeH < 0.26 || sizeW > 0.95 || sizeH > 0.95) return false;
-  const aspect = box.width / box.height;
-  if (aspect < 0.52 || aspect > 1.38) return false;
+  if (sizeW < 0.06 || sizeH < 0.08) return false;
   const centerY = (box.top + box.height / 2) / height;
-  if (centerY < 0.12 || centerY > 0.72) return false;
-  if (sizeH < 0.32 && (box.top + box.height) / height < 0.3) return false;
-  const landmarks = face.landmarks || [];
-  if (landmarks.length < 4) return false;
-  const [rightEye, leftEye, nose, mouth] = landmarks;
-  if (![rightEye, leftEye, nose, mouth].every(point => Array.isArray(point) && point.length >= 2)) return false;
-  const relY = (y) => (y - box.top) / box.height;
-  const eyeY = (rightEye[1] + leftEye[1]) / 2;
-  if (relY(eyeY) > 0.48 || relY(mouth[1]) < 0.5) return false;
-  if (relY(mouth[1]) - relY(eyeY) < 0.24) return false;
-  const eyeDist = Math.hypot(leftEye[0] - rightEye[0], leftEye[1] - rightEye[1]);
-  if (eyeDist < box.width * 0.22 || eyeDist > box.width * 0.66) return false;
-  if (Math.abs(leftEye[1] - rightEye[1]) > box.height * 0.16) return false;
-  if (mouth[1] < eyeY + box.height * 0.18) return false;
-  if (nose[1] <= eyeY || nose[1] >= mouth[1]) return false;
-  const midX = (leftEye[0] + rightEye[0]) / 2;
-  if (Math.abs(nose[0] - midX) > box.width * 0.22) return false;
-  if (Math.abs(mouth[0] - midX) > box.width * 0.26) return false;
-  return true;
+  if (sizeH < 0.12 && centerY < 0.16) return false;
+  const landmarks = (face.landmarks || []).filter(point => Array.isArray(point) && point.length >= 2);
+  return landmarks.length >= 3;
 }
 function faceRegionLooksLikeSkin(canvas, face) {
   const stats = regionStats(canvas, cheekRect(face)) || regionStats(canvas, innerFaceRect(face));
   if (!stats) return false;
   const mean = (stats.meanR + stats.meanG + stats.meanB) / 3;
-  if (mean < 48 || mean > 242) return false;
-  if (stats.meanB > stats.meanR + 8) return false;
-  if (stats.meanR - stats.meanB < 5 && mean < 120) return false;
+  if (mean < 18 || mean > 250) return false;
+  if (stats.meanB > stats.meanR + 28) return false;
   return true;
 }
 function innerFaceRect(face) {
@@ -138,7 +128,7 @@ function regionStats(canvas, rect) {
   let pixels;
   try { pixels = ctx.getImageData(x, y, w, h).data; } catch { return null; }
   const step = Math.max(1, Math.floor(Math.min(w, h) / 64));
-  let samples = 0, flat = 0, exact = 0, graySum = 0, graySq = 0, rSum = 0, gSum = 0, bSum = 0, lapSum = 0;
+  let samples = 0, flat = 0, exact = 0, ink = 0, graySum = 0, graySq = 0, rSum = 0, gSum = 0, bSum = 0, lapSum = 0;
   const colors = new Set();
   for (let row = 1; row < h - 1; row += step) {
     for (let col = 1; col < w - 1; col += step) {
@@ -151,12 +141,14 @@ function regionStats(canvas, rect) {
       const grayDown = 0.299 * pixels[downI] + 0.587 * pixels[downI + 1] + 0.114 * pixels[downI + 2];
       const left = 0.299 * pixels[i - 4] + 0.587 * pixels[i - 3] + 0.114 * pixels[i - 2];
       const up = 0.299 * pixels[i - w * 4] + 0.587 * pixels[i - w * 4 + 1] + 0.114 * pixels[i - w * 4 + 2];
+      const lap = Math.abs(4 * gray - left - grayRight - up - grayDown);
       rSum += r; gSum += g; bSum += b;
       graySum += gray; graySq += gray * gray;
-      lapSum += Math.abs(4 * gray - left - grayRight - up - grayDown);
+      lapSum += lap;
       colors.add(((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4));
       if (Math.abs(gray - grayRight) + Math.abs(gray - grayDown) < 6) flat += 1;
       if (colorDelta <= 3) exact += 1;
+      if (gray < 70 && lap > 40) ink += 1;
       samples += 1;
     }
   }
@@ -166,6 +158,7 @@ function regionStats(canvas, rect) {
     flatRatio: flat / samples,
     exactRatio: exact / samples,
     colorDensity: colors.size / samples,
+    inkRatio: ink / samples,
     lapMean: lapSum / samples,
     std: Math.sqrt(Math.max(0, graySq / samples - (graySum / samples) ** 2)),
     meanR: rSum / samples,
@@ -209,14 +202,15 @@ function cornerBackgroundStats(canvas) {
   return { minStd: Math.min(...stds) };
 }
 function looksLikeIllustration(canvas, face) {
+  const box = faceBox(face);
   const faceStats = regionStats(canvas, innerFaceRect(face));
-  const cheekStats = regionStats(canvas, cheekRect(face));
-  const stats = cheekStats || faceStats;
-  if (!stats) return false;
-  const painted = stats.colorDensity < 0.048 && (stats.exactRatio > 0.2 || stats.flatRatio > 0.36);
-  const simpleBackground = cornerBackgroundStats(canvas).minStd < 4;
-  const obviousPaint = stats.exactRatio > 0.4 && stats.colorDensity < 0.055 && stats.flatRatio > 0.5;
-  return obviousPaint || (painted && simpleBackground);
+  const cheekStats = regionStats(canvas, cheekRect(face)) || faceStats;
+  const outlineStats = regionStats(canvas, { x: box.left - box.width * 0.06, y: box.top - box.height * 0.06, w: box.width * 1.12, h: box.height * 1.12 });
+  if (!faceStats || !cheekStats) return false;
+  const ink = Math.max(faceStats.inkRatio || 0, outlineStats?.inkRatio || 0);
+  const lineArt = ink >= 0.03 && cheekStats.flatRatio >= 0.48 && cheekStats.colorDensity < 0.055;
+  const celShade = ink >= 0.028 && cheekStats.exactRatio >= 0.32 && cheekStats.colorDensity < 0.05 && cornerBackgroundStats(canvas).minStd < 2.5;
+  return lineArt || celShade;
 }
 function identityPoints(face) {
   const [rightEye, leftEye, nose, mouth] = face.landmarks || [];
@@ -298,6 +292,7 @@ function App() {
   const [showCustomRegion, setShowCustomRegion] = useState(false);
   const [newRoom, setNewRoom] = useState(null);
   const [pendingEntry, setPendingEntry] = useState(null);
+  const [legalSrc, setLegalSrc] = useState('/legal/terms.html');
   const upload = useRef(null);
   const cameraVideo = useRef(null);
   const cameraCanvas = useRef(null);
@@ -661,7 +656,11 @@ function App() {
     const targetRegion = target.region || region;
     const key = `${targetRegion}:${target.number}`;
     if (sheet === 'preview') setSheet(null);
-    if (waitlist.includes(key)) { setToast('빈자리가 생기면 알려드릴게요.'); return; }
+    if (waitlist.includes(key)) {
+      try { await run('waitlist-off', { region: targetRegion, number: target.number }); setToast('빈자리 알림을 껐어요.'); }
+      catch (e) { setToast(e.message); }
+      return;
+    }
     const consent = await askPushAgreement();
     if (consent === 'rejected') { setToast('알림에 동의해야 빈자리를 알려드릴 수 있어요.'); return; }
     try { await run('waitlist', { region: targetRegion, number: target.number }); setToast(consent === 'agreed' ? '빈자리가 생기면 알림으로 알려드릴게요.' : '빈자리가 생기면 알려드릴게요.'); }
@@ -672,6 +671,14 @@ function App() {
     if (consent === 'agreed') setToast('빈자리 알림에 동의했어요.');
     else if (consent === 'rejected') setToast('알림에 동의하지 않으면 빈자리 푸시를 받을 수 없어요.');
     else setToast('이 기기에서는 토스 앱 알림 설정에서 동의할 수 있어요.');
+  }
+  async function togglePushAlerts() {
+    if (waitlist.length) {
+      try { await run('waitlist-off'); setToast('빈자리 알림을 껐어요.'); }
+      catch (e) { setToast(e.message); }
+      return;
+    }
+    await openPushAgreement();
   }
   async function attendance() {
     if (wallet.attendanceDate === today || adInProgress) return;
@@ -688,7 +695,7 @@ function App() {
     const stop = message => { if (finished) return; finished = true; setAdInProgress(false); setToast(message); };
     const adGroupId = config?.adGroupId;
     if (adGroupId && loadFullScreenAd.isSupported?.() && showFullScreenAd.isSupported?.()) {
-      setToast('광고를 불러오고 있어요. 끝까지 시청하면 포인트가 자동으로 지급돼요.');
+      setToast('광고를 불러오고 있어요.');
       let rewarded = false;
       loadFullScreenAd({
         options: { adGroupId },
@@ -1033,7 +1040,7 @@ function App() {
     {toast && <div className="toast" role="status">{toast}</div>}
   </main>;
 
-  if (screen === 'loading') return <main className="app onboarding-screen"><div className="onboarding-scroll"><img className="onboarding-logo" src="/honsulbar-logo.png" alt="혼술바" /><p className="onboarding-lead">혼술바를 여는 중이에요…</p></div></main>;
+  if (screen === 'loading') return <main className="app loading-screen"><div className="app-spinner" role="status" aria-label="불러오는 중"/></main>;
 
   return <main className="app">
     <header>
@@ -1094,7 +1101,7 @@ function App() {
       {seconds === 0 && seat !== 11 && <p role="status" className="error">이용시간이 끝났어요. 한 잔 더 주문하고 머물러요.</p>}
       <div className="controls"><button className={voice.mic ? 'mic-active' : ''} aria-pressed={voice.mic} onClick={() => { mesh.resume(); if (seconds === 0 && seat !== 11) open('menu'); else voice.toggle(); }}>{voice.mic ? <Mic size={21}/> : <MicOff size={21}/>}<span>{voice.pending ? '연결 중' : voice.mic ? '마이크 켜짐' : '마이크 꺼짐'}</span></button><button className={speaker ? 'speaker-active' : ''} aria-pressed={speaker} onClick={toggleSpeaker}><Speaker size={21}/><span>{speaker ? '스피커 켜짐' : '스피커 꺼짐'}</span></button><button className={soundOn ? 'sound-active' : ''} aria-pressed={soundOn} onClick={() => {mesh.resume();setSoundOn(v=>!v);}}>{soundOn ? <Volume2 size={21}/> : <VolumeX size={21}/>}<span>{soundOn ? '소리 켜짐' : '소리 꺼짐'}</span></button><button className="order-control" onClick={() => {setSelection(wallet.drinkId || 'highball'); open('menu');}}><Wine size={21}/><span>한 잔 더</span></button></div>
     </section>}
-      <BottomSheet open={!!sheet} onClose={closeSheet} ariaLabelledBy="sheet-title" className="app-bottom-sheet" maxHeight={['welcome','menu','shop','preview','profile','verify-profile','guest','settings','region-request'].includes(sheet) ? window.innerHeight * .92 : undefined}>
+      <BottomSheet open={!!sheet} onClose={closeSheet} ariaLabelledBy="sheet-title" className="app-bottom-sheet" maxHeight={['welcome','menu','shop','preview','profile','verify-profile','guest','settings','region-request','legal','legal-doc'].includes(sheet) ? window.innerHeight * .92 : undefined}>
       <div className={`sheet sheet-compact ${sheet === 'guest' ? 'sheet-guest' : ''} ${sheet === 'profile' ? 'sheet-profile' : ''} ${sheet === 'region-request' ? 'sheet-region-request' : ''}`}><button className="close icon-button" aria-label="닫기" onClick={closeSheet}><X size={22}/></button>
       {(sheet === 'welcome' || sheet === 'menu') && <><p className="eyebrow">{isWelcome ? `${room?.region} ${room?.number}호점 입장` : '메뉴판'}</p><h2 id="sheet-title">{isWelcome ? '어떤 음료로 시작할까요?' : '한 잔 더 하고 갈까요?'}</h2><p className="sheet-description">{isWelcome ? (subscription ? '구독 중이면 입장에 포인트가 차감되지 않아요.' : '입장 시 포인트가 차감돼요.') : '주문한 잔은 내 사진 옆에 놓여요.'}</p><div className="menu">{DRINKS.filter(item => !isWelcome || item.minutes === 30).map(item => <button className={selection === item.id ? 'chosen' : ''} key={item.id} aria-pressed={selection === item.id} onClick={() => {setSelection(item.id);setError('');}}><div className="drink-illustration"><Glass id={item.id}/></div><span><strong>{item.name}</strong><small>{item.note}</small><em>{`+${item.minutes}분`}</em></span><span className="menu-price">{isWelcome ? `입장 ${item.price.toLocaleString()}P` : `${item.price.toLocaleString()} P`}{selection === item.id && <Check size={16}/>}</span></button>)}</div><div className="order-summary"><span>보유 포인트<b>{wallet.balance.toLocaleString()} P</b></span><span>{subscription ? '구독 이용' : (isWelcome ? '입장 후 남는 포인트' : '주문 후 남는 포인트')}<strong>{subscription ? '0 P' : `${Math.max(0,wallet.balance-price).toLocaleString()} P`}</strong></span></div><p className="digital-note">음료는 취향을 표현하는 아이템이에요.</p>{!subscription && wallet.balance<price?<><div className="insufficient-state"><strong>{(price-wallet.balance).toLocaleString()}P가 더 필요해요</strong><span>충전 후 {isWelcome ? '입장' : '주문'}할 수 있어요.</span></div><Button className="sheet-recharge-cta" size="xlarge" display="block" onClick={()=>open('shop')}>포인트 충전하기</Button><p className="footnote">포인트를 충전하면 선택한 음료로 바로 이용할 수 있어요.</p></>:<div className="sheet-inline-cta"><Button size="xlarge" display="block" onClick={confirmOrder}>{subscription ? (isWelcome ? `${chosen.minutes}분 입장하기` : `주문 · ${chosen.minutes}분 연장`) : (isWelcome ? `${price.toLocaleString()} 포인트로 ${chosen.minutes}분 입장하기` : `${price.toLocaleString()} 포인트로 주문 · ${chosen.minutes}분 연장`)}</Button><p className="footnote">{subscription ? '구독 기간에는 입장·연장에 포인트가 차감되지 않아요.' : (isWelcome ? (leftover ? '다른 호점에 입장하면 남은 이용시간은 끝나요.' : '입장한 호점에서만 이용시간이 흐르고, 바를 나가도 그 시간은 이어져요.') : '주문을 누르면 포인트가 차감되고 이용시간이 늘어나요.')}</p></div>}</>}
       {sheet === 'preview' && previewRoom && <><p className="eyebrow">{previewRoom.region} {previewRoom.number}호점</p><h2 id="sheet-title">{purchasedPreview ? '지금 이 바의 손님들' : '들어가기 전에 살짝 볼까요?'}</h2>{purchasedPreview ? <><p className="sheet-description">구매한 시점의 손님들이에요. 입장할 때는 달라질 수 있어요.</p><div className="preview-portraits">{purchasedPreview.guests.map(g => <div key={g.id} className={g.gender}><img src={g.photo} alt="미리보기 손님"/></div>)}</div>{rooms[previewRoom.region].find(r => r.number === previewRoom.number)?.count === CAPACITY ? <Button size="xlarge" display="block" onClick={() => requestWaitlist(previewRoom)}><Bell size={17}/>빈자리 알림 신청</Button> : <Button size="xlarge" display="block" onClick={() => requestEntry(previewRoom)}>이 바에 입장하기</Button>}</> : <><div className="locked-preview"><LockKeyhole size={29}/><span>사진은 미리보기 구매 후 공개돼요.</span></div><p className="sheet-description">{subscription ? '구독 중이면 미리보기에 포인트가 차감되지 않아요.' : '500P로 현재 손님들의 프로필 사진을 확인해요.'}<br/>미리보기에는 입장이나 자리 예약이 포함되지 않아요.</p><div className="order-summary"><span>보유 포인트<b>{wallet.balance.toLocaleString()} P</b></span><span>{subscription ? '구독 이용' : '구매 후 남는 포인트'}<strong>{subscription ? '0 P' : `${Math.max(0,wallet.balance-500).toLocaleString()} P`}</strong></span></div><Button size="xlarge" display="block" disabled={!subscription && wallet.balance < 500} onClick={buyPreview}>{subscription ? '구독으로 미리보기' : '500P로 미리보기'}</Button></>}</>}
@@ -1113,21 +1120,29 @@ function App() {
       {sheet==='subscription-confirm'&&<><p className="eyebrow">정기 구독</p><h2 id="sheet-title">정기 구독을 시작할까요?</h2><p className="sheet-description">{`매월 ${SUBSCRIPTIONS[0].price.toLocaleString()}원이 자동 결제되고, 입장·연장·미리보기를 제한 없이 이용할 수 있어요.`}</p><div className="actions"><Button color="dark" variant="weak" onClick={()=>setSheet('shop')}>취소</Button><Button size="xlarge" onClick={confirmSubscriptionChange}>구독 시작하기</Button></div></>}
       {sheet==='subscription-cancel-guide'&&<><p className="eyebrow">정기 구독</p><h2 id="sheet-title">해지는 토스에서 할 수 있어요</h2><p className="sheet-description">토스 앱 전체에서 결제 내역을 연 뒤 혼술바 정기 구독을 해지하면 돼요. 해지해도 이번 기간이 끝날 때까지는 이용할 수 있고, 다시 이어가려면 같은 결제 내역에서 자동 결제를 켜면 돼요.</p><Button size="xlarge" display="block" onClick={()=>setSheet('shop')}>확인</Button></>}
       {sheet==='notifications'&&<><h2 id="sheet-title">알림</h2>{notifications.length===0?<p className="sheet-description">새로운 알림이 없어요.</p>:<div className="notification-list">{notifications.map(item=><button key={item.id} onClick={()=>openNotification(item)}><Bell size={17}/><span><strong>{item.title}</strong><small>{item.body}</small></span><ArrowRight size={16}/></button>)}</div>}</>}
-      {sheet === 'profile' && <><div className="sheet-heading-row"><div><p className="eyebrow">내 프로필</p><h2 id="sheet-title">프로필을 설정해 주세요</h2></div></div><p className="sheet-description">사진과 닉네임은 다른 손님에게 보여요.</p><input ref={upload} hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={choosePhoto}/><button className="upload" onClick={() => upload.current.click()}>{profile.photo ? <img src={profile.photo} alt="선택한 내 사진"/> : <Camera size={30}/>}<span>{profile.photo ? '사진 바꾸기' : '사진 등록하기'}</span></button><p className={`photo-note${photoCheck==='ok' || profileVerified ? ' is-ok' : ''}`}>{photoCheck==='checking' ? '얼굴을 확인하고 있어요.' : photoCheck==='ok' ? '이 사진으로 진행할 수 있어요.' : profileVerified ? '확인된 사진이에요. 사진을 바꾸면 다시 확인해요.' : '본인 얼굴 사진을 사용해 주세요.'}</p><label className="profile-field"><span>닉네임</span><input value={profile.nickname} maxLength={16} aria-invalid={!!nicknameError} onChange={e=>setProfile(v=>({...v,nickname:e.target.value}))} placeholder="닉네임을 입력해 주세요"/>{nicknameError&&<small className="field-error">{nicknameError}</small>}</label><div className="gender-choice">{[['male','남성'],['female','여성']].map(([value,label]) => <button key={value} aria-pressed={profile.gender === value} className={profile.gender === value ? `selected ${value}` : ''} onClick={() => setProfile(v => ({...v,gender:value}))}>{label}{profile.gender === value && <Check size={17}/>}</button>)}</div><p className="profile-save-note">{profileVerified ? '변경한 내용을 저장해 주세요.' : '사진을 저장하려면 얼굴 확인이 필요해요.'}</p><Button size="xlarge" display="block" disabled={!profile.photo || !profile.gender || !!nicknameError || photoCheck==='checking' || (!profileVerified && photoCheck!=='ok')} onClick={() => profileVerified ? saveProfile() : setSheet('verify-profile')}>{profileVerified ? '프로필 저장하기' : '얼굴 확인하기'}</Button></>}
+      {sheet === 'profile' && <><div className="sheet-heading-row"><div><p className="eyebrow">내 프로필</p><h2 id="sheet-title">프로필을 설정해 주세요</h2></div></div><p className="sheet-description">사진과 닉네임은 다른 손님에게 보여요.</p><input ref={upload} hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={choosePhoto}/><button className="upload" onClick={() => upload.current.click()}>{profile.photo ? <img src={profile.photo} alt="선택한 내 사진"/> : <Camera size={30}/>}<span>{profile.photo ? '사진 바꾸기' : '사진 등록하기'}</span></button><p className={`photo-note${photoCheck==='ok' || (profileVerified && photoCheck!=='checking') ? ' is-ok' : ''}`}>{photoCheck==='checking' ? '얼굴을 확인하고 있어요.' : photoCheck==='ok' ? '이 사진으로 진행할 수 있어요.' : profileVerified ? '확인된 사진이에요. 사진을 바꾸면 다시 확인해요.' : '본인 얼굴 사진을 사용해 주세요.'}</p><label className="profile-field"><span>닉네임</span><input value={profile.nickname} maxLength={16} aria-invalid={!!nicknameError} onChange={e=>setProfile(v=>({...v,nickname:e.target.value}))} placeholder="닉네임을 입력해 주세요"/>{nicknameError&&<small className="field-error">{nicknameError}</small>}</label><div className="gender-choice">{[['male','남성'],['female','여성']].map(([value,label]) => <button key={value} aria-pressed={profile.gender === value} className={profile.gender === value ? `selected ${value}` : ''} onClick={() => setProfile(v => ({...v,gender:value}))}>{label}{profile.gender === value && <Check size={17}/>}</button>)}</div><p className="profile-save-note">{profileVerified ? '변경한 내용을 저장해 주세요.' : '사진을 저장하려면 얼굴 확인이 필요해요.'}</p><Button size="xlarge" display="block" disabled={!profile.photo || !profile.gender || !!nicknameError || photoCheck==='checking' || (!profileVerified && photoCheck!=='ok')} onClick={() => profileVerified ? saveProfile() : setSheet('verify-profile')}>{profileVerified ? '프로필 저장하기' : '얼굴 확인하기'}</Button></>}
       {sheet === 'verify-profile' && <><p className="eyebrow">본인 얼굴 확인</p><h2 id="sheet-title">이 화면에서 촬영해 주세요</h2><p className="sheet-description">저장 전에만 확인하고, 이 촬영은 남기지 않아요.</p><div className="camera-preview"><video ref={cameraVideo} autoPlay muted playsInline webkit-playsinline="true" aria-label="본인 얼굴 촬영 화면"/><i className="camera-guide" aria-hidden="true"/><canvas ref={cameraCanvas} hidden/></div><p className={`photo-note verification-message ${verificationState==='verified'?'is-verified':''}`}>{verificationMessage}</p>{verificationState==='verified'?<Button size="xlarge" display="block" onClick={saveProfile}>프로필 저장하기</Button>:verificationState==='unavailable'?<Button size="xlarge" display="block" onClick={() => { setSheet(null); setTimeout(() => setSheet('verify-profile'), 0); }}>권한 다시 요청하기</Button>:<Button size="xlarge" display="block" disabled={verificationState!=='ready'} onClick={captureVerification}>{verificationState==='checking'?'얼굴 확인 중…':verificationState==='starting'?'카메라 준비 중…':'촬영하기'}</Button>}</>}
-      {sheet === 'settings' && <><p className="eyebrow">설정</p><h2 id="sheet-title">도움이 필요하신가요?</h2><p className="sheet-description">서비스 이용과 계정을 관리할 수 있어요.</p><div className="settings-group"><span>도움말</span><div className="settings-list"><button onClick={()=>open('support')}>고객센터<ArrowRight size={16}/></button><button onClick={()=>open('inquiry')}>신고·문의<ArrowRight size={16}/></button><a href="/legal/" target="_blank" rel="noopener noreferrer">약관 및 정책<ArrowRight size={16}/></a></div></div><div className="settings-group"><span>알림</span><div className="settings-list"><button onClick={openPushAgreement}>빈자리 알림 동의<ArrowRight size={16}/></button></div></div><div className="settings-group"><span>계정 및 결제</span><div className="settings-list"><button onClick={openSubscriptionManager}>결제·정기 구독 관리<ArrowRight size={16}/></button><button onClick={()=>open('withdraw')} className="danger-link">회원탈퇴<ArrowRight size={16}/></button></div></div></>}
+      {sheet === 'settings' && <><p className="eyebrow">설정</p><h2 id="sheet-title">도움이 필요하신가요?</h2><p className="sheet-description">서비스 이용과 계정을 관리할 수 있어요.</p><div className="settings-group"><span>도움말</span><div className="settings-list"><button onClick={()=>open('support')}>고객센터<ArrowRight size={16}/></button><button onClick={()=>open('inquiry')}>신고·문의<ArrowRight size={16}/></button><button onClick={()=>open('legal')}>약관 및 정책<ArrowRight size={16}/></button></div></div><div className="settings-group"><span>알림</span><div className="settings-list"><button onClick={togglePushAlerts}>{waitlist.length?'빈자리 알림 끄기':'빈자리 알림 동의'}<ArrowRight size={16}/></button></div></div><div className="settings-group"><span>계정 및 결제</span><div className="settings-list"><button onClick={openSubscriptionManager}>결제·정기 구독 관리<ArrowRight size={16}/></button><button onClick={()=>open('withdraw')} className="danger-link">회원탈퇴<ArrowRight size={16}/></button></div></div></>}
       {sheet === 'region-request' && <><p className="eyebrow">지역 추가 요청</p><h2 id="sheet-title">어디에서 만나고 싶나요?</h2><p className="sheet-description">원하는 지역을 골라 주세요.</p>{REGION_REQUEST_GROUPS.map(group=><div className="region-request-section" key={group.title}><span>{group.title}</span><div className="region-request-grid">{group.options.map(item=><button key={item} className={requestedRegion===item?'selected':''} onClick={()=>{setRequestedRegion(item);setShowCustomRegion(false);}}>{item}</button>)}{group.title==='주요 도시'&&<button style={{borderStyle:'dashed',borderWidth:'1.5px',borderColor:'#b7c0cb'}} className={`custom-region-toggle ${showCustomRegion?'selected':''}`} onClick={()=>{setShowCustomRegion(v=>!v);setRequestedRegion('');}}>직접 입력</button>}</div></div>)}{showCustomRegion&&<input className="custom-region-input" value={customRegion} onChange={e=>setCustomRegion(e.target.value)} placeholder="지역명을 입력해 주세요" maxLength={20}/>}<Button display="block" disabled={!requestedRegion && !(showCustomRegion&&customRegion.trim())} onClick={submitRegion}>이 지역 추가 요청하기</Button><p className="digital-note">요청 건수와 우선순위에 따라 지역을 추가해요.</p></>}
+      {sheet === 'legal' && <><p className="eyebrow">약관 및 정책</p><h2 id="sheet-title">혼술바 정책 문서</h2><p className="sheet-description">서비스 이용에 필요한 약관과 정책을 확인할 수 있어요.</p><div className="settings-list">{LEGAL_DOCS.map(([label,href])=><button key={href} onClick={()=>{setLegalSrc(href);open('legal-doc');}}>{label}<ArrowRight size={16}/></button>)}</div></>}
+      {sheet === 'legal-doc' && <><p className="eyebrow">약관 및 정책</p><h2 id="sheet-title">{LEGAL_DOCS.find(([_,href])=>href===legalSrc)?.[0]||'정책'}</h2><iframe className="legal-frame" src={legalSrc} title="약관 문서"/><Button display="block" variant="weak" color="dark" onClick={()=>open('legal')}>목록으로</Button></>}
       {sheet === 'support' && <><p className="eyebrow">고객센터</p><h2 id="sheet-title">무엇을 도와드릴까요?</h2><p className="sheet-description">혼술바 이용 중 궁금한 점을 확인하거나 문의를 남겨 주세요.</p><div className="settings-list"><button onClick={()=>{setOpenFaq(null);open('faq')}}>자주 묻는 질문<ArrowRight size={16}/></button><button onClick={()=>open('inquiry')}>문의 남기기<ArrowRight size={16}/></button></div></>}
       {sheet === 'faq' && <><p className="eyebrow">자주 묻는 질문</p><h2 id="sheet-title">혼술바 이용 안내</h2><p className="sheet-description">자주 궁금해하는 내용을 모아봤어요.</p><div className="faq-list">{FAQ_ITEMS.map(([question,answer],index)=><div className={`faq-item ${openFaq===index?'open':''}`} key={question}><button onClick={()=>setOpenFaq(openFaq===index?null:index)}><span>{question}</span>{openFaq===index?<ChevronDown size={17}/>:<ArrowRight size={17}/>}</button>{openFaq===index&&<p>{answer}</p>}</div>)}</div><Button display="block" variant="weak" color="dark" onClick={()=>open('inquiry')}>답을 찾지 못했어요 · 문의하기</Button></>}
       {sheet === 'inquiry' && <><p className="eyebrow">신고·문의</p><h2 id="sheet-title">문의 내용을 남겨 주세요</h2><p className="sheet-description">확인 후 운영팀이 순서대로 답변드릴게요.</p><div className="form-choice">{['결제·구독 문의','이용 방법 문의','서비스 신고','기타 문의'].map(item=><button key={item} className={inquiryType===item?'selected':''} onClick={()=>setInquiryType(item)}>{item}</button>)}</div><textarea className="support-textarea" value={inquiryMessage} onChange={e=>setInquiryMessage(e.target.value)} placeholder={inquiryType==='서비스 신고'?'신고할 내용을 자세히 입력해 주세요.':'문의 내용을 입력해 주세요.'} maxLength={500}/><div className="form-footer"><span>{inquiryMessage.length}/500</span><Button size="large" disabled={!inquiryMessage.trim()} onClick={submitInquiry}>{inquiryType==='서비스 신고'?'신고 접수하기':'문의 접수하기'}</Button></div></>}
       {sheet === 'inquiry-detail' && selectedInquiry && <><p className="eyebrow">문의 답변</p><h2 id="sheet-title">운영팀 답변</h2><div className="inquiry-message"><small>{selectedInquiry.type}</small><p>{selectedInquiry.message}</p></div><div className="inquiry-answer"><strong>운영팀</strong><p>{selectedInquiry.answer || '문의 내용을 확인하고 있어요. 답변이 등록되면 알림으로 알려드릴게요.'}</p></div><Button display="block" variant="weak" color="dark" onClick={()=>open('inquiry')}>문의 남기기</Button></>}
-      {sheet === 'withdraw' && <><p className="eyebrow">회원탈퇴</p><h2 id="sheet-title">정말 탈퇴할까요?</h2><p className="sheet-description">프로필과 이용 기록이 삭제되고, 진행 중인 정기 구독은 먼저 해지해야 해요.<br/>삭제된 정보는 복구할 수 없어요.</p><div className="actions"><Button color="dark" variant="weak" onClick={openProfileEditor}>취소</Button><Button size="xlarge" disabled={busy} onClick={withdraw}>탈퇴하기</Button></div></>}
+      {sheet === 'withdraw' && <><p className="eyebrow">회원탈퇴</p><h2 id="sheet-title">정말 탈퇴할까요?</h2><p className="sheet-description">프로필과 이용 기록이 삭제되고, 삭제된 정보는 복구할 수 없어요. 진행 중인 정기 구독은 먼저 해지해야 탈퇴할 수 있어요.</p>{subscription&&!subscriptionCancelAt&&<p className="error">정기 구독이 유지 중이에요. 토스에서 해지한 뒤 다시 시도해 주세요.</p>}<div className="actions">{subscription&&!subscriptionCancelAt?<>
+        <Button color="dark" variant="weak" onClick={()=>{setOpenFaq(4);open('faq');}}>자주 묻는 질문</Button>
+        <Button size="xlarge" onClick={()=>open('subscription-cancel-guide')}>해지 방법 보기</Button>
+      </>:<>
+        <Button color="dark" variant="weak" onClick={()=>setSheet(null)}>취소</Button>
+        <Button size="xlarge" disabled={busy} onClick={withdraw}>탈퇴하기</Button>
+      </>}</div></>}
       {sheet === 'move' && <><h2 id="sheet-title">옆자리 분께 인사하고 갈까요?</h2><p className="sheet-description">가볍게 인사를 건네고 자리를 옮겨요.</p><div className="actions"><Button color="dark" variant="weak" onClick={() => setSheet(null)}>머무르기</Button><Button size="xlarge" onClick={() => commitMove(pendingSeat)}>자리 옮기기</Button></div></>}
       {sheet === 'guest' && selectedGuest && <><div className="guest-photo"><img src={selectedGuest.photo} alt="선택한 손님"/><Glass id={selectedGuest.drinkId}/></div><h2 id="sheet-title">{selectedGuest.nickname || '혼술 친구'}</h2><p className="guest-meta"><span>{DRINKS.find(d => d.id === selectedGuest.drinkId)?.name} 마시는 중</span><span aria-hidden="true">·</span><span>{partners[selectedGuest.id]&&partners[selectedGuest.id]!=='me'?'옆자리와 대화 중':mutedGuests.includes(selectedGuest.id)?(reportedIds.has(selectedGuest.id)?'신고로 들리지 않아요':'음소거되어 들리지 않아요'):selectedGuest.mic===false?'마이크가 꺼져 있어요':`내 자리에서 ${Math.round(audioGain({id:'me',seat},selectedGuest,facing,partners,mutedGuests)*100)}%로 들려요`}</span></p>
         {partners[selectedGuest.id]&&partners[selectedGuest.id]!=='me'?<div className="guest-focus-panel"><MessageCircleMore size={18}/><p>지금 1:1로 대화하고 있어요.<br/>다른 사람에게는 목소리가 들리지 않아요.</p><Button size="large" variant="weak" disabled={waveSent.includes(selectedGuest.id)} onClick={()=>sendWave(selectedGuest)}>{waveSent.includes(selectedGuest.id)?'인사를 남겼어요':'손 흔들기'}</Button></div>:activeFocus===selectedGuest.id?<Button display="block" variant="weak" onClick={()=>{endFocus();setSheet(null);}}>전체 대화로 돌아가기</Button>:<div className="guest-focus-panel"><Button size="large" display="block" disabled={!adjacent(seat,selectedGuest.seat)||!!activeFocus||!!focusRequest||mutedGuests.includes(selectedGuest.id)||seconds===0} onClick={()=>requestFocus(selectedGuest)}>이 옆자리와만 대화하기</Button><p>{!adjacent(seat,selectedGuest.seat)?'바로 옆에 앉아 있을 때 이용할 수 있어요.':'수락하면 둘만 들리고, 자리를 옮기면 전체 대화로 돌아가요.'}</p></div>}
         <Button className="guest-seat-request" size="large" variant="weak" color="dark" display="block" disabled={!!outgoing || wallet.balance < 500} onClick={() => open('seat-request')}><ArrowLeftRight size={17}/>이 자리 부탁하기 · 500P</Button><p className="footnote">상대가 수락하면 서로 자리를 바꿔요.</p><div className="guest-actions"><button onClick={() => {if(reportedIds.has(selectedGuest.id)) return; if(activeFocus===selectedGuest.id) endFocus();setMutedGuests(v => v.includes(selectedGuest.id) ? v.filter(id => id !== selectedGuest.id) : [...v,selectedGuest.id]);setSheet(null);}}><VolumeX size={15}/>{reportedIds.has(selectedGuest.id) ? '신고로 음소거됨' : mutedGuests.includes(selectedGuest.id) ? '음소거 해제' : selectedGuest.seat===11 ? '사장 음소거' : '음소거'}</button><button onClick={() => open('report')}><Flag size={15}/>신고</button></div></>}
       {sheet === 'report' && <><p className="eyebrow">신고하기</p><h2 id="sheet-title">어떤 일이 있었나요?</h2><p className="sheet-description">신고 내용은 운영팀이 확인하고 필요한 조치를 진행해요.</p><div className="form-choice report-choice">{['사진 도용·허위 프로필','욕설·불쾌한 발언','광고·금전 요구','기타'].map(reason=><button key={reason} className={reportReason===reason?'selected':''} onClick={()=>setReportReason(reason)}>{reason}</button>)}</div><textarea className="support-textarea" value={reportMessage} onChange={e=>setReportMessage(e.target.value)} placeholder="상황을 자세히 알려 주세요. (선택)" maxLength={500}/><div className="form-footer"><span>{reportMessage.length}/500</span><Button size="large" disabled={!reportReason || busy} onClick={submitReport}>신고 접수하기</Button></div></>}
-      {sheet === 'reported-entry' && pendingEntry && <><p className="eyebrow">입장 전 안내</p><h2 id="sheet-title">이전에 신고한 손님이 있어요</h2><p className="sheet-description">{pendingEntry.region} {pendingEntry.number}호점에 전에 신고한 손님이 있어요.<br/>들어가도 그 손님의 목소리는 들리지 않아요. 그래도 입장할까요?</p><div className="actions"><Button color="dark" variant="weak" onClick={() => { setPendingEntry(null); setSheet(null); setToast('다른 호점을 골라 주세요.'); }}>다른 바 보기</Button><Button size="xlarge" onClick={() => requestEntry(pendingEntry, { ignoreReport: true })}>그래도 입장하기</Button></div></>}
+      {sheet === 'reported-entry' && pendingEntry && <><p className="eyebrow">입장 전 안내</p><h2 id="sheet-title">이전에 신고한 손님이 있어요</h2><p className="sheet-description">{pendingEntry.region} {pendingEntry.number}호점에 전에 신고한 손님이 있어요. 들어가도 그 손님의 목소리는 들리지 않아요. 그래도 입장할까요?</p><div className="actions"><Button color="dark" variant="weak" onClick={() => { setPendingEntry(null); setSheet(null); setToast('다른 호점을 골라 주세요.'); }}>다른 바 보기</Button><Button size="xlarge" onClick={() => requestEntry(pendingEntry, { ignoreReport: true })}>그래도 입장하기</Button></div></>}
       {sheet === 'leave' && <><DoorOpen size={28}/><h2 id="sheet-title">오늘은 여기까지 할까요?</h2><p className="sheet-description">바를 나가도 이용시간은 계속 흘러요.<br/>자리가 있으면 같은 호점에 다시 들어갈 수 있어요.</p><div className="actions"><Button color="dark" variant="weak" onClick={() => setSheet(null)}>더 머무르기</Button><Button size="xlarge" onClick={leave}>바 나가기</Button></div></>}
       {error && <p className="error" role="alert">{error}</p>}
     </div></BottomSheet>
