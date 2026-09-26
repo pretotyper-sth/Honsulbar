@@ -6,7 +6,6 @@ html.in-toss { --ait-chrome-top:calc(max(env(safe-area-inset-top,0px),44px) + va
 .ait-gnb-fill { display:none; }
 html.in-toss .ait-gnb-fill { display:block; position:fixed; top:0; left:0; right:0; height:var(--ait-chrome-top); background:#fff; z-index:900; pointer-events:none; }
 html.sheet-open .ait-gnb-fill { background:transparent; }
-html.sheet-open .app { visibility:hidden; }
 * { box-sizing:border-box; }
 html, body, #root { height:100%; max-height:100dvh; overflow:hidden; }
 body { margin:0; min-width:320px; }

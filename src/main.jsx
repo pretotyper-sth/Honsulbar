@@ -6,7 +6,7 @@ import { IAP, loadFullScreenAd, showFullScreenAd, SafeAreaInsets, NavigationBar 
 import { Button, BottomSheet, Badge } from './ui';
 import { ArrowLeft, ArrowRight, Bell, Camera, Check, ChevronDown, Clock3, DoorOpen, Coins, MessageCircleMore, Mic, MicOff, Plus, Volume2, VolumeX, Speaker, Wine, X, Flag, Wallet, Eye, LockKeyhole, ArrowLeftRight, Settings, UserRound } from 'lucide-react';
 import { REGIONS, CAPACITY, DRINKS } from './model';
-import { useVoice } from './useVoice';
+import { ensureTossMediaPermission, useVoice } from './useVoice';
 import { useMesh } from './useMesh';
 import { call, getConfig, login, clearSession, hasSession, assetUrl, insideToss, requestPushAgreement } from './api';
 import { Glass } from './Glass';
@@ -669,10 +669,14 @@ function App() {
         if (!cancelled) { setVerificationState('unavailable'); setVerificationMessage('얼굴 확인을 준비하지 못했어요. 잠시 후 다시 시도해 주세요.'); }
       });
     };
-    const startCamera = () => navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 720 } },
-      audio: false,
-    }).then(attachStream).catch(() => {
+    const startCamera = () => ensureTossMediaPermission('camera').then(ok => {
+      if (cancelled) return null;
+      if (!ok) throw Object.assign(new Error('denied'), { name: 'NotAllowedError' });
+      return navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 720 } },
+        audio: false,
+      });
+    }).then(stream => { if (stream) attachStream(stream); }).catch(() => {
       if (!cancelled) {
         setVerificationState('unavailable');
         setVerificationMessage('카메라 권한이 필요해요. 허용하면 이 화면에서 바로 촬영할 수 있어요.');
