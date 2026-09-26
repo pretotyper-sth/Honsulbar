@@ -2,10 +2,23 @@ import { appLogin } from '@apps-in-toss/web-framework';
 
 const TOKEN_KEY = 'honsulbar:session:v1';
 const DEV_KEY = 'honsulbar:dev-user:v1';
+const WEB_PREVIEW_KEY = 'honsulbar:web-preview:v1';
 const localHost = /(^localhost$|^127\.0\.0\.1$|^192\.168\.|vercel\.app$)/.test(location.hostname);
 export const API_BASE = import.meta.env.VITE_API_BASE ?? (localHost ? '' : 'https://honsulbar-app.vercel.app');
 export const assetUrl = path => (typeof path === 'string' && path.startsWith('/api/') ? API_BASE + path : path);
 export const insideToss = () => typeof window !== 'undefined' && !!window.ReactNativeWebView;
+
+function webPreviewToken() {
+  if (typeof window === 'undefined') return '';
+  try {
+    const fromUrl = new URLSearchParams(window.location.search).get('web');
+    if (fromUrl) {
+      sessionStorage.setItem(WEB_PREVIEW_KEY, fromUrl);
+      return fromUrl;
+    }
+    return sessionStorage.getItem(WEB_PREVIEW_KEY) || '';
+  } catch { return ''; }
+}
 
 function graniteEmitter() {
   return typeof window !== 'undefined' ? window.__GRANITE_NATIVE_EMITTER : null;
@@ -74,11 +87,11 @@ export async function login(config) {
     }
     if (!authorizationCode) throw new ApiError('로그인 정보를 받아오지 못했어요. 다시 시도해 주세요.', 400);
     result = await request({ action: 'login', authorizationCode, referrer: referrer || 'DEFAULT' });
-  } else if (config?.devLogin) {
+  } else if (config?.devLogin || webPreviewToken()) {
     let key = null;
     try { key = localStorage.getItem(DEV_KEY); } catch {}
     if (!key) { key = `9${Math.floor(Math.random() * 1e8)}`; try { localStorage.setItem(DEV_KEY, key); } catch {} }
-    result = await request({ action: 'dev-login', key });
+    result = await request({ action: 'dev-login', key, preview: webPreviewToken() || undefined });
   } else throw new ApiError('토스 앱에서 혼술바를 열어 주세요.', 400);
   setToken(result.token);
   return result.state;

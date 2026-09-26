@@ -49,7 +49,10 @@ export default async function handler(req,res) {
    return await startSession(res,memberId);
   }
   if(action==='dev-login'){
-   if(process.env.HB_DEV_LOGIN!=='1'||process.env.VERCEL_ENV==='production')throw new AppError('지원하지 않는 요청이에요.',404);
+   const preview=typeof body.preview==='string'?body.preview:'';
+   const previewOk=!!process.env.HB_WEB_PREVIEW&&preview===process.env.HB_WEB_PREVIEW;
+   const localOk=process.env.HB_DEV_LOGIN==='1'&&process.env.VERCEL_ENV!=='production';
+   if(!localOk&&!previewOk)throw new AppError('지원하지 않는 요청이에요.',404);
    if(!/^9\d{1,8}$/.test(String(body.key||'')))throw new AppError('테스트 계정을 확인해 주세요.');
    return await startSession(res,await rpc('hb_login',{p_key:String(body.key)}));
   }
