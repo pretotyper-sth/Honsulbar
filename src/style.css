@@ -110,6 +110,7 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .room-heading { display:flex; justify-content:space-between; align-items:center; }
 .room-heading .eyebrow { font-size:12px; }
 .room-title { display:flex; align-items:center; gap:8px; font-size:24px; font-weight:700; letter-spacing:-.6px; padding:5px 0; }
+.room-title svg { color:#8b95a1; flex-shrink:0; }
 .occupancy { font-size:15px; font-weight:600; }
 .occupancy span { color:#8b95a1; font-weight:400; font-size:13px; }
 .time-strip { display:flex; align-items:center; gap:8px; padding:8px 10px 8px 14px; background:#f2f4f6; border-radius:14px; margin-top:14px; font-size:13px; color:#6b7684; }
