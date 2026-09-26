@@ -6,6 +6,9 @@ html.in-toss { --ait-chrome-top:calc(max(env(safe-area-inset-top,0px),44px) + va
 .ait-gnb-fill { display:none; }
 html.in-toss .ait-gnb-fill { display:block; position:fixed; top:0; left:0; right:0; height:var(--ait-chrome-top); background:#fff; z-index:900; pointer-events:none; }
 html.sheet-open .ait-gnb-fill { background:transparent; }
+html.sheet-open .app { overflow:hidden; contain:paint; clip-path:inset(var(--ait-chrome-top) 0 0 0); }
+html.sheet-open .room-heading,
+html.sheet-open .time-strip { visibility:hidden; }
 * { box-sizing:border-box; }
 html, body, #root { height:100%; max-height:100dvh; overflow:hidden; }
 body { margin:0; min-width:320px; }
@@ -451,6 +454,12 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .guest-focus-panel>button:first-child { margin-top:0; }
 .controls { position:sticky; bottom:0; z-index:3; background:#fff; padding:8px 0 max(6px,env(safe-area-inset-bottom)); }
 html.sheet-open .controls { position:relative; }
+.perm-backdrop { position:fixed; inset:0; z-index:1100; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; background:#0005; }
+.perm-sheet { width:min(100%,480px); padding:8px 22px max(22px,env(safe-area-inset-bottom)); border-radius:28px 28px 0 0; background:#fff; box-shadow:0 -8px 30px #0002; }
+.perm-sheet h2 { margin:18px 0 8px; font-size:22px; letter-spacing:-.4px; word-break:keep-all; }
+.perm-sheet p { margin:0 0 22px; color:#6b7684; font-size:15px; line-height:1.5; word-break:keep-all; }
+.perm-actions { display:flex; gap:8px; }
+.perm-actions>button { flex:1; }
 .bar-floor.is-frozen .seat.empty { pointer-events:none; opacity:.38; }
 .incoming-offer { cursor:pointer; border:1px solid #cfe2ff; }
 @media(max-width:360px) { .room-select { gap:8px; padding:18px 13px; } .entry-actions>button { font-size:13px; } .selected-room-detail { padding-left:0; } }

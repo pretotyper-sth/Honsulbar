@@ -3,10 +3,10 @@ import '@tensorflow/tfjs';
 import * as blazeface from '@tensorflow-models/blazeface';
 import { createRoot } from 'react-dom/client';
 import { IAP, loadFullScreenAd, showFullScreenAd, SafeAreaInsets, NavigationBar } from '@apps-in-toss/web-framework';
-import { Button, BottomSheet, Badge } from './ui';
+import { Button, BottomSheet, Badge, PermissionPrompt } from './ui';
 import { ArrowLeft, ArrowRight, Bell, Camera, Check, ChevronDown, Clock3, DoorOpen, Coins, MessageCircleMore, Mic, MicOff, Plus, Volume2, VolumeX, Speaker, Wine, X, Flag, Wallet, Eye, LockKeyhole, ArrowLeftRight, Settings, UserRound } from 'lucide-react';
 import { REGIONS, CAPACITY, DRINKS } from './model';
-import { ensureTossMediaPermission, useVoice } from './useVoice';
+import { hasMediaConsent, setMediaConsent, useVoice } from './useVoice';
 import { useMesh } from './useMesh';
 import { call, getConfig, login, clearSession, hasSession, assetUrl, insideToss, requestPushAgreement } from './api';
 import { Glass } from './Glass';
@@ -332,6 +332,8 @@ function App() {
   const freezeTimer = useRef(0);
   const moveLockUntil = useRef(0);
   const [seatFrozen, setSeatFrozen] = useState(false);
+  const [mediaAsk, setMediaAsk] = useState(null);
+  const startCameraRef = useRef(null);
   const stateHandler = useRef(null);
   const sheetStack = useRef([]);
 
@@ -503,8 +505,8 @@ function App() {
   }, []);
   useEffect(() => {
     if (!insideToss() || typeof NavigationBar?.setOptions !== 'function') return;
-    NavigationBar.setOptions({ transparentBackground: true, backgroundColor: sheet ? null : '#ffffff' }).catch(() => {});
-  }, [sheet]);
+    NavigationBar.setOptions({ transparentBackground: true, backgroundColor: (sheet || mediaAsk) ? null : '#ffffff' }).catch(() => {});
+  }, [sheet, mediaAsk]);
   useEffect(() => { getConfig().then(setConfig).catch(() => setConfig({})); }, []);
   useEffect(() => {
     if (screen !== 'loading') return;
@@ -672,21 +674,23 @@ function App() {
         if (!cancelled) { setVerificationState('unavailable'); setVerificationMessage('얼굴 확인을 준비하지 못했어요. 잠시 후 다시 시도해 주세요.'); }
       });
     };
-    const startCamera = () => ensureTossMediaPermission('camera').then(ok => {
-      if (cancelled) return null;
-      if (!ok) throw Object.assign(new Error('denied'), { name: 'NotAllowedError' });
-      return navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 720 } },
-        audio: false,
-      });
-    }).then(stream => { if (stream) attachStream(stream); }).catch(() => {
+    const startCamera = () => navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 720 } },
+      audio: false,
+    }).then(attachStream).catch(() => {
       if (!cancelled) {
         setVerificationState('unavailable');
         setVerificationMessage('카메라 권한이 필요해요. 허용하면 이 화면에서 바로 촬영할 수 있어요.');
       }
     });
-    startCamera();
-    return () => { cancelled = true; stopPreview(); };
+    startCameraRef.current = startCamera;
+    if (hasMediaConsent('camera')) startCamera();
+    else {
+      setVerificationState('unavailable');
+      setVerificationMessage('카메라 사용을 허용하면 이 화면에서 바로 촬영할 수 있어요.');
+      setMediaAsk(current => current?.kind === 'camera' ? current : { kind: 'camera' });
+    }
+    return () => { cancelled = true; startCameraRef.current = null; stopPreview(); };
   }, [sheet]);
   const previousRoomCount = useRef({ region, count: rooms[region].length });
   useEffect(() => {
@@ -1242,12 +1246,42 @@ function App() {
     }
     finally { leaving.current = false; }
   }
+  function allowMedia() {
+    const ask = mediaAsk;
+    setMediaAsk(null);
+    if (!ask) return;
+    setMediaConsent(ask.kind, true);
+    if (ask.kind === 'microphone') {
+      voice.toggle();
+      if (ask.speakerOn) setSpeaker(true);
+    }
+    if (ask.kind === 'camera') startCameraRef.current?.();
+  }
+  function denyMedia() {
+    const kind = mediaAsk?.kind;
+    setMediaAsk(null);
+    if (kind === 'microphone') setToast('마이크 권한을 허용하면 이야기할 수 있어요.');
+    if (kind === 'camera') {
+      setVerificationState('unavailable');
+      setVerificationMessage('카메라 권한이 필요해요. 허용하면 이 화면에서 바로 촬영할 수 있어요.');
+    }
+  }
+  function requestMic() {
+    mesh.resume();
+    if (seconds === 0 && seat !== 11) { open('menu'); return; }
+    if (voice.mic) { voice.toggle(); setSpeaker(false); return; }
+    if (hasMediaConsent('microphone')) { voice.toggle(); return; }
+    setMediaAsk({ kind: 'microphone' });
+  }
   function toggleSpeaker() {
     mesh.resume();
     if (seconds === 0 && seat !== 11) { open('menu'); return; }
-    const next = !speaker;
-    if (next && !voice.mic) voice.toggle();
-    setSpeaker(next);
+    if (speaker) { setSpeaker(false); return; }
+    if (!voice.mic) {
+      if (!hasMediaConsent('microphone')) { setMediaAsk({ kind: 'microphone', speakerOn: true }); return; }
+      voice.toggle();
+    }
+    setSpeaker(true);
   }
   const time = `${String(Math.floor(seconds / 60)).padStart(2,'0')}:${String(seconds % 60).padStart(2,'0')}`;
   const localRooms = rooms[region];
@@ -1392,7 +1426,7 @@ function App() {
       {outgoing && <div className="seat-offer"><Clock3 size={18}/><span>자리 양보 답변을 기다려요<small>수락 전에는 포인트가 차감되지 않아요</small></span><button onClick={cancelOutgoing}>취소</button></div>}
       <div className="current-drink"><Glass id={wallet.drinkId} seconds={seconds} host={seat===11}/><span className="current-drink-name"><b>{currentDrink?.name}</b><small>{seat===11?'시간 제한 없음':`${Math.ceil(seconds/60)}분 남음`}</small></span><button aria-label="포인트 상점" onClick={() => open('shop')}><Wallet size={13}/>{wallet.balance.toLocaleString()} P</button></div>
       {seconds === 0 && seat !== 11 && <p role="status" className="error">이용시간이 끝났어요. 한 잔 더 주문하고 머물러요.</p>}
-      <div className="controls"><button className={voice.mic ? 'mic-active' : ''} aria-pressed={voice.mic} onClick={() => { mesh.resume(); if (seconds === 0 && seat !== 11) open('menu'); else { const micOn = voice.mic; voice.toggle(); if (micOn) setSpeaker(false); } }}>{voice.mic ? <Mic size={21}/> : <MicOff size={21}/>}<span>{voice.pending ? '연결 중' : voice.mic ? '마이크 켜짐' : '마이크 꺼짐'}</span></button><button className={speaker ? 'speaker-active' : ''} aria-pressed={speaker} onClick={toggleSpeaker}><Speaker size={21}/><span>{speaker ? '스피커 켜짐' : '스피커 꺼짐'}</span></button><button className={soundOn ? 'sound-active' : ''} aria-pressed={soundOn} onClick={() => {mesh.resume();setSoundOn(v=>!v);}}>{soundOn ? <Volume2 size={21}/> : <VolumeX size={21}/>}<span>{soundOn ? '소리 켜짐' : '소리 꺼짐'}</span></button><button className="order-control" onClick={() => {setSelection(wallet.drinkId || 'highball'); open('menu');}}><Wine size={21}/><span>한 잔 더</span></button></div>
+      <div className="controls"><button className={voice.mic ? 'mic-active' : ''} aria-pressed={voice.mic} onClick={requestMic}>{voice.mic ? <Mic size={21}/> : <MicOff size={21}/>}<span>{voice.pending ? '연결 중' : voice.mic ? '마이크 켜짐' : '마이크 꺼짐'}</span></button><button className={speaker ? 'speaker-active' : ''} aria-pressed={speaker} onClick={toggleSpeaker}><Speaker size={21}/><span>{speaker ? '스피커 켜짐' : '스피커 꺼짐'}</span></button><button className={soundOn ? 'sound-active' : ''} aria-pressed={soundOn} onClick={() => {mesh.resume();setSoundOn(v=>!v);}}>{soundOn ? <Volume2 size={21}/> : <VolumeX size={21}/>}<span>{soundOn ? '소리 켜짐' : '소리 꺼짐'}</span></button><button className="order-control" onClick={() => {setSelection(wallet.drinkId || 'highball'); open('menu');}}><Wine size={21}/><span>한 잔 더</span></button></div>
     </section>}
   </main>
       <BottomSheet open={!!sheet} onClose={closeSheet} ariaLabelledBy="sheet-title" className="app-bottom-sheet">
@@ -1440,6 +1474,7 @@ function App() {
       {sheet === 'leave' && <><DoorOpen size={28}/><h2 id="sheet-title">오늘은 여기까지 할까요?</h2><p className="sheet-description">바를 나가도 이용시간은 계속 흘러요.<br/>자리가 있으면 같은 호점에 다시 들어갈 수 있어요.</p><div className="actions"><Button color="dark" variant="weak" onClick={() => setSheet(null)}>더 머무르기</Button><Button size="xlarge" onClick={leave}>바 나가기</Button></div></>}
       {error && <p className="error" role="alert">{error}</p>}
     </div></BottomSheet>
+    <PermissionPrompt open={!!mediaAsk} kind={mediaAsk?.kind} onAllow={allowMedia} onDeny={denyMedia}/>
     {toast && <div className="toast" role="status">{toast}</div>}
   </>;
 }
