@@ -479,6 +479,13 @@ function App() {
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 3500); return () => clearTimeout(timer); }, [toast]);
   useEffect(() => { if (!newRoom) return; const timer = setTimeout(() => setNewRoom(null), 6000); return () => clearTimeout(timer); }, [newRoom]);
   useEffect(() => {
+    if (screen !== 'bar') return;
+    const scroller = document.querySelector('.app');
+    if (!scroller) return;
+    scroller.style.overflow = '';
+    scroller.scrollTop = 0;
+  }, [screen]);
+  useEffect(() => {
     if (sheet !== 'shop' || !focusSubscription) return;
     const timer = setTimeout(() => {
       subscriptionSection.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
