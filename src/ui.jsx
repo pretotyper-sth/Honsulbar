@@ -12,6 +12,32 @@ export function Badge({ children, color = 'blue', className = '', ...props }) {
 }
 
 export function BottomSheet({ open, onClose, children, className = '', maxHeight, ariaLabelledBy }) {
+  React.useEffect(() => {
+    if (!open) return undefined;
+    const { body, documentElement } = document;
+    const scrollY = window.scrollY;
+    const previous = { overflow: body.style.overflow, position: body.style.position, top: body.style.top, width: body.style.width };
+    body.style.overflow = 'hidden';
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.width = '100%';
+    documentElement.classList.add('sheet-open');
+    const blockBackground = event => {
+      if (!event.target.closest?.('.ui-bottom-sheet')) event.preventDefault();
+    };
+    document.addEventListener('touchmove', blockBackground, { passive: false });
+    document.addEventListener('wheel', blockBackground, { passive: false });
+    return () => {
+      body.style.overflow = previous.overflow;
+      body.style.position = previous.position;
+      body.style.top = previous.top;
+      body.style.width = previous.width;
+      documentElement.classList.remove('sheet-open');
+      document.removeEventListener('touchmove', blockBackground);
+      document.removeEventListener('wheel', blockBackground);
+      window.scrollTo(0, scrollY);
+    };
+  }, [open]);
   if (!open) return null;
   return <div className="ui-sheet-backdrop" role="presentation" onClick={onClose}>
     <section className={['ui-bottom-sheet', className].filter(Boolean).join(' ')} style={maxHeight ? { maxHeight } : undefined} role="dialog" aria-modal="true" aria-labelledby={ariaLabelledBy} onClick={event => event.stopPropagation()}>
