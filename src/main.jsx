@@ -78,11 +78,11 @@ function faceProbability(face) {
 function isLikelyRealFace(face, width, height) {
   const box = faceBox(face);
   const probability = faceProbability(face);
-  if (!Number.isFinite(probability) || probability < 0.9) return false;
+  if (!Number.isFinite(probability) || probability < 0.72) return false;
   const size = Math.min(box.width / width, box.height / height);
-  if (size < 0.16 || size > 0.92) return false;
+  if (size < 0.12 || size > 0.95) return false;
   const aspect = box.width / box.height;
-  if (aspect < 0.62 || aspect > 1.18) return false;
+  if (aspect < 0.52 || aspect > 1.38) return false;
   const landmarks = face.landmarks || [];
   if (landmarks.length < 4) return false;
   const [rightEye, leftEye, nose, mouth] = landmarks;
@@ -159,25 +159,12 @@ function regionStats(canvas, rect) {
 }
 function looksLikeIllustration(canvas, face) {
   const stats = regionStats(canvas, innerFaceRect(face));
-  if (!stats) return true;
-  if (stats.exactRatio > 0.3) return true;
-  if (stats.colorDensity < 0.08) return true;
-  if (stats.flatRatio > 0.48 && stats.colorDensity < 0.13) return true;
-  if (stats.lapMean < 34 && stats.colorDensity < 0.11) return true;
-  return false;
+  if (!stats) return false;
+  return stats.exactRatio > 0.4 && stats.colorDensity < 0.055 && stats.flatRatio > 0.5;
 }
 function facesLookLikeSamePerson(profileCanvas, profileFace, cameraCanvas, cameraFace) {
   if (looksLikeIllustration(profileCanvas, profileFace)) return false;
-  if (looksLikeIllustration(cameraCanvas, cameraFace)) return false;
-  if (faceSimilarity(faceSignature(profileFace), faceSignature(cameraFace)) < 0.8) return false;
-  const profileTone = regionStats(profileCanvas, innerFaceRect(profileFace));
-  const cameraTone = regionStats(cameraCanvas, innerFaceRect(cameraFace));
-  if (!profileTone || !cameraTone) return false;
-  const colorDist = Math.hypot(profileTone.meanR - cameraTone.meanR, profileTone.meanG - cameraTone.meanG, profileTone.meanB - cameraTone.meanB);
-  if (colorDist > 62) return false;
-  if (profileTone.exactRatio > 0.26 && cameraTone.exactRatio < 0.22) return false;
-  if (profileTone.colorDensity < 0.09 && cameraTone.colorDensity > 0.12) return false;
-  return true;
+  return faceSimilarity(faceSignature(profileFace), faceSignature(cameraFace)) >= 0.72;
 }
 function resizePhoto(file) {
   return new Promise((resolve, reject) => {
