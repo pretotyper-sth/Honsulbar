@@ -33,11 +33,12 @@ function capture(bin, argv) {
 }
 
 function memo() {
-  if (process.env.AIT_DEPLOY_MEMO) return process.env.AIT_DEPLOY_MEMO.replace(/\s+/g, ' ').trim().slice(0, 1000);
+  const fromEnv = (process.env.AIT_DEPLOY_MEMO || '').split('\n')[0].replace(/\s+/g, ' ').trim();
+  if (fromEnv) return fromEnv.slice(0, 120);
   const git = capture('git', ['log', '-1', '--format=%h %s']);
   const subject = (git.status === 0 ? git.stdout.trim() : '번들 업로드').slice(0, 80);
   const when = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date()).replace(',', '');
-  return `${when} KST · ${subject}`.slice(0, 1000);
+  return `${when} KST · ${subject}`.slice(0, 120);
 }
 
 function apiKey() {
