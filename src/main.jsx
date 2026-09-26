@@ -818,6 +818,7 @@ function App() {
     if (!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024) { setError('10MB 이하의 JPG, PNG, WebP 사진을 골라주세요.'); return; }
     const requestId = ++photoInspect.current;
     const previous = profile.photo;
+    const started = Date.now();
     setError('');
     setDraftVerified(false);
     setPhotoDraft(null);
@@ -826,9 +827,9 @@ function App() {
       const photo = await resizePhoto(file);
       if (requestId !== photoInspect.current) return;
       setProfile(v => ({ ...v, photo }));
-      const started = Date.now();
+      await new Promise(resolve => requestAnimationFrame(() => resolve()));
       const ok = await inspectProfilePhoto(photo);
-      const remain = 480 - (Date.now() - started);
+      const remain = 1600 - (Date.now() - started);
       if (remain > 0) await new Promise(resolve => setTimeout(resolve, remain));
       if (requestId !== photoInspect.current) return;
       if (!ok) {
