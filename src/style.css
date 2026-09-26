@@ -374,14 +374,14 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .selected-room-detail { margin-top:-1px; }
 .point-packs span { display:flex; align-items:center; gap:8px; }
 .point-packs em { font-style:normal; color:#1b64da; font-size:11px; font-weight:600; }
-.subscription-card { display:flex; align-items:center; gap:12px; padding:16px; background:#f4f9ff; border-radius:16px; }
+.subscription-card { display:flex; align-items:center; gap:16px; padding:18px 16px; background:#f4f9ff; border-radius:16px; }
 .subscription-card.is-canceling { background:#f8f9fb; }
 .subscription-card>div:first-child { flex:1; min-width:0; }
 .subscription-card strong,.subscription-card small { display:block; word-break:keep-all; }
-.subscription-card strong { font-size:14px; }
-.subscription-card small { color:#6b7684; font-size:11px; line-height:1.5; margin-top:4px; }
-.subscription-cta { display:flex; flex-direction:column; align-items:flex-end; gap:8px; flex-shrink:0; }
-.subscription-cta>b { white-space:nowrap; font-size:13px; color:#1b64da; }
+.subscription-card strong { font-size:18px; font-weight:700; letter-spacing:-.4px; color:#191f28; }
+.subscription-card small { color:#6b7684; font-size:12px; line-height:1.5; margin-top:6px; }
+.subscription-card>button { flex-shrink:0; }
+.subscription-card + .shop-note { margin-top:10px; }
 .notification-list { display:flex; flex-direction:column; gap:10px; margin-top:20px; }
 .notification-list>button { display:flex; align-items:flex-start; gap:12px; width:100%; padding:16px; background:#f9fafb; border-radius:14px; color:#3182f6; text-align:left; }
 .notification-list>button>svg:last-child { margin-left:auto; flex-shrink:0; }
