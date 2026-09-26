@@ -98,42 +98,86 @@ function isLikelyRealFace(face, width, height) {
   if (Math.abs(mouth[0] - midX) > box.width * 0.3) return false;
   return true;
 }
-function looksLikeIllustration(canvas, face) {
+function innerFaceRect(face) {
   const box = faceBox(face);
+  const landmarks = face.landmarks || [];
+  const [rightEye, leftEye, , mouth] = landmarks;
+  if (rightEye && leftEye && mouth) {
+    const eyeY = (rightEye[1] + leftEye[1]) / 2;
+    return {
+      x: Math.min(rightEye[0], leftEye[0]) - box.width * 0.14,
+      y: eyeY - box.height * 0.2,
+      w: Math.abs(leftEye[0] - rightEye[0]) + box.width * 0.28,
+      h: (mouth[1] - eyeY) + box.height * 0.22,
+    };
+  }
+  return { x: box.left + box.width * 0.16, y: box.top + box.height * 0.08, w: box.width * 0.68, h: box.height * 0.48 };
+}
+function regionStats(canvas, rect) {
+  const x = Math.max(0, Math.floor(rect.x));
+  const y = Math.max(0, Math.floor(rect.y));
+  const w = Math.max(8, Math.min(canvas.width - x, Math.floor(rect.w)));
+  const h = Math.max(8, Math.min(canvas.height - y, Math.floor(rect.h)));
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  const inset = 0.1;
-  const x = Math.max(0, Math.floor(box.left + box.width * inset));
-  const y = Math.max(0, Math.floor(box.top + box.height * inset));
-  const w = Math.max(8, Math.min(canvas.width - x, Math.floor(box.width * (1 - inset * 2))));
-  const h = Math.max(8, Math.min(canvas.height - y, Math.floor(box.height * (1 - inset * 2))));
   let pixels;
-  try { pixels = ctx.getImageData(x, y, w, h).data; } catch { return false; }
-  const step = Math.max(1, Math.floor(Math.min(w, h) / 52));
-  let samples = 0, flat = 0, strongEdge = 0, graySum = 0, graySq = 0;
+  try { pixels = ctx.getImageData(x, y, w, h).data; } catch { return null; }
+  const step = Math.max(1, Math.floor(Math.min(w, h) / 64));
+  let samples = 0, flat = 0, exact = 0, graySum = 0, graySq = 0, rSum = 0, gSum = 0, bSum = 0, lapSum = 0;
   const colors = new Set();
   for (let row = 1; row < h - 1; row += step) {
     for (let col = 1; col < w - 1; col += step) {
       const i = (row * w + col) * 4;
       const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
       const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-      graySum += gray;
-      graySq += gray * gray;
+      const rightI = i + 4, downI = i + w * 4;
+      const colorDelta = Math.abs(r - pixels[rightI]) + Math.abs(g - pixels[rightI + 1]) + Math.abs(b - pixels[rightI + 2]);
+      const grayRight = 0.299 * pixels[rightI] + 0.587 * pixels[rightI + 1] + 0.114 * pixels[rightI + 2];
+      const grayDown = 0.299 * pixels[downI] + 0.587 * pixels[downI + 1] + 0.114 * pixels[downI + 2];
+      const left = 0.299 * pixels[i - 4] + 0.587 * pixels[i - 3] + 0.114 * pixels[i - 2];
+      const up = 0.299 * pixels[i - w * 4] + 0.587 * pixels[i - w * 4 + 1] + 0.114 * pixels[i - w * 4 + 2];
+      rSum += r; gSum += g; bSum += b;
+      graySum += gray; graySq += gray * gray;
+      lapSum += Math.abs(4 * gray - left - grayRight - up - grayDown);
       colors.add(((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4));
-      const right = 0.299 * pixels[i + 4] + 0.587 * pixels[i + 5] + 0.114 * pixels[i + 6];
-      const down = 0.299 * pixels[i + w * 4] + 0.587 * pixels[i + w * 4 + 1] + 0.114 * pixels[i + w * 4 + 2];
-      const delta = Math.abs(gray - right) + Math.abs(gray - down);
-      if (delta < 6) flat += 1;
-      if (delta > 34) strongEdge += 1;
+      if (Math.abs(gray - grayRight) + Math.abs(gray - grayDown) < 6) flat += 1;
+      if (colorDelta <= 3) exact += 1;
       samples += 1;
     }
   }
-  if (samples < 40) return false;
-  const mean = graySum / samples;
-  const std = Math.sqrt(Math.max(0, graySq / samples - mean * mean));
-  const flatRatio = flat / samples;
-  const edgeRatio = strongEdge / samples;
-  const colorDensity = colors.size / samples;
-  return (flatRatio > 0.56 && colorDensity < 0.16) || (std < 16 && edgeRatio > 0.08 && flatRatio > 0.42);
+  if (samples < 30) return null;
+  return {
+    samples,
+    flatRatio: flat / samples,
+    exactRatio: exact / samples,
+    colorDensity: colors.size / samples,
+    lapMean: lapSum / samples,
+    std: Math.sqrt(Math.max(0, graySq / samples - (graySum / samples) ** 2)),
+    meanR: rSum / samples,
+    meanG: gSum / samples,
+    meanB: bSum / samples,
+  };
+}
+function looksLikeIllustration(canvas, face) {
+  const stats = regionStats(canvas, innerFaceRect(face));
+  if (!stats) return true;
+  if (stats.exactRatio > 0.3) return true;
+  if (stats.colorDensity < 0.08) return true;
+  if (stats.flatRatio > 0.48 && stats.colorDensity < 0.13) return true;
+  if (stats.lapMean < 34 && stats.colorDensity < 0.11) return true;
+  return false;
+}
+function facesLookLikeSamePerson(profileCanvas, profileFace, cameraCanvas, cameraFace) {
+  if (looksLikeIllustration(profileCanvas, profileFace)) return false;
+  if (looksLikeIllustration(cameraCanvas, cameraFace)) return false;
+  if (faceSimilarity(faceSignature(profileFace), faceSignature(cameraFace)) < 0.8) return false;
+  const profileTone = regionStats(profileCanvas, innerFaceRect(profileFace));
+  const cameraTone = regionStats(cameraCanvas, innerFaceRect(cameraFace));
+  if (!profileTone || !cameraTone) return false;
+  const colorDist = Math.hypot(profileTone.meanR - cameraTone.meanR, profileTone.meanG - cameraTone.meanG, profileTone.meanB - cameraTone.meanB);
+  if (colorDist > 62) return false;
+  if (profileTone.exactRatio > 0.26 && cameraTone.exactRatio < 0.22) return false;
+  if (profileTone.colorDensity < 0.09 && cameraTone.colorDensity > 0.12) return false;
+  return true;
 }
 function resizePhoto(file) {
   return new Promise((resolve, reject) => {
@@ -856,6 +900,8 @@ function App() {
     try {
       const model = await loadFaceModel();
       const cameraFrames = [];
+      const liveFaces = [];
+      let still = null;
       for (let frame = 0; frame < 3; frame += 1) {
         if (frame > 0) await new Promise(resolve => setTimeout(resolve, 180));
         canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height);
@@ -864,17 +910,27 @@ function App() {
         const face = faces.sort((a, b) => faceBox(b).width - faceBox(a).width)[0];
         if (!faceIsWellFramed(face, canvas.width, canvas.height)) { finish('얼굴을 화면 가운데에 맞추고 조금 가까이에서 다시 촬영해 주세요.'); return; }
         cameraFrames.push(faceSignature(face));
+        liveFaces.push(face);
+        if (frame === 1) {
+          still = document.createElement('canvas');
+          still.width = canvas.width;
+          still.height = canvas.height;
+          still.getContext('2d').drawImage(canvas, 0, 0);
+        }
       }
       const cameraSimilarity = faceSimilarity(cameraFrames[0], cameraFrames[2]);
       if (cameraSimilarity < 0.72) { finish('얼굴이 흔들렸어요. 화면을 바라보고 다시 촬영해 주세요.'); return; }
-      if (profile.photo?.startsWith('blob:') || profile.photo?.startsWith('data:')) {
-        const image = new Image(); image.src = profile.photo; await image.decode();
-        const profileFaces = await model.estimateFaces(image, false);
-        if (!profileFaces.length) { finish('프로필 사진에서 얼굴을 찾지 못했어요. 얼굴이 잘 보이는 사진을 등록해 주세요.'); return; }
-        const profileFace = profileFaces.sort((a, b) => faceBox(b).width - faceBox(a).width)[0];
-        const profileSimilarity = faceSimilarity(faceSignature(profileFace), cameraFrames[1]);
-        if (profileSimilarity < 0.64) { finish('프로필 사진과 얼굴이 비슷하지 않아요.\n본인 사진으로 다시 촬영해 주세요.'); return; }
-      }
+      if (!profile.photo) { finish('프로필 사진을 다시 등록해 주세요.'); return; }
+      const image = new Image(); image.src = profile.photo; await image.decode();
+      const profileCanvas = document.createElement('canvas');
+      profileCanvas.width = image.naturalWidth || image.width;
+      profileCanvas.height = image.naturalHeight || image.height;
+      profileCanvas.getContext('2d').drawImage(image, 0, 0);
+      const profileFaces = await model.estimateFaces(profileCanvas, false);
+      if (!profileFaces.length) { finish('프로필 사진에서 얼굴을 찾지 못했어요. 얼굴이 잘 보이는 사진을 등록해 주세요.'); return; }
+      const profileFace = profileFaces.sort((a, b) => faceBox(b).width - faceBox(a).width)[0];
+      if (looksLikeIllustration(profileCanvas, profileFace)) { finish('얼굴이 잘 보이는 사진을 등록해 주세요.'); return; }
+      if (!still || !facesLookLikeSamePerson(profileCanvas, profileFace, still, liveFaces[1])) { finish('프로필 사진과 얼굴이 비슷하지 않아요.\n본인 사진으로 다시 촬영해 주세요.'); return; }
     } catch { finish('얼굴 확인 중 문제가 생겼어요. 얼굴을 화면 가운데에 맞추고 다시 촬영해 주세요.'); return; }
     verifyProfilePhoto(Math.max(0, 2000 - (Date.now() - startedAt)));
   }
