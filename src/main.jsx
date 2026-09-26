@@ -725,7 +725,7 @@ function App() {
       if (!ok) {
         setPhotoCheck(previous ? 'idle' : 'fail');
         setProfile(v => ({ ...v, photo: previous }));
-        setError('얼굴이 잘 보이는 실사 사진을 등록해 주세요.');
+        setError('얼굴이 잘 보이는 사진을 등록해 주세요.');
         return;
       }
       setPhotoDraft(photo);
