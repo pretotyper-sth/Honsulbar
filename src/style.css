@@ -163,7 +163,7 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .close { position:absolute; right:12px; top:5px; }
 .sheet>.eyebrow { padding-right:30px; margin-bottom:8px; }
 .sheet h2 { font-size:23px; line-height:1.4; letter-spacing:-.6px; font-weight:700; margin:8px 30px 12px 0; word-break:keep-all; overflow-wrap:break-word; }
-.sheet-description { color:#6b7684; font-size:14px; line-height:1.6; margin:0 0 20px; word-break:keep-all; overflow-wrap:break-word; }
+.sheet-description { color:#6b7684; font-size:14px; line-height:1.6; margin:0 0 20px; word-break:keep-all; overflow-wrap:normal; }
 .menu { display:flex; flex-direction:column; gap:8px; margin:20px 0; }
 .menu button { display:flex; align-items:center; gap:12px; width:100%; text-align:left; border:1px solid #e5e8eb; border-radius:16px; padding:12px; min-height:82px; }
 .menu button.chosen { border-color:#3182f6; background:#f4f9ff; }
