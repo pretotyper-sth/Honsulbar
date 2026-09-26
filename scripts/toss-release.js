@@ -16,6 +16,7 @@ function loadEnv(name) {
 loadEnv('.env.local');
 loadEnv('.env');
 const ait = resolve(root, 'node_modules/.bin/ait');
+const vite = resolve(root, 'node_modules/.bin/vite');
 const bundle = resolve(root, 'honsulbar.ait');
 const args = new Set(process.argv.slice(2));
 const buildOnly = args.has('--build-only');
@@ -51,6 +52,12 @@ if (!existsSync(ait)) {
 }
 
 if (!uploadOnly) {
+  if (!existsSync(vite)) {
+    console.error('vite가 없습니다. npm install 후 다시 실행해 주세요.');
+    process.exit(1);
+  }
+  console.log('웹 번들을 빌드합니다.');
+  run(vite, ['build']);
   console.log('앱인토스 번들을 빌드합니다.');
   run(ait, ['build']);
 }

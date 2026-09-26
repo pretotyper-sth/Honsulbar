@@ -1,4 +1,4 @@
-import { appLogin } from '@apps-in-toss/web-framework';
+import { appLogin, requestNotificationAgreement } from '@apps-in-toss/web-framework';
 
 const TOKEN_KEY = 'honsulbar:session:v1';
 const DEV_KEY = 'honsulbar:dev-user:v1';
@@ -29,27 +29,21 @@ function webPreviewToken() {
   } catch { return ''; }
 }
 
-function graniteEmitter() {
-  return typeof window !== 'undefined' ? window.__GRANITE_NATIVE_EMITTER : null;
-}
-
 export function requestPushAgreement(templateCode, { onEvent, onError } = {}) {
-  const webView = typeof window !== 'undefined' ? window.ReactNativeWebView : null;
-  const emitter = graniteEmitter();
-  if (!webView || !emitter || !templateCode) {
+  if (!insideToss() || !templateCode || typeof requestNotificationAgreement !== 'function') {
     onError?.(new Error('unsupported'));
     return () => {};
   }
-  const eventId = Math.random().toString(36).slice(2, 15);
-  const method = 'requestNotificationAgreement';
-  const offEvent = emitter.on(`${method}/onEvent/${eventId}`, data => onEvent?.(data));
-  const offError = emitter.on(`${method}/onError/${eventId}`, error => onError?.(error));
-  webView.postMessage(JSON.stringify({ type: 'addEventListener', functionName: method, eventId, args: { templateCode } }));
-  return () => {
-    try { webView.postMessage(JSON.stringify({ type: 'removeEventListener', functionName: method, eventId })); } catch {}
-    offEvent?.();
-    offError?.();
-  };
+  try {
+    return requestNotificationAgreement({
+      options: { templateCode },
+      onEvent: result => onEvent?.(result),
+      onError: error => onError?.(error),
+    });
+  } catch (error) {
+    onError?.(error);
+    return () => {};
+  }
 }
 
 let token = null;
