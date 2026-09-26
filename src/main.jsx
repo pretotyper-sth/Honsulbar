@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import '@tensorflow/tfjs';
 import * as blazeface from '@tensorflow-models/blazeface';
 import { createRoot } from 'react-dom/client';
-import { IAP, loadFullScreenAd, showFullScreenAd, getPermission, openPermissionDialog, SafeAreaInsets } from '@apps-in-toss/web-framework';
+import { IAP, loadFullScreenAd, showFullScreenAd, getPermission, openPermissionDialog, SafeAreaInsets, NavigationBar } from '@apps-in-toss/web-framework';
 import { Button, BottomSheet, Badge } from './ui';
 import { ArrowLeft, ArrowRight, Bell, Camera, Check, ChevronDown, Clock3, DoorOpen, Coins, MessageCircleMore, Mic, MicOff, Plus, Volume2, VolumeX, Speaker, Wine, X, Flag, Wallet, Eye, LockKeyhole, ArrowLeftRight, Settings, UserRound } from 'lucide-react';
 import { REGIONS, CAPACITY, DRINKS } from './model';
@@ -21,7 +21,7 @@ const FAQ_ITEMS = [
   ['입장 전에 손님 사진을 볼 수 있나요?', '미리보기 상품을 구매하면 현재 호점에 있는 손님들의 사진을 확인할 수 있어요. 미리보기는 입장이나 자리 예약을 포함하지 않아요.'],
   ['목소리가 불편한 손님은 어떻게 신고하나요?', '손님 프로필에서 신고를 선택하고 사유와 내용을 접수해 주세요. 신고한 손님의 목소리는 바로 들리지 않고, 그 손님이 있는 바에 입장할 때는 미리 알려드려요.'],
   ['정기 구독은 어떻게 해지하나요?', '토스 앱 전체에서 결제 내역을 연 뒤 혼술바 정기 구독을 해지하면 돼요. 해지해도 이번 기간이 끝날 때까지는 이용할 수 있고, 다시 이어가려면 같은 결제 내역에서 자동 결제를 켜면 돼요.'],
-  ['빈자리 알림은 어떻게 끄나요?', '설정에서 빈자리 알림 끄기를 누르면 신청한 호점 알림이 해제돼요. 토스 푸시 자체를 끄려면 토스 앱 알림 설정에서 바꿀 수 있어요.'],
+  ['빈자리 알림은 어떻게 끄나요?', '설정 알림에서 빈자리 알림 스위치를 끄면 신청한 호점 알림이 해제돼요. 토스 푸시 자체를 끄려면 토스 앱 알림 설정에서 바꿀 수 있어요.'],
   ['회원탈퇴는 어떻게 하나요?', '정기 구독이 유지 중이면 탈퇴할 수 없어요. 토스 결제 내역에서 구독을 먼저 해지한 뒤 설정에서 탈퇴해 주세요.'],
 ];
 const LEGAL_DOCS = [
@@ -245,6 +245,10 @@ function resizePhoto(file) {
   });
 }
 const DEFAULT_ICE = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+const WAITLIST_ALERT_KEY = 'honsulbar:alerts:waitlist:v1';
+const PUSH_AGREED_KEY = 'honsulbar:push-agreed:v1';
+function storageFlag(key) { try { return localStorage.getItem(key) === '1'; } catch { return false; } }
+function setStorageFlag(key, on) { try { on ? localStorage.setItem(key, '1') : localStorage.removeItem(key); } catch {} }
 
 function App() {
   const [config, setConfig] = useState(null);
@@ -256,6 +260,8 @@ function App() {
   const [entryRoom, setEntryRoom] = useState(null);
   const [shopPack, setShopPack] = useState(POINT_PACKS[0]);
   const [historyLimit, setHistoryLimit] = useState(10);
+  const [waitlistAlerts, setWaitlistAlerts] = useState(() => storageFlag(WAITLIST_ALERT_KEY));
+  const [pushAgreed, setPushAgreed] = useState(() => storageFlag(PUSH_AGREED_KEY));
   const [facing, setFacing] = useState(0);
   const [audioFacing, setAudioFacing] = useState(0);
   const [waveSent, setWaveSent] = useState([]);
@@ -469,6 +475,10 @@ function App() {
     try { off = SafeAreaInsets.subscribe({ onEvent: apply }) || (() => {}); } catch {}
     return () => { try { off(); } catch {} };
   }, []);
+  useEffect(() => {
+    if (!insideToss() || typeof NavigationBar?.setOptions !== 'function') return;
+    NavigationBar.setOptions({ transparentBackground: true, backgroundColor: sheet ? null : '#ffffff' }).catch(() => {});
+  }, [sheet]);
   useEffect(() => { getConfig().then(setConfig).catch(() => setConfig({})); }, []);
   useEffect(() => {
     if (screen !== 'loading') return;
@@ -484,12 +494,20 @@ function App() {
         try { await run(screen === 'bar' ? 'heartbeat' : 'state', screen === 'bar' ? { speaker, mic: voice.mic } : undefined); } catch (e) { if (e.status === 401) fail(e); }
         polling.current = false;
       }
-      timer = setTimeout(loop, screen === 'bar' ? 2000 : 6000);
+      timer = setTimeout(loop, screen === 'bar' ? 1000 : 6000);
     };
-    timer = setTimeout(loop, screen === 'bar' ? 800 : 6000);
+    timer = setTimeout(loop, screen === 'bar' ? 400 : 6000);
     return () => { stopped = true; clearTimeout(timer); };
   }, [screen, speaker, voice.mic]);
   useEffect(() => { if (screen === 'lobby' || screen === 'bar') run('state').catch(() => {}); }, [historyLimit]);
+  useEffect(() => {
+    if (waitlist.length && !waitlistAlerts) {
+      setWaitlistAlerts(true);
+      setStorageFlag(WAITLIST_ALERT_KEY, true);
+      setPushAgreed(true);
+      setStorageFlag(PUSH_AGREED_KEY, true);
+    }
+  }, [waitlist.length, waitlistAlerts]);
 
   async function loadFaceModel() {
     if (faceModel.current) return faceModel.current;
@@ -520,7 +538,12 @@ function App() {
 
   useEffect(() => { const timer=setTimeout(()=>setAudioFacing(facing),150); return ()=>clearTimeout(timer); },[facing]);
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [screen]);
-  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
+  useEffect(() => {
+    let id = 0;
+    const pulse = () => { setNow(Date.now()); id = window.setTimeout(pulse, 250); };
+    pulse();
+    return () => clearTimeout(id);
+  }, []);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 3500); return () => clearTimeout(timer); }, [toast]);
   useEffect(() => { if (!newRoom) return; const timer = setTimeout(() => setNewRoom(null), 6000); return () => clearTimeout(timer); }, [newRoom]);
   useEffect(() => {
@@ -747,9 +770,17 @@ function App() {
   function agreementType(result) {
     return result?.type || result?.agreementResult || result;
   }
+  function rememberPushAgreed() {
+    setPushAgreed(true);
+    setStorageFlag(PUSH_AGREED_KEY, true);
+  }
+  function rememberWaitlistAlerts(on) {
+    setWaitlistAlerts(on);
+    setStorageFlag(WAITLIST_ALERT_KEY, on);
+  }
   function askPushAgreement() {
     return new Promise(resolve => {
-      if (!insideToss()) { resolve('skipped'); return; }
+      if (!insideToss()) { resolve('agreed'); return; }
       let settled = false;
       let cleanup = () => {};
       const done = value => { if (settled) return; settled = true; cleanup(); resolve(value); };
@@ -766,6 +797,12 @@ function App() {
       } catch { clearTimeout(timer); done('skipped'); }
     });
   }
+  async function ensureWaitlistConsent() {
+    if (pushAgreed) return 'agreed';
+    const consent = await askPushAgreement();
+    if (consent === 'agreed') rememberPushAgreed();
+    return consent;
+  }
   async function requestWaitlist(target) {
     const targetRegion = target.region || region;
     const key = `${targetRegion}:${target.number}`;
@@ -775,24 +812,29 @@ function App() {
       catch (e) { setToast(e.message); }
       return;
     }
-    const consent = await askPushAgreement();
+    const consent = await ensureWaitlistConsent();
     if (consent === 'rejected') { setToast('알림에 동의해야 빈자리를 알려드려요.'); return; }
-    try { await run('waitlist', { region: targetRegion, number: target.number }); setToast(consent === 'agreed' ? '빈자리가 생기면 알려드릴게요.' : '빈자리가 생기면 알려드릴게요.'); }
-    catch (e) { setToast(e.message); }
+    if (consent === 'skipped' && !pushAgreed) { setToast('알림에 동의해야 빈자리를 알려드려요.'); return; }
+    try {
+      await run('waitlist', { region: targetRegion, number: target.number });
+      rememberWaitlistAlerts(true);
+      setToast('빈자리가 생기면 알려드릴게요.');
+    } catch (e) { setToast(e.message); }
   }
-  async function openPushAgreement() {
-    const consent = await askPushAgreement();
-    if (consent === 'agreed') setToast('빈자리 알림에 동의했어요.');
-    else if (consent === 'rejected') setToast('알림에 동의해야 빈자리 푸시를 받아요.');
-    else setToast('토스 앱 알림 설정에서 동의할 수 있어요.');
-  }
-  async function togglePushAlerts() {
-    if (waitlist.length) {
-      try { await run('waitlist-off'); setToast('빈자리 알림을 껐어요.'); }
-      catch (e) { setToast(e.message); }
+  async function setWaitlistAlertEnabled(on) {
+    if (!on) {
+      rememberWaitlistAlerts(false);
+      if (waitlist.length) {
+        try { await run('waitlist-off'); } catch (e) { setToast(e.message); return; }
+      }
+      setToast('빈자리 알림을 껐어요.');
       return;
     }
-    await openPushAgreement();
+    const consent = await ensureWaitlistConsent();
+    if (consent === 'rejected') { setToast('알림에 동의해야 빈자리를 알려드려요.'); return; }
+    if (consent === 'skipped' && !pushAgreed) { setToast('알림에 동의해야 빈자리를 알려드려요.'); return; }
+    rememberWaitlistAlerts(true);
+    setToast('빈자리 알림을 켰어요.');
   }
   async function attendance() {
     if (wallet.attendanceDate === today || adInProgress) return;
@@ -832,21 +874,43 @@ function App() {
       setTimeout(finish, 6000);
     } else stop('광고를 준비하고 있어요.');
   }
-  function buyPoints() {
-    const sku = Object.entries(config?.products || {}).find(([, item]) => item.points === shopPack.points)?.[0];
-    if (!sku || !insideToss() || typeof IAP?.createOneTimePurchaseOrder !== 'function') { setToast('결제 상품을 준비하고 있어요.'); return; }
+  async function catalogSku(preferred) {
+    if (!preferred || typeof IAP?.getProductItemList !== 'function') return preferred;
+    try {
+      const { products = [] } = await IAP.getProductItemList() || {};
+      const match = products.find(item => item.sku === preferred || item.productId === preferred);
+      return match?.sku || match?.productId || preferred;
+    } catch { return preferred; }
+  }
+  function canceledPurchase(err) {
+    const code = String(err?.code || '');
+    const message = String(err?.message || err || '');
+    return code === 'USER_CANCELED' || /cancel|canceled|CANCELED|USER_DECLINED|취소/i.test(message);
+  }
+  async function buyPoints() {
+    const preferred = Object.entries(config?.products || {}).find(([, item]) => item.points === shopPack.points)?.[0];
+    if (!preferred || !insideToss() || typeof IAP?.createOneTimePurchaseOrder !== 'function') { setToast('결제 상품을 준비하고 있어요.'); return; }
     if (busy) return;
     setBusy(true);
+    setSheet(null);
     let cleanup;
     const done = () => { try { cleanup?.(); } catch {} setBusy(false); };
     try {
+      await new Promise(resolve => setTimeout(resolve, 80));
+      const sku = await catalogSku(preferred);
       cleanup = IAP.createOneTimePurchaseOrder({
         options: {
           sku,
           processProductGrant: async ({ orderId }) => { try { await run('purchase', undefined, { orderId }); return true; } catch { return false; } },
         },
-        onEvent: event => { if (event.type === 'success') { done(); setSheet('shop'); setToast(`${shopPack.points.toLocaleString()}P를 충전했어요.`); } },
-        onError: err => { done(); if (err?.code !== 'USER_CANCELED') setToast('결제됐다면 잠시 후 자동 충전돼요.'); },
+        onEvent: event => {
+          if (event.type === 'success' || event.type === 'purchased') {
+            done();
+            setSheet('shop');
+            setToast(`${shopPack.points.toLocaleString()}P를 충전했어요.`);
+          }
+        },
+        onError: err => { done(); if (!canceledPurchase(err)) setToast('결제를 시작하지 못했어요. 잠시 후 다시 시도해 주세요.'); },
       });
     } catch { done(); setToast('결제를 시작하지 못했어요.'); }
   }
@@ -922,22 +986,27 @@ function App() {
       setToast('테스트로 정기 구독을 시작했어요.');
       return;
     }
-    const sku = config?.subscriptionSku || 'honsulbar_sub_monthly';
+    const preferred = config?.subscriptionSku || 'honsulbar_sub_monthly';
     if (!insideToss() || typeof IAP?.createSubscriptionPurchaseOrder !== 'function') { setToast('정기 구독을 준비하고 있어요.'); return; }
     if (busy) return;
     setBusy(true);
+    setSheet(null);
     let cleanup;
     const done = () => { try { cleanup?.(); } catch {} setBusy(false); };
-    try {
-      cleanup = IAP.createSubscriptionPurchaseOrder({
-        options: {
-          sku,
-          processProductGrant: async ({ orderId }) => { try { await run('purchase', undefined, { orderId }); return true; } catch { return false; } },
-        },
-        onEvent: event => { if (event.type === 'success') { done(); setSheet('shop'); setToast('구독을 시작해 입장·연장이 무료예요.'); } },
-        onError: err => { done(); if (err?.code !== 'USER_CANCELED') setToast('결제됐다면 구독이 잠시 후 반영돼요.'); },
-      });
-    } catch { done(); setToast('구독을 시작하지 못했어요.'); }
+    (async () => {
+      try {
+        await new Promise(resolve => setTimeout(resolve, 80));
+        const sku = await catalogSku(preferred);
+        cleanup = IAP.createSubscriptionPurchaseOrder({
+          options: {
+            sku,
+            processProductGrant: async ({ orderId }) => { try { await run('purchase', undefined, { orderId }); return true; } catch { return false; } },
+          },
+          onEvent: event => { if (event.type === 'success' || event.type === 'purchased') { done(); setSheet('shop'); setToast('구독을 시작해 입장·연장이 무료예요.'); } },
+          onError: err => { done(); if (!canceledPurchase(err)) setToast('구독을 시작하지 못했어요. 잠시 후 다시 시도해 주세요.'); },
+        });
+      } catch { done(); setToast('구독을 시작하지 못했어요.'); }
+    })();
   }
   function confirmSubscriptionChange() {
     if (!subscription) { startSubscription(); return; }
@@ -1052,8 +1121,15 @@ function App() {
     }
   }
   async function commitMove(index) {
-    try { await run('move', { seat: index }); resetConversation(); setSheet(null); }
-    catch (e) { setSheet(null); setToast(e.message); }
+    const previous = seat;
+    setServer(s => s?.visit ? { ...s, visit: { ...s.visit, seat: index } } : s);
+    resetConversation();
+    setSheet(null);
+    try { await run('move', { seat: index }); }
+    catch (e) {
+      setServer(s => s?.visit ? { ...s, visit: { ...s.visit, seat: previous } } : s);
+      setToast(e.message);
+    }
   }
   function requestMove(index) {
     if (seconds === 0 && index !== 11) { open('menu'); return; }
@@ -1141,7 +1217,7 @@ function App() {
     verifyProfilePhoto(Math.max(0, 2000 - (Date.now() - startedAt)));
   }
 
-  if (screen === 'onboarding') return <main className="app onboarding-screen">
+  if (screen === 'onboarding') return <main className="app onboarding-screen"><div className="ait-gnb-fill" aria-hidden="true"/>
     <div className="onboarding-scroll">
       <img className="onboarding-logo" src="/honsulbar-logo.png" alt="혼술바" />
       <p className="eyebrow">혼술바</p>
@@ -1157,9 +1233,10 @@ function App() {
     {toast && <div className="toast" role="status">{toast}</div>}
   </main>;
 
-  if (screen === 'loading') return <main className="app loading-screen"><div className="app-spinner" role="status" aria-label="불러오는 중"/></main>;
+  if (screen === 'loading') return <main className="app loading-screen"><div className="ait-gnb-fill" aria-hidden="true"/><div className="app-spinner" role="status" aria-label="불러오는 중"/></main>;
 
   return <main className="app">
+    <div className="ait-gnb-fill" aria-hidden="true"/>
     <header>
       {screen === 'bar' ? <button className="icon-button" aria-label="바 나가기" onClick={()=>open('leave')}><ArrowLeft size={21}/></button> : <button className="point-entry" aria-label={`포인트 상점, ${wallet.balance.toLocaleString()}P`} onClick={()=>open('shop')}><Coins size={17}/><span>{wallet.balance.toLocaleString()}<small> P</small></span></button>}
       <div className="header-actions"><button className="header-icon-button" aria-label="설정" onClick={()=>open('settings')}><Settings size={18}/></button><button className="notification-button" aria-label={`알림 ${notifications.length}개`} onClick={openNotifications}><Bell size={18}/>{notifications.some(item=>item.unread)&&<i/>}</button><button className="profile-button" aria-label="내 프로필" onClick={()=>openProfileEditor()}>{myPhoto ? <img src={myPhoto} alt="내 프로필"/> : <UserRound size={18}/>}</button></div>
@@ -1173,7 +1250,7 @@ function App() {
         <button className="room-select" aria-pressed={selected?.number===r.number} aria-label={`${region} ${r.number}호점 선택${r.count===CAPACITY?', 만석':''}`} onClick={()=>setSelectedRoom({region,number:r.number})}>
           <span className="selection-dot" aria-hidden="true">{selected?.number===r.number&&<Check size={13}/>}</span>
           <strong>{region} {r.number}호점</strong>
-          <Badge size="small" variant="weak" color={r.count===CAPACITY?'elephant':'blue'}>{r.count===CAPACITY?'만석':r.count===0?'새로 열림':'입장 가능'}</Badge>
+          <Badge size="small" variant="weak" color={r.count===CAPACITY?'elephant':'blue'}>{r.count===CAPACITY?'만석':leftoverFor(r)||r.count>0?'입장 가능':'새로 열림'}</Badge>
           <span className="room-count"><b>{r.count}</b> / 12</span>
         </button>
         {selected?.number===r.number&&<div className="selected-room-detail"><span>{r.count===CAPACITY?'빈자리가 생기면 알려드려요':`빈자리 ${CAPACITY-r.count}석`}</span>{r.count===CAPACITY?<div className="room-detail-actions"><button onClick={()=>requestPreview(r)}><Eye size={14}/>{previews[`${region}:${r.number}`]?'미리보기 보기':'미리보기 · 500P'}</button><button onClick={()=>requestWaitlist(r)}><Bell size={14}/>{waitlist.includes(`${region}:${r.number}`)?'알림 신청됨':'빈자리 알림'}</button></div>:r.count>0&&<button onClick={()=>requestPreview(r)}><Eye size={14}/>{previews[`${region}:${r.number}`]?'구매한 미리보기':'미리보기 · 500P'}</button>}</div>}
@@ -1239,9 +1316,9 @@ function App() {
       {sheet==='notifications'&&<><h2 id="sheet-title">알림</h2>{notifications.length===0?<p className="sheet-description">새로운 알림이 없어요.</p>:<div className="notification-list">{notifications.map(item=><button key={item.id} onClick={()=>openNotification(item)}><Bell size={17}/><span><strong>{item.title}</strong><small>{item.body}</small></span><ArrowRight size={16}/></button>)}</div>}</>}
       {sheet === 'profile' && <><div className="sheet-heading-row"><div><p className="eyebrow">내 프로필</p><h2 id="sheet-title">프로필을 설정해 주세요</h2></div></div><p className="sheet-description">사진과 닉네임은 다른 손님에게 보여요.</p><input ref={upload} hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={choosePhoto}/><button className="upload" onClick={() => upload.current.click()}>{profile.photo ? <img src={profile.photo} alt="선택한 내 사진"/> : <Camera size={30}/>}<span>{profile.photo ? '사진 바꾸기' : '사진 등록하기'}</span></button><p className={`photo-note${photoCheck==='ok' || (profileVerified && photoCheck!=='checking') ? ' is-ok' : ''}`}>{photoCheck==='checking' ? '얼굴을 확인하고 있어요.' : photoCheck==='ok' ? '이 사진으로 진행할 수 있어요.' : profileVerified ? '확인된 사진이에요. 사진을 바꾸면 다시 확인해요.' : '본인 얼굴 사진을 사용해 주세요.'}</p><label className="profile-field"><span>닉네임</span><input value={profile.nickname} maxLength={16} aria-invalid={!!nicknameError} onChange={e=>setProfile(v=>({...v,nickname:e.target.value}))} placeholder="닉네임을 입력해 주세요"/>{nicknameError&&<small className="field-error">{nicknameError}</small>}</label><div className="gender-choice">{[['male','남성'],['female','여성']].map(([value,label]) => <button key={value} aria-pressed={profile.gender === value} className={profile.gender === value ? `selected ${value}` : ''} onClick={() => setProfile(v => ({...v,gender:value}))}>{label}{profile.gender === value && <Check size={17}/>}</button>)}</div><p className="profile-save-note">{profileVerified ? '변경한 내용을 저장해 주세요.' : '사진을 저장하려면 얼굴 확인이 필요해요.'}</p><Button size="xlarge" display="block" disabled={!profile.photo || !profile.gender || !!nicknameError || photoCheck==='checking' || (!profileVerified && photoCheck!=='ok')} onClick={() => profileVerified ? saveProfile() : open('verify-profile')}>{profileVerified ? '프로필 저장하기' : '얼굴 확인하기'}</Button></>}
       {sheet === 'verify-profile' && <><p className="eyebrow">본인 얼굴 확인</p><h2 id="sheet-title">이 화면에서 촬영해 주세요</h2><p className="sheet-description">저장 전에만 확인하고, 이 촬영은 남기지 않아요.</p><div className="camera-preview"><video ref={cameraVideo} className="camera-video-hidden" muted playsInline disablePictureInPicture controls={false} webkit-playsinline="true" x-webkit-airplay="deny" tabIndex={-1} aria-hidden="true"/><canvas ref={cameraView} className="camera-view" aria-label="본인 얼굴 촬영 화면"/><i className="camera-guide" aria-hidden="true"/><canvas ref={cameraCanvas} hidden/></div><p className={`photo-note verification-message ${verificationState==='verified'?'is-verified':''}`}>{verificationMessage}</p>{verificationState==='verified'?<Button size="xlarge" display="block" onClick={saveProfile}>프로필 저장하기</Button>:verificationState==='unavailable'?<Button size="xlarge" display="block" onClick={() => { setSheetState(null); setTimeout(() => setSheetState('verify-profile'), 0); }}>권한 다시 요청하기</Button>:<Button size="xlarge" display="block" disabled={verificationState!=='ready'} onClick={captureVerification}>{verificationState==='checking'?'얼굴 확인 중…':verificationState==='starting'?'카메라 준비 중…':'촬영하기'}</Button>}</>}
-      {sheet === 'settings' && <><p className="eyebrow">설정</p><h2 id="sheet-title">도움이 필요하신가요?</h2><p className="sheet-description">서비스 이용과 계정을 관리할 수 있어요.</p><div className="settings-group"><span>도움말</span><div className="settings-list"><button onClick={()=>open('support')}>고객센터<ArrowRight size={16}/></button><button onClick={()=>open('inquiry')}>신고·문의<ArrowRight size={16}/></button><button onClick={()=>open('legal')}>약관 및 정책<ArrowRight size={16}/></button></div></div><div className="settings-group"><span>알림</span><div className="settings-list"><button onClick={togglePushAlerts}>{waitlist.length?'빈자리 알림 끄기':'빈자리 알림 동의'}<ArrowRight size={16}/></button></div></div><div className="settings-group"><span>계정 및 결제</span><div className="settings-list"><button onClick={openSubscriptionManager}>결제·정기 구독 관리<ArrowRight size={16}/></button><button onClick={()=>open('withdraw')} className="danger-link">회원탈퇴<ArrowRight size={16}/></button></div></div></>}
+      {sheet === 'settings' && <><p className="eyebrow">설정</p><h2 id="sheet-title">도움이 필요하신가요?</h2><p className="sheet-description">서비스 이용과 계정을 관리할 수 있어요.</p><div className="settings-group"><span>도움말</span><div className="settings-list"><button onClick={()=>open('support')}>고객센터<ArrowRight size={16}/></button><button onClick={()=>open('inquiry')}>신고·문의<ArrowRight size={16}/></button><button onClick={()=>open('legal')}>약관 및 정책<ArrowRight size={16}/></button></div></div><div className="settings-group"><span>알림</span><div className="settings-list"><div className="settings-toggle"><span><strong>빈자리 알림</strong><small>만석 호점에 자리가 나면 알려드려요</small></span><button type="button" role="switch" aria-checked={waitlistAlerts||waitlist.length>0} className={`alert-switch${waitlistAlerts||waitlist.length>0?' is-on':''}`} onClick={()=>setWaitlistAlertEnabled(!(waitlistAlerts||waitlist.length>0))}><i/></button></div></div></div><div className="settings-group"><span>계정 및 결제</span><div className="settings-list"><button onClick={openSubscriptionManager}>결제·정기 구독 관리<ArrowRight size={16}/></button><button onClick={()=>open('withdraw')} className="danger-link">회원탈퇴<ArrowRight size={16}/></button></div></div></>}
       {sheet === 'region-request' && <><p className="eyebrow">지역 추가 요청</p><h2 id="sheet-title">어디에서 만나고 싶나요?</h2><p className="sheet-description">원하는 지역을 골라 주세요.</p>{REGION_REQUEST_GROUPS.map(group=><div className="region-request-section" key={group.title}><span>{group.title}</span><div className="region-request-grid">{group.options.map(item=><button key={item} className={requestedRegion===item?'selected':''} onClick={()=>{setRequestedRegion(item);setShowCustomRegion(false);}}>{item}</button>)}{group.title==='주요 도시'&&<button style={{borderStyle:'dashed',borderWidth:'1.5px',borderColor:'#b7c0cb'}} className={`custom-region-toggle ${showCustomRegion?'selected':''}`} onClick={()=>{setShowCustomRegion(v=>!v);setRequestedRegion('');}}>직접 입력</button>}</div></div>)}{showCustomRegion&&<input className="custom-region-input" value={customRegion} onChange={e=>setCustomRegion(e.target.value)} placeholder="지역명을 입력해 주세요" maxLength={20}/>}<Button display="block" disabled={!requestedRegion && !(showCustomRegion&&customRegion.trim())} onClick={submitRegion}>이 지역 추가 요청하기</Button><p className="digital-note">요청 건수와 우선순위에 따라 지역을 추가해요.</p></>}
-      {sheet === 'legal' && <><p className="eyebrow">약관 및 정책</p><h2 id="sheet-title">혼술바 정책 문서</h2><p className="sheet-description">서비스 이용에 필요한 약관과 정책을 확인할 수 있어요.</p><div className="settings-list">{LEGAL_DOCS.map(([label,href])=><button key={href} onClick={()=>{setLegalSrc(href);open('legal-doc');}}>{label}<ArrowRight size={16}/></button>)}</div></>}
+      {sheet === 'legal' && <><p className="eyebrow">약관 및 정책</p><h2 id="sheet-title">혼술바 정책</h2><p className="sheet-description">서비스 이용에 필요한 약관과 정책을 확인할 수 있어요.</p><div className="settings-list">{LEGAL_DOCS.map(([label,href])=><button key={href} onClick={()=>{setLegalSrc(href);open('legal-doc');}}>{label}<ArrowRight size={16}/></button>)}</div></>}
       {sheet === 'legal-doc' && <><p className="eyebrow">약관 및 정책</p><h2 id="sheet-title">{LEGAL_DOCS.find(([_,href])=>href===legalSrc)?.[0]||'정책'}</h2><iframe className="legal-frame" src={legalSrc} title="약관 문서"/><Button display="block" variant="weak" color="dark" onClick={()=>open('legal')}>목록으로</Button></>}
       {sheet === 'support' && <><p className="eyebrow">고객센터</p><h2 id="sheet-title">무엇을 도와드릴까요?</h2><p className="sheet-description">혼술바 이용 중 궁금한 점을 확인하거나 문의를 남겨 주세요.</p><div className="settings-list"><button onClick={()=>{setOpenFaq(null);open('faq')}}>자주 묻는 질문<ArrowRight size={16}/></button><button onClick={()=>open('inquiry')}>문의 남기기<ArrowRight size={16}/></button></div></>}
       {sheet === 'faq' && <><p className="eyebrow">자주 묻는 질문</p><h2 id="sheet-title">혼술바 이용 안내</h2><p className="sheet-description">자주 궁금해하는 내용을 모아봤어요.</p><div className="faq-list">{FAQ_ITEMS.map(([question,answer],index)=><div className={`faq-item ${openFaq===index?'open':''}`} key={question}><button onClick={()=>setOpenFaq(openFaq===index?null:index)}><span>{question}</span>{openFaq===index?<ChevronDown size={17}/>:<ArrowRight size={17}/>}</button>{openFaq===index&&<p>{answer}</p>}</div>)}</div><Button display="block" variant="weak" color="dark" onClick={()=>open('inquiry')}>답을 찾지 못했어요 · 문의하기</Button></>}
