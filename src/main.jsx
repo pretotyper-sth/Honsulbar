@@ -329,7 +329,9 @@ function App() {
   const leaving = useRef(false);
   const pendingMove = useRef(null);
   const freezeTimer = useRef(0);
+  const moveLockUntil = useRef(0);
   const [seatFrozen, setSeatFrozen] = useState(false);
+  const [gate, setGate] = useState(null);
   const stateHandler = useRef(null);
   const sheetStack = useRef([]);
 
@@ -439,14 +441,17 @@ function App() {
     }
     if (!fresh) return;
     const target = pendingMove.current;
-    if (target != null && state.visit) {
-      if (state.visit.seat === target) pendingMove.current = null;
-      else state = { ...state, visit: { ...state.visit, seat: target } };
+    if (target != null && state.visit && state.visit.seat !== target) {
+      state = { ...state, visit: { ...state.visit, seat: target } };
     }
     const before = previousState.current;
     previousState.current = state;
     setServer(state); setSyncedAt(Date.now()); setNow(Date.now());
-    setScreen(current => ['loading', 'onboarding', 'lobby', 'bar'].includes(current) ? (state.visit && !state.visit.away ? 'bar' : 'lobby') : current);
+    setScreen(current => {
+      if (!['loading', 'onboarding', 'lobby', 'bar'].includes(current)) return current;
+      if (leaving.current) return 'lobby';
+      return state.visit && !state.visit.away ? 'bar' : 'lobby';
+    });
     if (!before) return;
     if (before.visit && !before.visit.away && !state.visit && !leaving.current) { voice.stop(); setSpeaker(false); setSheet(null); setToast('이용시간이 끝나 바에서 나왔어요.'); }
     else if (before.visit?.away && !state.visit && !leaving.current) { setToast('남은 이용시간이 끝났어요.'); }
@@ -1056,17 +1061,20 @@ function App() {
     return leftover && leftover.region === (target.region || region) && leftover.number === target.number;
   }
   async function rejoinRoom(target) {
+    setGate({ type: 'enter', label: '입장하는 중' });
+    setSheet(null);
     try {
       await run('enter', { region: target.region || region, number: target.number });
       resetConversation(); setWaveSent([]); setSpeaker(false); setSoundOn(true); setMutedGuests([]);
       setToast('남은 시간으로 다시 들어왔어요.');
     } catch (e) { setToast(e.message); }
+    finally { setGate(null); }
   }
   function proceedEntry(target) {
     setPendingEntry(null);
     setEntryRoom({ region: target.region || region, number: target.number, count: target.count });
     if (!member?.photo || !member?.gender) { openProfileEditor(); return; }
-    if (leftoverFor(target)) { rejoinRoom(target); return; }
+    if (leftoverFor(target)) { open('rejoin'); return; }
     setSelection('highball'); open('welcome');
   }
   function requestEntry(target, { ignoreReport } = {}) {
@@ -1084,16 +1092,29 @@ function App() {
   async function confirmOrder() {
     if (orderLock.current) return;
     orderLock.current = true; setError('');
+    const welcome = isWelcome;
+    if (welcome) {
+      setGate({ type: 'enter', label: '입장하는 중' });
+      setSheet(null);
+    }
     try {
-      if (isWelcome) {
+      if (welcome) {
         mesh.resume();
         await run('enter', { region: room.region, number: room.number, drinkId: selection });
         resetConversation(); setWaveSent([]); setSpeaker(false); setSoundOn(true); setMutedGuests([]);
-      } else await run('order', { drinkId: selection });
-      setSheet(null);
-      setToast(isWelcome ? `${chosen.name} ${chosen.minutes}분으로 시작했어요.` : `${chosen.minutes}분 연장했어요.`);
-    } catch (e) { setError(e.message); }
-    finally { orderLock.current = false; }
+      } else {
+        await run('order', { drinkId: selection });
+        setSheet(null);
+      }
+      setToast(welcome ? `${chosen.name} ${chosen.minutes}분으로 시작했어요.` : `${chosen.minutes}분 연장했어요.`);
+    } catch (e) {
+      if (welcome) open('welcome');
+      setError(e.message);
+    }
+    finally {
+      orderLock.current = false;
+      if (welcome) setGate(null);
+    }
   }
   async function inspectProfilePhoto(dataUrl) {
     const image = new Image();
@@ -1154,13 +1175,19 @@ function App() {
       setError(e.message === '사진을 읽지 못했어요. 다른 사진을 골라주세요.' ? e.message : '사진을 확인하지 못했어요. 다른 사진을 골라 주세요.');
     }
   }
+  function seatsAreLocked() {
+    return pendingMove.current != null || Date.now() < moveLockUntil.current;
+  }
   function freezeSeats() {
+    moveLockUntil.current = Date.now() + 1600;
     setSeatFrozen(true);
     clearTimeout(freezeTimer.current);
-    freezeTimer.current = window.setTimeout(() => setSeatFrozen(false), 1500);
+    freezeTimer.current = window.setTimeout(() => {
+      if (Date.now() >= moveLockUntil.current) setSeatFrozen(false);
+    }, 1650);
   }
   async function commitMove(index) {
-    if (index == null || index === seat || pendingMove.current != null) return;
+    if (index == null || index === seat || seatsAreLocked()) return;
     const previous = seat;
     pendingMove.current = index;
     setServer(s => s?.visit ? { ...s, visit: { ...s.visit, seat: index } } : s);
@@ -1170,12 +1197,18 @@ function App() {
     try { await run('move', { seat: index }); }
     catch (e) {
       pendingMove.current = null;
+      moveLockUntil.current = 0;
+      setSeatFrozen(false);
       setServer(s => s?.visit ? { ...s, visit: { ...s.visit, seat: previous } } : s);
       setToast(e.message);
+      return;
     }
+    window.setTimeout(() => {
+      if (pendingMove.current === index) pendingMove.current = null;
+    }, Math.max(0, moveLockUntil.current - Date.now()));
   }
   function requestMove(index) {
-    if (seatFrozen || pendingMove.current != null) return;
+    if (seatsAreLocked()) return;
     if (seconds === 0 && index !== 11) { open('menu'); return; }
     if (seat !== 11 && guests.some(g => g.seat !== 11 && Math.abs(g.seat - seat) === 1)) {
       setPendingSeat(index); open('move');
@@ -1185,13 +1218,16 @@ function App() {
     resetConversation();
     voice.stop(); setSpeaker(false); setSoundOn(true); setSheet(null);
     leaving.current = true;
+    setGate({ type: 'leave', label: '나가는 중' });
     setServer(s => s?.visit ? { ...s, visit: { ...s.visit, away: true } } : s);
+    setScreen('lobby');
     try { await run('leave'); setEntryRoom(null); }
     catch (e) {
       setServer(s => s?.visit ? { ...s, visit: { ...s.visit, away: false } } : s);
+      setScreen('bar');
       setToast(e.message);
     }
-    finally { leaving.current = false; }
+    finally { leaving.current = false; setGate(null); }
   }
   function toggleSpeaker() {
     mesh.resume();
@@ -1284,7 +1320,8 @@ function App() {
 
   if (screen === 'loading') return <main className="app loading-screen"><div className="ait-gnb-fill" aria-hidden="true"/><div className="app-spinner" role="status" aria-label="불러오는 중"/></main>;
 
-  return <main className="app">
+  return <>
+  <main className="app">
     <div className="ait-gnb-fill" aria-hidden="true"/>
     <header>
       {screen === 'bar' ? <button className="icon-button" aria-label="바 나가기" onClick={()=>open('leave')}><ArrowLeft size={21}/></button> : <button className="point-entry" aria-label={`포인트 상점, ${wallet.balance.toLocaleString()}P`} onClick={()=>open('shop')}><Coins size={17}/><span>{wallet.balance.toLocaleString()}<small> P</small></span></button>}
@@ -1307,12 +1344,12 @@ function App() {
       <p className="branch-note">자리가 다 차면 다음 호점이 열려요.</p>
       <div className="lobby-footer">
         <p className="entry-benefit">입장 시 포인트가 차감돼요.</p>
-        <div className="entry-actions"><Button color="dark" variant="weak" size="xlarge" disabled={!recommended} onClick={()=>requestEntry(recommended)}>빠른 입장</Button><Button size="xlarge" disabled={!selected||selected.count===CAPACITY} onClick={()=>requestEntry(selected)}>{selected?selected.count===CAPACITY?'만석이에요':leftover && leftover.region===region && leftover.number===selected.number?`${region} ${selected.number}호점 다시 입장하기`:`${region} ${selected.number}호점 입장하기`:'호점을 선택해 주세요'}</Button></div>
+        <div className="entry-actions"><Button color="dark" variant="weak" size="xlarge" disabled={!recommended || !!gate} onClick={()=>requestEntry(recommended)}>빠른 입장</Button><Button size="xlarge" disabled={!selected||selected.count===CAPACITY} onClick={()=>requestEntry(selected)}>{selected?selected.count===CAPACITY?'만석이에요':leftover && leftover.region===region && leftover.number===selected.number?`${region} ${selected.number}호점 다시 입장하기`:`${region} ${selected.number}호점 입장하기`:'호점을 선택해 주세요'}</Button></div>
       </div>
     </section> : <section className="bar-screen">
       <div className="room-heading"><div><button className="room-title" onClick={() => open('leave')}>{room.region} {room.number}호점 <ChevronDown size={17}/></button></div><span className="occupancy"><i className="green-dot"/>{guests.length+1}<span> / 12</span></span></div>
       <div className={`time-strip ${seconds < 300 && seat !== 11 ? 'time-low' : ''}`}><Clock3 size={16}/><span>{seat === 11 ? '사장 자리' : '남은 시간'}</span><strong>{seat === 11 ? '시간 제한 없음' : time}</strong><button aria-label="메뉴판 열고 시간 연장" onClick={() => {setSelection(wallet.drinkId || 'highball'); open('menu');}}><Plus size={18}/></button></div>
-      <div className="bar-space"><div className="bar-floor"><div className="bar-rug"/><div className="wood-bar"><i className="table-lamp lamp-one"/><i className="table-lamp lamp-two"/><i className="table-lamp lamp-three"/></div>
+      <div className="bar-space"><div className={`bar-floor${seatFrozen ? ' is-frozen' : ''}`}><div className="bar-rug"/><div className="wood-bar"><i className="table-lamp lamp-one"/><i className="table-lamp lamp-two"/><i className="table-lamp lamp-three"/></div>
         {positions.map(([x,y], i) => {
           const person = guests.find(g => g.seat === i);
           const mine = seat === i;
@@ -1344,6 +1381,7 @@ function App() {
       {seconds === 0 && seat !== 11 && <p role="status" className="error">이용시간이 끝났어요. 한 잔 더 주문하고 머물러요.</p>}
       <div className="controls"><button className={voice.mic ? 'mic-active' : ''} aria-pressed={voice.mic} onClick={() => { mesh.resume(); if (seconds === 0 && seat !== 11) open('menu'); else voice.toggle(); }}>{voice.mic ? <Mic size={21}/> : <MicOff size={21}/>}<span>{voice.pending ? '연결 중' : voice.mic ? '마이크 켜짐' : '마이크 꺼짐'}</span></button><button className={speaker ? 'speaker-active' : ''} aria-pressed={speaker} onClick={toggleSpeaker}><Speaker size={21}/><span>{speaker ? '스피커 켜짐' : '스피커 꺼짐'}</span></button><button className={soundOn ? 'sound-active' : ''} aria-pressed={soundOn} onClick={() => {mesh.resume();setSoundOn(v=>!v);}}>{soundOn ? <Volume2 size={21}/> : <VolumeX size={21}/>}<span>{soundOn ? '소리 켜짐' : '소리 꺼짐'}</span></button><button className="order-control" onClick={() => {setSelection(wallet.drinkId || 'highball'); open('menu');}}><Wine size={21}/><span>한 잔 더</span></button></div>
     </section>}
+  </main>
       <BottomSheet open={!!sheet} onClose={closeSheet} ariaLabelledBy="sheet-title" className="app-bottom-sheet">
       <div className={`sheet sheet-compact ${sheet === 'guest' ? 'sheet-guest' : ''} ${sheet === 'profile' ? 'sheet-profile' : ''} ${sheet === 'region-request' ? 'sheet-region-request' : ''}`}><button className="close icon-button" aria-label="닫기" onClick={closeSheet}><X size={22}/></button>
       {(sheet === 'welcome' || sheet === 'menu') && <><p className="eyebrow">{isWelcome ? `${room?.region} ${room?.number}호점 입장` : '메뉴판'}</p><h2 id="sheet-title">{isWelcome ? '어떤 음료로 시작할까요?' : '한 잔 더 하고 갈까요?'}</h2><p className="sheet-description">{isWelcome ? (subscription ? '구독 중이면 입장에 포인트가 차감되지 않아요.' : '입장 시 포인트가 차감돼요.') : '주문한 잔은 내 사진 옆에 놓여요.'}</p><div className="menu">{DRINKS.filter(item => !isWelcome || item.minutes === 30).map(item => <button className={selection === item.id ? 'chosen' : ''} key={item.id} aria-pressed={selection === item.id} onClick={() => {setSelection(item.id);setError('');}}><div className="drink-illustration"><Glass id={item.id}/></div><span><strong>{item.name}</strong><small>{item.note}</small><em>{`+${item.minutes}분`}</em></span><span className="menu-price">{isWelcome ? `입장 ${item.price.toLocaleString()}P` : `${item.price.toLocaleString()} P`}{selection === item.id && <Check size={16}/>}</span></button>)}</div><div className="order-summary"><span>보유 포인트<b>{wallet.balance.toLocaleString()} P</b></span><span>{subscription ? '구독 이용' : (isWelcome ? '입장 후 남는 포인트' : '주문 후 남는 포인트')}<strong>{subscription ? '0 P' : `${Math.max(0,wallet.balance-price).toLocaleString()} P`}</strong></span></div><p className="digital-note">음료는 취향을 표현하는 아이템이에요.</p>{!subscription && wallet.balance<price?<><div className="insufficient-state"><strong>{(price-wallet.balance).toLocaleString()}P가 더 필요해요</strong><span>충전 후 {isWelcome ? '입장' : '주문'}할 수 있어요.</span></div><Button className="sheet-recharge-cta" size="xlarge" display="block" onClick={()=>open('shop')}>포인트 충전하기</Button><p className="footnote">포인트를 충전하면 선택한 음료로 바로 이용할 수 있어요.</p></>:<div className="sheet-inline-cta"><Button size="xlarge" display="block" onClick={confirmOrder}>{subscription ? (isWelcome ? `${chosen.minutes}분 입장하기` : `주문 · ${chosen.minutes}분 연장`) : (isWelcome ? `${price.toLocaleString()} 포인트로 ${chosen.minutes}분 입장하기` : `${price.toLocaleString()} 포인트로 주문 · ${chosen.minutes}분 연장`)}</Button><p className="footnote">{subscription ? '구독 기간에는 입장·연장에 포인트가 차감되지 않아요.' : (isWelcome ? (leftover ? '다른 호점에 입장하면 남은 이용시간은 끝나요.' : '입장한 호점에서만 이용시간이 흐르고, 바를 나가도 그 시간은 이어져요.') : '주문을 누르면 포인트가 차감되고 이용시간이 늘어나요.')}</p></div>}</>}
@@ -1385,10 +1423,12 @@ function App() {
         <Button className="guest-seat-request" size="large" variant="weak" color="dark" display="block" disabled={!!outgoing || wallet.balance < 500} onClick={() => open('seat-request')}><ArrowLeftRight size={17}/>이 자리 부탁하기 · 500P</Button><p className="footnote">상대가 수락하면 서로 자리를 바꿔요.</p><div className="guest-actions"><button onClick={() => {if(reportedIds.has(selectedGuest.id)) return; if(activeFocus===selectedGuest.id) endFocus();setMutedGuests(v => v.includes(selectedGuest.id) ? v.filter(id => id !== selectedGuest.id) : [...v,selectedGuest.id]);setSheet(null);}}><VolumeX size={15}/>{reportedIds.has(selectedGuest.id) ? '신고로 음소거됨' : mutedGuests.includes(selectedGuest.id) ? '음소거 해제' : selectedGuest.seat===11 ? '사장 음소거' : '음소거'}</button><button onClick={() => open('report')}><Flag size={15}/>신고</button></div></>}
       {sheet === 'report' && <><p className="eyebrow">신고하기</p><h2 id="sheet-title">어떤 일이 있었나요?</h2><p className="sheet-description">신고 내용은 운영팀이 확인하고 필요한 조치를 진행해요.</p><div className="form-choice report-choice">{['사진 도용·허위 프로필','욕설·불쾌한 발언','광고·금전 요구','기타'].map(reason=><button key={reason} className={reportReason===reason?'selected':''} onClick={()=>setReportReason(reason)}>{reason}</button>)}</div><textarea className="support-textarea" value={reportMessage} onChange={e=>setReportMessage(e.target.value)} placeholder="상황을 자세히 알려 주세요. (선택)" maxLength={500}/><div className="form-footer"><span>{reportMessage.length}/500</span><Button size="large" disabled={!reportReason || busy} onClick={submitReport}>신고 접수하기</Button></div></>}
       {sheet === 'reported-entry' && pendingEntry && <><p className="eyebrow">입장 전 안내</p><h2 id="sheet-title">이전에 신고한 손님이 있어요</h2><p className="sheet-description">{pendingEntry.region} {pendingEntry.number}호점에 전에 신고한 손님이 있어요. 들어가도 그 손님의 목소리는 들리지 않아요. 그래도 입장할까요?</p><div className="actions"><Button color="dark" variant="weak" onClick={() => { setPendingEntry(null); setSheet(null); setToast('다른 호점을 골라 주세요.'); }}>다른 바 보기</Button><Button size="xlarge" onClick={() => requestEntry(pendingEntry, { ignoreReport: true })}>그래도 입장하기</Button></div></>}
+      {sheet === 'rejoin' && entryRoom && <><p className="eyebrow">{entryRoom.region} {entryRoom.number}호점</p><h2 id="sheet-title">남은 시간으로 다시 입장할까요?</h2><p className="sheet-description">이전에 쓰던 이용시간으로 들어가요. 음료를 다시 고르지 않아도 돼요.</p><div className="actions"><Button color="dark" variant="weak" onClick={() => setSheet(null)}>나중에</Button><Button size="xlarge" onClick={() => rejoinRoom(entryRoom)}>다시 입장하기</Button></div></>}
       {sheet === 'leave' && <><DoorOpen size={28}/><h2 id="sheet-title">오늘은 여기까지 할까요?</h2><p className="sheet-description">바를 나가도 이용시간은 계속 흘러요.<br/>자리가 있으면 같은 호점에 다시 들어갈 수 있어요.</p><div className="actions"><Button color="dark" variant="weak" onClick={() => setSheet(null)}>더 머무르기</Button><Button size="xlarge" onClick={leave}>바 나가기</Button></div></>}
       {error && <p className="error" role="alert">{error}</p>}
     </div></BottomSheet>
     {toast && <div className="toast" role="status">{toast}</div>}
-  </main>;
+    {gate && <div className="route-gate" role="status" aria-live="polite"><div className="route-gate-inner"><i className="app-spinner" aria-hidden="true"/><span>{gate.label}</span></div></div>}
+  </>;
 }
 createRoot(document.getElementById('root')).render(new URLSearchParams(location.search).has('admin') ? <AdminPage/> : <App/>);

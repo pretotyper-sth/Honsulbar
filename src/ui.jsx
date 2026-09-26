@@ -14,23 +14,14 @@ export function Badge({ children, color = 'blue', className = '', ...props }) {
 export function BottomSheet({ open, onClose, children, className = '', ariaLabelledBy }) {
   React.useEffect(() => {
     if (!open) return undefined;
-    const { documentElement } = document;
-    const scroller = document.querySelector('.app');
-    const scrollY = scroller ? scroller.scrollTop : window.scrollY;
-    const previousOverflow = scroller?.style.overflow || '';
-    documentElement.classList.add('sheet-open');
-    if (scroller) scroller.style.overflow = 'hidden';
+    document.documentElement.classList.add('sheet-open');
     const blockBackground = event => {
       if (!event.target.closest?.('.ui-bottom-sheet')) event.preventDefault();
     };
     document.addEventListener('touchmove', blockBackground, { passive: false });
     document.addEventListener('wheel', blockBackground, { passive: false });
     return () => {
-      documentElement.classList.remove('sheet-open');
-      if (scroller) {
-        scroller.style.overflow = previousOverflow;
-        scroller.scrollTop = scrollY;
-      }
+      document.documentElement.classList.remove('sheet-open');
       document.removeEventListener('touchmove', blockBackground);
       document.removeEventListener('wheel', blockBackground);
     };
