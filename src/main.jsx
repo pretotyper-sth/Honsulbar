@@ -269,6 +269,8 @@ function App() {
   const [entryRoom, setEntryRoom] = useState(null);
   const [shopPack, setShopPack] = useState(POINT_PACKS[0]);
   const [historyLimit, setHistoryLimit] = useState(10);
+  const historyLimitRef = useRef(10);
+  historyLimitRef.current = historyLimit;
   const [waitlistAlerts, setWaitlistAlerts] = useState(() => storageFlag(WAITLIST_ALERT_KEY));
   const [pushAgreed, setPushAgreed] = useState(() => storageFlag(PUSH_AGREED_KEY));
   const [facing, setFacing] = useState(0);
@@ -447,6 +449,13 @@ function App() {
       state = { ...state, visit: { ...state.visit, seat: target } };
     }
     const before = previousState.current;
+    const wanted = historyLimitRef.current;
+    const incoming = state.ledger || [];
+    const existing = before?.ledger || [];
+    if (incoming.length < wanted && existing.length > incoming.length) {
+      const seen = new Set(incoming.map(item => item.id));
+      state = { ...state, ledger: [...incoming, ...existing.filter(item => !seen.has(item.id))].slice(0, wanted) };
+    }
     previousState.current = state;
     setServer(state); setSyncedAt(Date.now()); setNow(Date.now());
     setScreen(current => {
@@ -475,7 +484,7 @@ function App() {
 
   async function run(action, data, extra = {}) {
     const id = ++sequence.current;
-    const response = await call(action, data, { after: signalCursor.current, limit: historyLimit, ...extra });
+    const response = await call(action, data, { after: signalCursor.current, limit: historyLimitRef.current, ...extra });
     const fresh = id > appliedSequence.current;
     if (fresh) appliedSequence.current = id;
     if (response.state) stateHandler.current(response.state, fresh);
@@ -525,7 +534,7 @@ function App() {
     timer = setTimeout(loop, screen === 'bar' ? 400 : 6000);
     return () => { stopped = true; clearTimeout(timer); };
   }, [screen, speaker, voice.mic]);
-  useEffect(() => { if (screen === 'lobby') run('state').catch(() => {}); }, [historyLimit]);
+  useEffect(() => { if (['lobby', 'bar'].includes(screen)) run('state').catch(() => {}); }, [historyLimit]);
   useEffect(() => {
     if (waitlist.length && !waitlistAlerts) {
       setWaitlistAlerts(true);
