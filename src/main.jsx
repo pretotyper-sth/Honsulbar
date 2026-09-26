@@ -157,10 +157,50 @@ function regionStats(canvas, rect) {
     meanB: bSum / samples,
   };
 }
+function cheekRect(face) {
+  const box = faceBox(face);
+  const landmarks = face.landmarks || [];
+  const [, , nose, mouth] = landmarks;
+  if (nose && mouth) {
+    return {
+      x: nose[0] - box.width * 0.2,
+      y: nose[1] + box.height * 0.04,
+      w: box.width * 0.4,
+      h: Math.max(8, mouth[1] - nose[1] + box.height * 0.04),
+    };
+  }
+  return { x: box.left + box.width * 0.28, y: box.top + box.height * 0.42, w: box.width * 0.44, h: box.height * 0.16 };
+}
+function cornerBackgroundStats(canvas) {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const n = Math.max(10, Math.floor(Math.min(canvas.width, canvas.height) / 12));
+  const spots = [[0, 0], [canvas.width - n, 0], [0, canvas.height - n], [canvas.width - n, canvas.height - n]];
+  const stds = [];
+  for (const [x, y] of spots) {
+    let pixels;
+    try { pixels = ctx.getImageData(Math.max(0, x), Math.max(0, y), n, n).data; } catch { continue; }
+    let sum = 0, sq = 0, count = 0;
+    for (let i = 0; i < pixels.length; i += 16) {
+      const gray = 0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2];
+      sum += gray; sq += gray * gray; count += 1;
+    }
+    if (count) {
+      const mean = sum / count;
+      stds.push(Math.sqrt(Math.max(0, sq / count - mean * mean)));
+    }
+  }
+  if (!stds.length) return { minStd: 99 };
+  return { minStd: Math.min(...stds) };
+}
 function looksLikeIllustration(canvas, face) {
-  const stats = regionStats(canvas, innerFaceRect(face));
+  const faceStats = regionStats(canvas, innerFaceRect(face));
+  const cheekStats = regionStats(canvas, cheekRect(face));
+  const stats = cheekStats || faceStats;
   if (!stats) return false;
-  return stats.exactRatio > 0.4 && stats.colorDensity < 0.055 && stats.flatRatio > 0.5;
+  const painted = stats.colorDensity < 0.048 && (stats.exactRatio > 0.2 || stats.flatRatio > 0.36);
+  const simpleBackground = cornerBackgroundStats(canvas).minStd < 4;
+  const obviousPaint = stats.exactRatio > 0.4 && stats.colorDensity < 0.055 && stats.flatRatio > 0.5;
+  return obviousPaint || (painted && simpleBackground);
 }
 function facesLookLikeSamePerson(profileCanvas, profileFace, cameraCanvas, cameraFace) {
   if (looksLikeIllustration(profileCanvas, profileFace)) return false;
