@@ -13,5 +13,12 @@ export default defineConfig({
     commands: { dev: 'npm run dev', build: 'npm run build' },
   },
   permissions: [{ name: 'camera', access: 'access' }],
+  navigationBar: {
+    transparentBackground: true,
+  },
+  webViewProps: {
+    allowsInlineMediaPlayback: true,
+    mediaPlaybackRequiresUserAction: false,
+  },
   outdir: 'dist',
 });

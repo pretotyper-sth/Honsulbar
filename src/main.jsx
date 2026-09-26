@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import '@tensorflow/tfjs';
 import * as blazeface from '@tensorflow-models/blazeface';
 import { createRoot } from 'react-dom/client';
-import { IAP, loadFullScreenAd, showFullScreenAd, getPermission, openPermissionDialog } from '@apps-in-toss/web-framework';
+import { IAP, loadFullScreenAd, showFullScreenAd, getPermission, openPermissionDialog, SafeAreaInsets } from '@apps-in-toss/web-framework';
 import { Button, BottomSheet, Badge } from './ui';
 import { ArrowLeft, ArrowRight, Bell, Camera, Check, ChevronDown, Clock3, DoorOpen, Coins, MessageCircleMore, Mic, MicOff, Plus, Volume2, VolumeX, Speaker, Wine, X, Flag, Wallet, Eye, LockKeyhole, ArrowLeftRight, Settings, UserRound } from 'lucide-react';
 import { REGIONS, CAPACITY, DRINKS } from './model';
@@ -296,7 +296,9 @@ function App() {
   const upload = useRef(null);
   const cameraVideo = useRef(null);
   const cameraCanvas = useRef(null);
+  const cameraView = useRef(null);
   const cameraStream = useRef(null);
+  const cameraDraw = useRef(0);
   const faceModel = useRef(null);
   const faceModelLoading = useRef(null);
   const photoInspect = useRef(0);
@@ -453,6 +455,16 @@ function App() {
     setToast(e?.message || '요청을 완료하지 못했어요.');
   }
 
+  useEffect(() => {
+    const apply = insets => {
+      const top = Math.max(Number(insets?.top) || 0, 0);
+      document.documentElement.style.setProperty('--ait-safe-top', `${top}px`);
+    };
+    try { apply(SafeAreaInsets.get()); } catch {}
+    let off = () => {};
+    try { off = SafeAreaInsets.subscribe({ onEvent: apply }) || (() => {}); } catch {}
+    return () => { try { off(); } catch {} };
+  }, []);
   useEffect(() => { getConfig().then(setConfig).catch(() => setConfig({})); }, []);
   useEffect(() => {
     if (screen !== 'loading') return;
@@ -523,11 +535,20 @@ function App() {
     return () => clearTimeout(timer);
   }, [sheet, focusSubscription]);
   useEffect(() => {
-    if (sheet !== 'verify-profile') {
+    const stopPreview = () => {
+      cancelAnimationFrame(cameraDraw.current);
+      cameraDraw.current = 0;
       cameraStream.current?.getTracks().forEach(track => track.stop());
       cameraStream.current = null;
+      const video = cameraVideo.current;
+      if (video) { video.srcObject = null; video.removeAttribute('src'); }
+    };
+    if (sheet !== 'verify-profile') {
+      stopPreview();
       const context = cameraCanvas.current?.getContext('2d');
       if (context && cameraCanvas.current) context.clearRect(0, 0, cameraCanvas.current.width, cameraCanvas.current.height);
+      const view = cameraView.current?.getContext('2d');
+      if (view && cameraView.current) view.clearRect(0, 0, cameraView.current.width, cameraView.current.height);
       return;
     }
     let cancelled = false;
@@ -538,38 +559,93 @@ function App() {
       setVerificationMessage('이 환경에서는 카메라를 사용할 수 없어 얼굴 확인을 진행할 수 없어요.');
       return undefined;
     }
+    const paintPreview = () => {
+      if (cancelled) return;
+      const video = cameraVideo.current;
+      const view = cameraView.current;
+      if (video && view && video.readyState >= 2 && video.videoWidth) {
+        if (view.width !== video.videoWidth || view.height !== video.videoHeight) {
+          view.width = video.videoWidth;
+          view.height = video.videoHeight;
+        }
+        view.getContext('2d')?.drawImage(video, 0, 0, view.width, view.height);
+      }
+      cameraDraw.current = requestAnimationFrame(paintPreview);
+    };
+    const prepareVideo = video => {
+      if (!video) return;
+      video.muted = true;
+      video.defaultMuted = true;
+      video.autoplay = true;
+      video.controls = false;
+      video.playsInline = true;
+      video.disablePictureInPicture = true;
+      video.setAttribute('muted', '');
+      video.setAttribute('autoplay', '');
+      video.setAttribute('playsinline', '');
+      video.setAttribute('webkit-playsinline', 'true');
+      video.setAttribute('disablepictureinpicture', '');
+      video.setAttribute('controlslist', 'nodownload nofullscreen noremoteplayback');
+      video.removeAttribute('controls');
+    };
     const attachStream = stream => {
       if (cancelled) { stream.getTracks().forEach(track => track.stop()); return; }
+      cameraStream.current?.getTracks().forEach(track => track.stop());
       cameraStream.current = stream;
+      stream.getVideoTracks().forEach(track => {
+        track.onended = () => { if (!cancelled) startCamera(); };
+      });
       const video = cameraVideo.current;
+      prepareVideo(video);
       if (video) {
-        video.setAttribute('playsinline', 'true');
-        video.setAttribute('webkit-playsinline', 'true');
-        video.muted = true;
         video.srcObject = stream;
-        video.play().catch(() => {});
+        const playInline = () => {
+          const run = video.play();
+          if (run?.catch) run.catch(() => {});
+          if (video.webkitDisplayingFullscreen) video.webkitExitFullScreen?.();
+        };
+        video.onloadedmetadata = playInline;
+        playInline();
+        video.addEventListener('webkitbeginfullscreen', event => {
+          event.preventDefault();
+          video.webkitExitFullScreen?.();
+        });
       }
+      cancelAnimationFrame(cameraDraw.current);
+      cameraDraw.current = requestAnimationFrame(paintPreview);
       loadFaceModel().then(() => {
         if (!cancelled) { setVerificationState('ready'); setVerificationMessage('점선 안에 얼굴을 맞춘 뒤 촬영해 주세요.'); }
       }).catch(() => {
         if (!cancelled) { setVerificationState('unavailable'); setVerificationMessage('얼굴 확인을 준비하지 못했어요. 잠시 후 다시 시도해 주세요.'); }
       });
     };
-    const startCamera = () => navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'user' } }, audio: false }).then(attachStream).catch(() => {
+    const startCamera = () => navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 720 } },
+      audio: false,
+    }).then(attachStream).catch(() => {
       if (!cancelled) {
         setVerificationState('unavailable');
         setVerificationMessage('카메라 권한이 필요해요. 허용하면 이 화면에서 바로 촬영할 수 있어요.');
       }
     });
-    if (insideToss() && typeof getPermission === 'function') {
-      getPermission({ name: 'camera', access: 'access' }).then(status => {
-        if (cancelled) return;
-        if (status === 'allowed') return startCamera();
-        if (typeof openPermissionDialog === 'function') return openPermissionDialog({ name: 'camera', access: 'access' }).then(startCamera).catch(() => startCamera());
-        return startCamera();
-      }).catch(startCamera);
-    } else startCamera();
-    return () => { cancelled = true; };
+    const askPermission = async () => {
+      if (!insideToss() || typeof getPermission !== 'function') return 'allowed';
+      const need = { name: 'camera', access: 'access' };
+      const status = await getPermission(need).catch(() => 'notDetermined');
+      if (status === 'allowed' || status === 'denied') return status;
+      if (typeof openPermissionDialog !== 'function') return status;
+      return openPermissionDialog(need).catch(() => 'denied');
+    };
+    askPermission().then(status => {
+      if (cancelled) return;
+      if (status !== 'allowed') {
+        setVerificationState('unavailable');
+        setVerificationMessage('카메라 권한이 필요해요. 허용하면 이 화면에서 바로 촬영할 수 있어요.');
+        return;
+      }
+      startCamera();
+    });
+    return () => { cancelled = true; stopPreview(); };
   }, [sheet]);
   const previousRoomCount = useRef({ region, count: rooms[region].length });
   useEffect(() => {
@@ -1014,7 +1090,8 @@ function App() {
   async function captureVerification() {
     const video = cameraVideo.current;
     const canvas = cameraCanvas.current;
-    if (!video || !canvas || video.readyState < 2) { setVerificationMessage('카메라가 준비될 때까지 잠시만 기다려 주세요.'); return; }
+    const live = cameraStream.current?.getVideoTracks().some(track => track.readyState === 'live');
+    if (!video || !canvas || !live || !video.videoWidth) { setVerificationMessage('카메라가 준비될 때까지 잠시만 기다려 주세요.'); return; }
     const startedAt = Date.now();
     const finish = (message) => setTimeout(() => { setVerificationState('ready'); setVerificationMessage(message); }, Math.max(0, 2000 - (Date.now() - startedAt)));
     setVerificationState('checking');
@@ -1157,7 +1234,7 @@ function App() {
       {sheet==='subscription-cancel-guide'&&<><p className="eyebrow">정기 구독</p><h2 id="sheet-title">해지는 토스에서 할 수 있어요</h2><p className="sheet-description">토스 앱 전체에서 결제 내역을 연 뒤 혼술바 정기 구독을 해지하면 돼요. 해지해도 이번 기간이 끝날 때까지는 이용할 수 있고, 다시 이어가려면 같은 결제 내역에서 자동 결제를 켜면 돼요.</p><Button size="xlarge" display="block" onClick={()=>setSheet('shop')}>확인</Button></>}
       {sheet==='notifications'&&<><h2 id="sheet-title">알림</h2>{notifications.length===0?<p className="sheet-description">새로운 알림이 없어요.</p>:<div className="notification-list">{notifications.map(item=><button key={item.id} onClick={()=>openNotification(item)}><Bell size={17}/><span><strong>{item.title}</strong><small>{item.body}</small></span><ArrowRight size={16}/></button>)}</div>}</>}
       {sheet === 'profile' && <><div className="sheet-heading-row"><div><p className="eyebrow">내 프로필</p><h2 id="sheet-title">프로필을 설정해 주세요</h2></div></div><p className="sheet-description">사진과 닉네임은 다른 손님에게 보여요.</p><input ref={upload} hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={choosePhoto}/><button className="upload" onClick={() => upload.current.click()}>{profile.photo ? <img src={profile.photo} alt="선택한 내 사진"/> : <Camera size={30}/>}<span>{profile.photo ? '사진 바꾸기' : '사진 등록하기'}</span></button><p className={`photo-note${photoCheck==='ok' || (profileVerified && photoCheck!=='checking') ? ' is-ok' : ''}`}>{photoCheck==='checking' ? '얼굴을 확인하고 있어요.' : photoCheck==='ok' ? '이 사진으로 진행할 수 있어요.' : profileVerified ? '확인된 사진이에요. 사진을 바꾸면 다시 확인해요.' : '본인 얼굴 사진을 사용해 주세요.'}</p><label className="profile-field"><span>닉네임</span><input value={profile.nickname} maxLength={16} aria-invalid={!!nicknameError} onChange={e=>setProfile(v=>({...v,nickname:e.target.value}))} placeholder="닉네임을 입력해 주세요"/>{nicknameError&&<small className="field-error">{nicknameError}</small>}</label><div className="gender-choice">{[['male','남성'],['female','여성']].map(([value,label]) => <button key={value} aria-pressed={profile.gender === value} className={profile.gender === value ? `selected ${value}` : ''} onClick={() => setProfile(v => ({...v,gender:value}))}>{label}{profile.gender === value && <Check size={17}/>}</button>)}</div><p className="profile-save-note">{profileVerified ? '변경한 내용을 저장해 주세요.' : '사진을 저장하려면 얼굴 확인이 필요해요.'}</p><Button size="xlarge" display="block" disabled={!profile.photo || !profile.gender || !!nicknameError || photoCheck==='checking' || (!profileVerified && photoCheck!=='ok')} onClick={() => profileVerified ? saveProfile() : open('verify-profile')}>{profileVerified ? '프로필 저장하기' : '얼굴 확인하기'}</Button></>}
-      {sheet === 'verify-profile' && <><p className="eyebrow">본인 얼굴 확인</p><h2 id="sheet-title">이 화면에서 촬영해 주세요</h2><p className="sheet-description">저장 전에만 확인하고, 이 촬영은 남기지 않아요.</p><div className="camera-preview"><video ref={cameraVideo} autoPlay muted playsInline webkit-playsinline="true" aria-label="본인 얼굴 촬영 화면"/><i className="camera-guide" aria-hidden="true"/><canvas ref={cameraCanvas} hidden/></div><p className={`photo-note verification-message ${verificationState==='verified'?'is-verified':''}`}>{verificationMessage}</p>{verificationState==='verified'?<Button size="xlarge" display="block" onClick={saveProfile}>프로필 저장하기</Button>:verificationState==='unavailable'?<Button size="xlarge" display="block" onClick={() => { setSheetState(null); setTimeout(() => setSheetState('verify-profile'), 0); }}>권한 다시 요청하기</Button>:<Button size="xlarge" display="block" disabled={verificationState!=='ready'} onClick={captureVerification}>{verificationState==='checking'?'얼굴 확인 중…':verificationState==='starting'?'카메라 준비 중…':'촬영하기'}</Button>}</>}
+      {sheet === 'verify-profile' && <><p className="eyebrow">본인 얼굴 확인</p><h2 id="sheet-title">이 화면에서 촬영해 주세요</h2><p className="sheet-description">저장 전에만 확인하고, 이 촬영은 남기지 않아요.</p><div className="camera-preview"><video ref={cameraVideo} className="camera-video-hidden" muted playsInline disablePictureInPicture controls={false} webkit-playsinline="true" x-webkit-airplay="deny" tabIndex={-1} aria-hidden="true"/><canvas ref={cameraView} className="camera-view" aria-label="본인 얼굴 촬영 화면"/><i className="camera-guide" aria-hidden="true"/><canvas ref={cameraCanvas} hidden/></div><p className={`photo-note verification-message ${verificationState==='verified'?'is-verified':''}`}>{verificationMessage}</p>{verificationState==='verified'?<Button size="xlarge" display="block" onClick={saveProfile}>프로필 저장하기</Button>:verificationState==='unavailable'?<Button size="xlarge" display="block" onClick={() => { setSheetState(null); setTimeout(() => setSheetState('verify-profile'), 0); }}>권한 다시 요청하기</Button>:<Button size="xlarge" display="block" disabled={verificationState!=='ready'} onClick={captureVerification}>{verificationState==='checking'?'얼굴 확인 중…':verificationState==='starting'?'카메라 준비 중…':'촬영하기'}</Button>}</>}
       {sheet === 'settings' && <><p className="eyebrow">설정</p><h2 id="sheet-title">도움이 필요하신가요?</h2><p className="sheet-description">서비스 이용과 계정을 관리할 수 있어요.</p><div className="settings-group"><span>도움말</span><div className="settings-list"><button onClick={()=>open('support')}>고객센터<ArrowRight size={16}/></button><button onClick={()=>open('inquiry')}>신고·문의<ArrowRight size={16}/></button><button onClick={()=>open('legal')}>약관 및 정책<ArrowRight size={16}/></button></div></div><div className="settings-group"><span>알림</span><div className="settings-list"><button onClick={togglePushAlerts}>{waitlist.length?'빈자리 알림 끄기':'빈자리 알림 동의'}<ArrowRight size={16}/></button></div></div><div className="settings-group"><span>계정 및 결제</span><div className="settings-list"><button onClick={openSubscriptionManager}>결제·정기 구독 관리<ArrowRight size={16}/></button><button onClick={()=>open('withdraw')} className="danger-link">회원탈퇴<ArrowRight size={16}/></button></div></div></>}
       {sheet === 'region-request' && <><p className="eyebrow">지역 추가 요청</p><h2 id="sheet-title">어디에서 만나고 싶나요?</h2><p className="sheet-description">원하는 지역을 골라 주세요.</p>{REGION_REQUEST_GROUPS.map(group=><div className="region-request-section" key={group.title}><span>{group.title}</span><div className="region-request-grid">{group.options.map(item=><button key={item} className={requestedRegion===item?'selected':''} onClick={()=>{setRequestedRegion(item);setShowCustomRegion(false);}}>{item}</button>)}{group.title==='주요 도시'&&<button style={{borderStyle:'dashed',borderWidth:'1.5px',borderColor:'#b7c0cb'}} className={`custom-region-toggle ${showCustomRegion?'selected':''}`} onClick={()=>{setShowCustomRegion(v=>!v);setRequestedRegion('');}}>직접 입력</button>}</div></div>)}{showCustomRegion&&<input className="custom-region-input" value={customRegion} onChange={e=>setCustomRegion(e.target.value)} placeholder="지역명을 입력해 주세요" maxLength={20}/>}<Button display="block" disabled={!requestedRegion && !(showCustomRegion&&customRegion.trim())} onClick={submitRegion}>이 지역 추가 요청하기</Button><p className="digital-note">요청 건수와 우선순위에 따라 지역을 추가해요.</p></>}
       {sheet === 'legal' && <><p className="eyebrow">약관 및 정책</p><h2 id="sheet-title">혼술바 정책 문서</h2><p className="sheet-description">서비스 이용에 필요한 약관과 정책을 확인할 수 있어요.</p><div className="settings-list">{LEGAL_DOCS.map(([label,href])=><button key={href} onClick={()=>{setLegalSrc(href);open('legal-doc');}}>{label}<ArrowRight size={16}/></button>)}</div></>}
