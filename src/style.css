@@ -310,7 +310,7 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .room-row { border-radius:16px; background:#fff; box-shadow:inset 0 0 0 1px #e5e8eb; overflow:hidden; }
 .room-row.selected { background:#f4f9ff; box-shadow:inset 0 0 0 1.5px #3182f6; }
 .room-select { display:flex; align-items:center; gap:10px; width:100%; padding:20px 16px; text-align:left; border-radius:16px; }
-.room-select strong { font-size:16px; font-weight:600; }
+.room-select strong { font-size:16px; font-weight:600; white-space:nowrap; word-break:keep-all; }
 .selection-dot { width:19px; height:19px; border:1.5px solid #d1d6db; border-radius:50%; display:grid; place-items:center; color:#fff; flex-shrink:0; }
 .selected .selection-dot { border-color:#3182f6; background:#3182f6; }
 .room-count { margin-left:auto; font-size:13px; color:#8b95a1; white-space:nowrap; }
