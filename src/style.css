@@ -130,9 +130,9 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .my-wrap.is-speaking .seat { box-shadow:0 0 calc(10px + var(--voice) * 24px) #d0da9c77; }
 .seat-drink { position:absolute; right:-11px; top:-6px; width:26px; height:34px; pointer-events:none; filter:drop-shadow(0 2px 3px #000b); }
 .seat-drink .glass { width:26px; height:34px; }
-.me-label { position:absolute; left:50%; bottom:-22px; transform:translateX(-50%); background:#243024; color:#f3ecd8; padding:2px 8px; border-radius:8px; font-size:10px; line-height:1.2; white-space:nowrap; z-index:5; pointer-events:none; box-shadow:0 0 0 1px #f3ecd833,0 2px 6px #0008; }
+.me-label { position:absolute; left:50%; bottom:3px; transform:translateX(-50%); background:#fff8ee; color:#2b3021; padding:0 5px; border-radius:6px; font-size:9px; line-height:1.35; font-weight:700; white-space:nowrap; z-index:5; pointer-events:none; box-shadow:0 0 0 1px #2b302140; }
 .host-label { position:absolute; top:58px; left:50%; transform:translateX(-50%); white-space:nowrap; font-size:11px; color:#d4d8c7; pointer-events:none; }
-.host-wrap:has(.me-label) .host-label { top:80px; }
+.host-wrap:has(.me-label) .host-label { top:58px; }
 .waves { display:inline-flex; align-items:center; gap:2px; height:11px; }
 .waves i { display:block; width:2px; height:4px; border-radius:2px; background:#dae4b1; animation:wave .7s ease-in-out infinite alternate; }
 .waves i:nth-child(2) { height:10px; animation-delay:-.4s; }
