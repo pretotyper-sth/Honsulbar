@@ -218,9 +218,21 @@ function looksLikeIllustration(canvas, face) {
   const obviousPaint = stats.exactRatio > 0.4 && stats.colorDensity < 0.055 && stats.flatRatio > 0.5;
   return obviousPaint || (painted && simpleBackground);
 }
+function identityPoints(face) {
+  const [rightEye, leftEye, nose, mouth] = face.landmarks || [];
+  if (![rightEye, leftEye, nose, mouth].every(point => Array.isArray(point) && point.length >= 2)) return null;
+  const originX = (rightEye[0] + leftEye[0]) / 2;
+  const originY = (rightEye[1] + leftEye[1]) / 2;
+  const scale = Math.hypot(leftEye[0] - rightEye[0], leftEye[1] - rightEye[1]) || 1;
+  return [rightEye, leftEye, nose, mouth].map(([x, y]) => [(x - originX) / scale, (y - originY) / scale]);
+}
 function facesLookLikeSamePerson(profileCanvas, profileFace, cameraCanvas, cameraFace) {
   if (looksLikeIllustration(profileCanvas, profileFace)) return false;
-  return faceSimilarity(faceSignature(profileFace), faceSignature(cameraFace)) >= 0.72;
+  const first = identityPoints(profileFace);
+  const second = identityPoints(cameraFace);
+  if (!first || !second) return false;
+  const pointDistance = first.reduce((sum, point, index) => sum + Math.hypot(point[0] - second[index][0], point[1] - second[index][1]), 0) / first.length;
+  return pointDistance <= 0.4;
 }
 function resizePhoto(file) {
   return new Promise((resolve, reject) => {
