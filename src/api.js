@@ -8,6 +8,15 @@ export const API_BASE = import.meta.env.VITE_API_BASE ?? (localHost ? '' : 'http
 export const assetUrl = path => (typeof path === 'string' && path.startsWith('/api/') ? API_BASE + path : path);
 export const insideToss = () => typeof window !== 'undefined' && !!window.ReactNativeWebView;
 
+function markTossChrome() {
+  if (typeof document !== 'undefined' && insideToss()) document.documentElement.classList.add('in-toss');
+}
+markTossChrome();
+if (typeof window !== 'undefined') {
+  window.addEventListener('DOMContentLoaded', markTossChrome);
+  window.addEventListener('load', markTossChrome);
+}
+
 function webPreviewToken() {
   if (typeof window === 'undefined') return '';
   try {
