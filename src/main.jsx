@@ -79,13 +79,14 @@ function isLikelyRealFace(face, width, height) {
   const box = faceBox(face);
   const probability = faceProbability(face);
   if (!Number.isFinite(probability) || probability < 0.82) return false;
-  const size = Math.min(box.width / width, box.height / height);
-  if (size < 0.16 || size > 0.95) return false;
+  const sizeW = box.width / width;
+  const sizeH = box.height / height;
+  if (sizeW < 0.2 || sizeH < 0.26 || sizeW > 0.95 || sizeH > 0.95) return false;
   const aspect = box.width / box.height;
   if (aspect < 0.52 || aspect > 1.38) return false;
   const centerY = (box.top + box.height / 2) / height;
   if (centerY < 0.12 || centerY > 0.72) return false;
-  if (size < 0.22 && (box.top + box.height) / height < 0.3) return false;
+  if (sizeH < 0.32 && (box.top + box.height) / height < 0.3) return false;
   const landmarks = face.landmarks || [];
   if (landmarks.length < 4) return false;
   const [rightEye, leftEye, nose, mouth] = landmarks;
