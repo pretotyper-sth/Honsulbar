@@ -14,6 +14,15 @@ import { SEATS as positions, POINT_PACKS, SUBSCRIPTIONS, adjacent, audioGain } f
 import { AdminPage } from './admin';
 import './style.css';
 
+const IAP_PACK_SKU = {
+  1000: 'ait.0000078228.10e9c057.abb16a92b7.0232936136',
+  3300: 'ait.0000078228.6ec058de.36dbc34bc4.0233037038',
+  6000: 'ait.0000078228.f9cd1a54.c3649ea495.0233080906',
+  10000: 'ait.0000078228.fd822515.cc48bf218d.0233160336',
+  20000: 'ait.0000078228.8b1b9cbd.8529f22c7a.0233188045',
+};
+const IAP_SUB_SKU = 'sub.1od0.muf71ewh.de9ba197b4';
+
 function Waves() { return <span className="waves" aria-hidden="true"><i/><i/><i/><i/></span>; }
 const FAQ_ITEMS = [
   ['입장하면 포인트가 얼마 차감되나요?', '첫 입장은 선택한 음료에 따라 차감돼요. 기본 음료는 500P로 30분 이용할 수 있고, 입장 후 한 잔 더 주문해 시간을 연장할 수 있어요.'],
@@ -883,12 +892,28 @@ function App() {
       setTimeout(finish, 6000);
     } else stop('광고를 준비하고 있어요.');
   }
-  async function catalogSku(preferred) {
-    if (!preferred || typeof IAP?.getProductItemList !== 'function') return preferred;
+  async function catalogSku(preferred, { points, subscription } = {}) {
+    if (!preferred) return preferred;
+    if (typeof IAP?.getProductItemList !== 'function') return preferred;
     try {
       const { products = [] } = await IAP.getProductItemList() || {};
-      const match = products.find(item => item.sku === preferred || item.productId === preferred);
-      return match?.sku || match?.productId || preferred;
+      const exact = products.find(item => item.sku === preferred || item.productId === preferred);
+      if (exact?.sku) return exact.sku;
+      if (subscription) {
+        const sub = products.find(item => item.type === 'SUBSCRIPTION' || String(item.sku || '').startsWith('sub.'));
+        if (sub?.sku) return sub.sku;
+      }
+      if (points) {
+        const digits = String(points);
+        const won = String(POINT_PACKS.find(pack => pack.points === points)?.won || '');
+        const named = products.find(item => {
+          const name = String(item.displayName || '').replace(/[^\d]/g, '');
+          const amount = String(item.displayAmount || '').replace(/[^\d]/g, '');
+          return name === digits || (won && amount === won);
+        });
+        if (named?.sku) return named.sku;
+      }
+      return preferred;
     } catch { return preferred; }
   }
   function canceledPurchase(err) {
@@ -897,7 +922,7 @@ function App() {
     return code === 'USER_CANCELED' || /cancel|canceled|CANCELED|USER_DECLINED|취소/i.test(message);
   }
   async function buyPoints() {
-    const preferred = Object.entries(config?.products || {}).find(([, item]) => item.points === shopPack.points)?.[0];
+    const preferred = IAP_PACK_SKU[shopPack.points] || Object.entries(config?.products || {}).find(([, item]) => item.points === shopPack.points)?.[0];
     if (!preferred || !insideToss() || typeof IAP?.createOneTimePurchaseOrder !== 'function') { setToast('결제 상품을 준비하고 있어요.'); return; }
     if (busy) return;
     setBusy(true);
@@ -906,7 +931,7 @@ function App() {
     const done = () => { try { cleanup?.(); } catch {} setBusy(false); };
     try {
       await new Promise(resolve => setTimeout(resolve, 80));
-      const sku = await catalogSku(preferred);
+      const sku = await catalogSku(preferred, { points: shopPack.points });
       cleanup = IAP.createOneTimePurchaseOrder({
         options: {
           sku,
@@ -995,7 +1020,7 @@ function App() {
       setToast('테스트로 정기 구독을 시작했어요.');
       return;
     }
-    const preferred = config?.subscriptionSku || 'honsulbar_sub_monthly';
+    const preferred = (config?.subscriptionSku?.startsWith('sub.') ? config.subscriptionSku : IAP_SUB_SKU);
     if (!insideToss() || typeof IAP?.createSubscriptionPurchaseOrder !== 'function') { setToast('정기 구독을 준비하고 있어요.'); return; }
     if (busy) return;
     setBusy(true);
@@ -1005,7 +1030,7 @@ function App() {
     (async () => {
       try {
         await new Promise(resolve => setTimeout(resolve, 80));
-        const sku = await catalogSku(preferred);
+        const sku = await catalogSku(preferred, { subscription: true });
         cleanup = IAP.createSubscriptionPurchaseOrder({
           options: {
             sku,

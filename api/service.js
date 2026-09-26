@@ -1,4 +1,4 @@
-import {AppError,authenticate,admin,database,rpc,toss,decryptField,isAdult,newToken,hash,dispatchOutbox,sbUrl,signPhoto,photoMatches,skuPoints,rewardedAdGroupId,subscriptionSku,isSubscriptionSku,parseTossTime,pushAvailableTemplate,pushReplyTemplate} from '../server/platform.js';
+import {AppError,authenticate,admin,database,rpc,toss,decryptField,isAdult,newToken,hash,dispatchOutbox,sbUrl,signPhoto,photoMatches,skuPoints,findProduct,rewardedAdGroupId,subscriptionSku,isSubscriptionSku,parseTossTime,pushAvailableTemplate,pushReplyTemplate} from '../server/platform.js';
 const allowedActions=new Set(['state','profile','ticket','read','region','waitlist','enter','order','leave','heartbeat','move','request','respond','cancel','focus-end','preview','signal','ad-start','ad-claim']);
 const origins=new Set(['https://honsulbar-app.vercel.app','https://honsulbar.apps.tossmini.com','https://honsulbar.private-apps.tossmini.com','https://honsulbar.web.tossmini.com','https://honsulbar.private-web.tossmini.com']);
 function withPhotos(value){
@@ -117,7 +117,6 @@ export default async function handler(req,res) {
    return res.json({result:{},state:withPhotos(await rpc('hb_snapshot',{p_member:member,p_after:Math.max(0,Number(body.after)||0),p_limit:Math.min(100,Math.max(10,Number(body.limit)||10))}))});
   }
   if(action==='purchase'){
-   const products=skuPoints();
    if(typeof body.orderId!=='string'||!/^[\w-]{8,80}$/.test(body.orderId))throw new AppError('주문 정보를 확인해 주세요.');
    const [m]=await database(`hb_members?id=eq.${member}&select=toss_key`);
    const order=await toss('/api-partner/v1/apps-in-toss/order/get-order-status',{orderId:body.orderId},{'x-toss-user-key':m.toss_key});
@@ -126,7 +125,7 @@ export default async function handler(req,res) {
     await rpc('hb_apply_subscription',{p_member:member,p_order:body.orderId,p_sku:order.sku,p_access:true,p_auto_renew:true,p_expires:parseTossTime(order.expiresAt||order.expires_at)});
     return res.json({ok:true,state:withPhotos(await rpc('hb_snapshot',{p_member:member}))});
    }
-   const product=products[order?.sku];
+   const product=findProduct(order?.sku);
    if(!product)throw new AppError('등록되지 않은 상품이에요. 고객센터에 문의해 주세요.',400);
    if(!['PAYMENT_COMPLETED','PURCHASED'].includes(order.status))throw new AppError('결제가 완료되지 않았어요.',409);
    await rpc('hb_credit_order',{p_member:member,p_order:body.orderId,p_sku:order.sku,p_points:product.points,p_amount:product.won});

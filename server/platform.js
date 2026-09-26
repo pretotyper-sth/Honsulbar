@@ -4,24 +4,48 @@ export class AppError extends Error { constructor(message,status=400){super(mess
 export const hash = value => createHash('sha256').update(value).digest('hex');
 export const signPhoto = (id,v) => createHmac('sha256',`photo:${process.env.SUPABASE_SERVICE_ROLE_KEY||''}`).update(`${id}.${v}`).digest('base64url').slice(0,22);
 export const photoMatches = (id,v,s) => typeof s==='string'&&s.length===22&&timingSafeEqual(Buffer.from(s),Buffer.from(signPhoto(id,v)));
-const DEFAULT_PRODUCTS = {
-  honsulbar_p1000: {points:1000,won:1100},
-  honsulbar_p3300: {points:3300,won:3300},
-  honsulbar_p6000: {points:6000,won:5500},
-  honsulbar_p10000: {points:10000,won:8800},
-  honsulbar_p20000: {points:20000,won:16500},
+const PRODUCT_ALIASES = {
+  honsulbar_p1000: 'ait.0000078228.10e9c057.abb16a92b7.0232936136',
+  honsulbar_p3300: 'ait.0000078228.6ec058de.36dbc34bc4.0233037038',
+  honsulbar_p6000: 'ait.0000078228.f9cd1a54.c3649ea495.0233080906',
+  honsulbar_p10000: 'ait.0000078228.fd822515.cc48bf218d.0233160336',
+  honsulbar_p20000: 'ait.0000078228.8b1b9cbd.8529f22c7a.0233188045',
 };
-export const SUBSCRIPTION_SKU = 'honsulbar_sub_monthly';
+const DEFAULT_PRODUCTS = {
+  'ait.0000078228.10e9c057.abb16a92b7.0232936136': {points:1000,won:1100},
+  'ait.0000078228.6ec058de.36dbc34bc4.0233037038': {points:3300,won:3300},
+  'ait.0000078228.f9cd1a54.c3649ea495.0233080906': {points:6000,won:5500},
+  'ait.0000078228.fd822515.cc48bf218d.0233160336': {points:10000,won:8800},
+  'ait.0000078228.8b1b9cbd.8529f22c7a.0233188045': {points:20000,won:16500},
+};
+export const SUBSCRIPTION_SKU = 'sub.1od0.muf71ewh.de9ba197b4';
 export const SUBSCRIPTION_WON = 13200;
+function officialSku(sku) {
+  return PRODUCT_ALIASES[sku] || sku;
+}
 export function skuPoints() {
- try{const value=JSON.parse(process.env.TOSS_IAP_PRODUCTS||'{}');if(value&&typeof value==='object'&&Object.keys(value).length)return value;}catch{}
- return DEFAULT_PRODUCTS;
+ let raw = DEFAULT_PRODUCTS;
+ try {
+  const value = JSON.parse(process.env.TOSS_IAP_PRODUCTS || '{}');
+  if (value && typeof value === 'object' && Object.keys(value).length) raw = value;
+ } catch {}
+ const products = {};
+ for (const [key, value] of Object.entries(raw)) products[officialSku(key)] = value;
+ for (const [sku, value] of Object.entries(DEFAULT_PRODUCTS)) if (!products[sku]) products[sku] = value;
+ return products;
+}
+export function findProduct(sku) {
+  if (!sku) return null;
+  const products = skuPoints();
+  return products[sku] || products[officialSku(sku)] || null;
 }
 export function subscriptionSku() {
- return process.env.TOSS_SUBSCRIPTION_SKU || SUBSCRIPTION_SKU;
+ const env = process.env.TOSS_SUBSCRIPTION_SKU;
+ if (typeof env === 'string' && env.startsWith('sub.')) return env;
+ return SUBSCRIPTION_SKU;
 }
 export function isSubscriptionSku(sku) {
- return sku === subscriptionSku();
+ return sku === subscriptionSku() || sku === SUBSCRIPTION_SKU || sku === 'honsulbar_sub_monthly';
 }
 export function parseTossTime(value) {
  if(!value) return null;
