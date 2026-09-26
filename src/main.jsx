@@ -66,6 +66,38 @@ function faceIsWellFramed(face, width, height) {
   const size = Math.min(box.width / width, box.height / height);
   return centerX > 0.2 && centerX < 0.8 && centerY > 0.2 && centerY < 0.8 && size > 0.18 && size < 0.82;
 }
+function faceProbability(face) {
+  const raw = face?.probability;
+  if (typeof raw === 'number') return raw;
+  if (Array.isArray(raw) && typeof raw[0] === 'number') return raw[0];
+  try {
+    if (raw && typeof raw.dataSync === 'function') return Number(raw.dataSync()[0]);
+  } catch {}
+  return NaN;
+}
+function isLikelyRealFace(face, width, height) {
+  const box = faceBox(face);
+  const probability = faceProbability(face);
+  if (!Number.isFinite(probability) || probability < 0.9) return false;
+  const size = Math.min(box.width / width, box.height / height);
+  if (size < 0.16 || size > 0.92) return false;
+  const aspect = box.width / box.height;
+  if (aspect < 0.62 || aspect > 1.18) return false;
+  const landmarks = face.landmarks || [];
+  if (landmarks.length < 4) return false;
+  const [rightEye, leftEye, nose, mouth] = landmarks;
+  if (![rightEye, leftEye, nose, mouth].every(point => Array.isArray(point) && point.length >= 2)) return false;
+  const eyeY = (rightEye[1] + leftEye[1]) / 2;
+  const eyeDist = Math.hypot(leftEye[0] - rightEye[0], leftEye[1] - rightEye[1]);
+  if (eyeDist < box.width * 0.2 || eyeDist > box.width * 0.7) return false;
+  if (Math.abs(leftEye[1] - rightEye[1]) > box.height * 0.2) return false;
+  if (mouth[1] < eyeY + box.height * 0.14) return false;
+  if (nose[1] <= eyeY || nose[1] >= mouth[1]) return false;
+  const midX = (leftEye[0] + rightEye[0]) / 2;
+  if (Math.abs(nose[0] - midX) > box.width * 0.26) return false;
+  if (Math.abs(mouth[0] - midX) > box.width * 0.3) return false;
+  return true;
+}
 function resizePhoto(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
@@ -674,19 +706,16 @@ function App() {
     image.src = dataUrl;
     await image.decode();
     const faces = await model.estimateFaces(image, false);
-    if (!faces.length) return false;
-    const face = faces.sort((a, b) => faceBox(b).width - faceBox(a).width)[0];
-    const box = faceBox(face);
-    const size = Math.min(box.width / image.naturalWidth, box.height / image.naturalHeight);
-    const probability = Number(face.probability?.[0] ?? face.probability ?? 1);
-    return size >= 0.12 && probability >= 0.7;
+    const width = image.naturalWidth || image.width;
+    const height = image.naturalHeight || image.height;
+    return faces.some(face => isLikelyRealFace(face, width, height));
   }
   async function choosePhoto(event) {
     const file = event.target.files?.[0]; event.target.value = ''; if (!file) return;
     if (!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024) { setError('10MB 이하의 JPG, PNG, WebP 사진을 골라주세요.'); return; }
+    const previous = profile.photo;
     try {
       const photo = await resizePhoto(file);
-      const previous = profile.photo;
       setDraftVerified(false);
       setPhotoDraft(null);
       setPhotoCheck('checking');
@@ -702,7 +731,8 @@ function App() {
       setPhotoDraft(photo);
       setPhotoCheck('ok');
     } catch (e) {
-      setPhotoCheck('fail');
+      setPhotoCheck(previous ? 'idle' : 'fail');
+      setProfile(v => ({ ...v, photo: previous }));
       setError(e.message === '사진을 읽지 못했어요. 다른 사진을 골라주세요.' ? e.message : '사진을 확인하지 못했어요. 다른 사진을 골라 주세요.');
     }
   }
@@ -878,7 +908,7 @@ function App() {
       {sheet==='charge'&&<><h2 id="sheet-title">포인트 충전</h2><div className="point-balance"><Coins size={24}/><strong>{shopPack.points.toLocaleString()} P</strong></div><div className="order-summary"><span>상품 금액<strong>{shopPack.won.toLocaleString()}원</strong></span><span>충전 후 포인트<b>{(wallet.balance+shopPack.points).toLocaleString()} P</b></span></div><p className="sheet-description">결제 후 {shopPack.points.toLocaleString()}P가 충전돼요. 결제 수단은 토스에서 안전하게 처리돼요.</p><Button display="block" disabled={busy} onClick={buyPoints}>{busy ? '결제 진행 중…' : '결제하고 충전하기'}</Button><Button display="block" variant="weak" color="dark" onClick={()=>open('shop')}>다른 상품 보기</Button></>}
       {sheet==='subscription-confirm'&&<><p className="eyebrow">정기 구독</p><h2 id="sheet-title">{!subscription?'정기 구독을 시작할까요?':subscriptionCancelAt?'구독을 다시 유지할까요?':'정기 구독을 해지할까요?'}</h2><p className="sheet-description">{!subscription?`매월 ${SUBSCRIPTIONS[0].price.toLocaleString()}원이 자동 결제되고 포인트 차감 없이 이용할 수 있어요.`:subscriptionCancelAt?`${subscriptionEndLabel()}까지 이용할 수 있고, 그 전에 다시 유지할 수 있어요.`:`자동 결제는 멈추지만 ${subscriptionEndLabel()}까지 이용할 수 있어요.`}</p><div className="actions"><Button color="dark" variant="weak" onClick={()=>setSheet('shop')}>취소</Button><Button size="xlarge" onClick={confirmSubscriptionChange}>{!subscription?'구독 시작하기':subscriptionCancelAt?'구독 유지하기':'해지 예약하기'}</Button></div></>}
       {sheet==='notifications'&&<><h2 id="sheet-title">알림</h2>{notifications.length===0?<p className="sheet-description">새로운 알림이 없어요.</p>:<div className="notification-list">{notifications.map(item=><button key={item.id} onClick={()=>openNotification(item)}><Bell size={17}/><span><strong>{item.title}</strong><small>{item.body}</small></span><ArrowRight size={16}/></button>)}</div>}</>}
-      {sheet === 'profile' && <><div className="sheet-heading-row"><div><p className="eyebrow">내 프로필</p><h2 id="sheet-title">프로필을 설정해 주세요</h2></div></div><p className="sheet-description">사진과 닉네임은 다른 손님에게 보여요.</p><input ref={upload} hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={choosePhoto}/><button className="upload" onClick={() => upload.current.click()}>{profile.photo ? <img src={profile.photo} alt="선택한 내 사진"/> : <Camera size={30}/>}<span>{profile.photo ? '사진 바꾸기' : '사진 등록하기'}</span></button><p className="photo-note">{photoCheck==='checking' ? '얼굴을 확인하고 있어요.' : profileVerified ? '확인된 사진이에요. 사진을 바꾸면 다시 확인해요.' : '본인 얼굴 사진을 사용해 주세요.'}</p><label className="profile-field"><span>닉네임</span><input value={profile.nickname} maxLength={16} aria-invalid={!!nicknameError} onChange={e=>setProfile(v=>({...v,nickname:e.target.value}))} placeholder="닉네임을 입력해 주세요"/>{nicknameError&&<small className="field-error">{nicknameError}</small>}</label><div className="gender-choice">{[['male','남성'],['female','여성']].map(([value,label]) => <button key={value} aria-pressed={profile.gender === value} className={profile.gender === value ? `selected ${value}` : ''} onClick={() => setProfile(v => ({...v,gender:value}))}>{label}{profile.gender === value && <Check size={17}/>}</button>)}</div><p className="profile-save-note">{profileVerified ? '변경한 내용을 저장해 주세요.' : '사진을 저장하려면 얼굴 확인이 필요해요.'}</p><Button size="xlarge" display="block" disabled={!profile.photo || !profile.gender || !!nicknameError || photoCheck==='checking'} onClick={() => profileVerified ? saveProfile() : setSheet('verify-profile')}>{profileVerified ? '프로필 저장하기' : '얼굴 확인하기'}</Button></>}
+      {sheet === 'profile' && <><div className="sheet-heading-row"><div><p className="eyebrow">내 프로필</p><h2 id="sheet-title">프로필을 설정해 주세요</h2></div></div><p className="sheet-description">사진과 닉네임은 다른 손님에게 보여요.</p><input ref={upload} hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={choosePhoto}/><button className="upload" onClick={() => upload.current.click()}>{profile.photo ? <img src={profile.photo} alt="선택한 내 사진"/> : <Camera size={30}/>}<span>{profile.photo ? '사진 바꾸기' : '사진 등록하기'}</span></button><p className="photo-note">{photoCheck==='checking' ? '얼굴을 확인하고 있어요.' : profileVerified ? '확인된 사진이에요. 사진을 바꾸면 다시 확인해요.' : '본인 얼굴 사진을 사용해 주세요.'}</p><label className="profile-field"><span>닉네임</span><input value={profile.nickname} maxLength={16} aria-invalid={!!nicknameError} onChange={e=>setProfile(v=>({...v,nickname:e.target.value}))} placeholder="닉네임을 입력해 주세요"/>{nicknameError&&<small className="field-error">{nicknameError}</small>}</label><div className="gender-choice">{[['male','남성'],['female','여성']].map(([value,label]) => <button key={value} aria-pressed={profile.gender === value} className={profile.gender === value ? `selected ${value}` : ''} onClick={() => setProfile(v => ({...v,gender:value}))}>{label}{profile.gender === value && <Check size={17}/>}</button>)}</div><p className="profile-save-note">{profileVerified ? '변경한 내용을 저장해 주세요.' : '사진을 저장하려면 얼굴 확인이 필요해요.'}</p><Button size="xlarge" display="block" disabled={!profile.photo || !profile.gender || !!nicknameError || photoCheck==='checking' || (!profileVerified && photoCheck!=='ok')} onClick={() => profileVerified ? saveProfile() : setSheet('verify-profile')}>{profileVerified ? '프로필 저장하기' : '얼굴 확인하기'}</Button></>}
       {sheet === 'verify-profile' && <><p className="eyebrow">본인 얼굴 확인</p><h2 id="sheet-title">이 화면에서 촬영해 주세요</h2><p className="sheet-description">저장 전에 얼굴을 확인하고 사진을 바꾸면 다시 확인하며, 이 촬영은 저장하지 않아요.</p><div className="camera-preview"><video ref={cameraVideo} autoPlay muted playsInline webkit-playsinline="true" aria-label="본인 얼굴 촬영 화면"/><i className="camera-guide" aria-hidden="true"/><canvas ref={cameraCanvas} hidden/></div><p className={`photo-note verification-message ${verificationState==='verified'?'is-verified':''}`}>{verificationMessage}</p>{verificationState==='verified'?<Button size="xlarge" display="block" onClick={saveProfile}>프로필 저장하기</Button>:verificationState==='unavailable'?<Button size="xlarge" display="block" onClick={() => { setSheet(null); setTimeout(() => setSheet('verify-profile'), 0); }}>권한 다시 요청하기</Button>:<Button size="xlarge" display="block" disabled={verificationState!=='ready'} onClick={captureVerification}>{verificationState==='checking'?'얼굴 확인 중…':verificationState==='starting'?'카메라 준비 중…':'촬영하기'}</Button>}</>}
       {sheet === 'settings' && <><p className="eyebrow">설정</p><h2 id="sheet-title">도움이 필요하신가요?</h2><p className="sheet-description">서비스 이용과 계정을 관리할 수 있어요.</p><div className="settings-group"><span>도움말</span><div className="settings-list"><button onClick={()=>open('support')}>고객센터<ArrowRight size={16}/></button><button onClick={()=>open('inquiry')}>신고·문의<ArrowRight size={16}/></button><a href="/legal/" target="_blank" rel="noopener noreferrer">약관 및 정책<ArrowRight size={16}/></a></div></div><div className="settings-group"><span>알림</span><div className="settings-list"><button onClick={openPushAgreement}>빈자리 알림 동의<ArrowRight size={16}/></button></div></div><div className="settings-group"><span>계정 및 결제</span><div className="settings-list"><button onClick={openSubscriptionManager}>결제·정기 구독 관리<ArrowRight size={16}/></button><button onClick={()=>open('withdraw')} className="danger-link">회원탈퇴<ArrowRight size={16}/></button></div></div></>}
       {sheet === 'region-request' && <><p className="eyebrow">지역 추가 요청</p><h2 id="sheet-title">어디에서 만나고 싶나요?</h2><p className="sheet-description">원하는 지역을 골라 주세요.</p>{REGION_REQUEST_GROUPS.map(group=><div className="region-request-section" key={group.title}><span>{group.title}</span><div className="region-request-grid">{group.options.map(item=><button key={item} className={requestedRegion===item?'selected':''} onClick={()=>{setRequestedRegion(item);setShowCustomRegion(false);}}>{item}</button>)}{group.title==='주요 도시'&&<button style={{borderStyle:'dashed',borderWidth:'1.5px',borderColor:'#b7c0cb'}} className={`custom-region-toggle ${showCustomRegion?'selected':''}`} onClick={()=>{setShowCustomRegion(v=>!v);setRequestedRegion('');}}>직접 입력</button>}</div></div>)}{showCustomRegion&&<input className="custom-region-input" value={customRegion} onChange={e=>setCustomRegion(e.target.value)} placeholder="지역명을 입력해 주세요" maxLength={20}/>}<Button display="block" disabled={!requestedRegion && !(showCustomRegion&&customRegion.trim())} onClick={submitRegion}>이 지역 추가 요청하기</Button><p className="digital-note">요청 건수와 우선순위에 따라 지역을 추가해요.</p></>}
