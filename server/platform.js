@@ -101,14 +101,35 @@ export function isAdult(birthday,now=new Date()) {
  const age=today.getUTCFullYear()-y-((today.getUTCMonth()+1<m||(today.getUTCMonth()+1===m&&today.getUTCDate()<d))?1:0);
  return age>=19&&age<130;
 }
+export function pemFromEnv(name) {
+ const raw=String(process.env[name]||'').trim().replace(/^['"]|['"]$/g,'');
+ if(!raw) throw new AppError('토스 연결 설정이 아직 완료되지 않았어요.',503);
+ let text=raw.includes('-----BEGIN')?raw:Buffer.from(raw.replace(/\s+/g,''),'base64').toString('utf8');
+ text=text.replace(/\\r\\n/g,'\n').replace(/\\n/g,'\n').replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+ const blocks=[];
+ const re=/-----BEGIN ([A-Z0-9 ]+)-----([A-Za-z0-9+/=\s]+)-----END \1-----/g;
+ let match;
+ while((match=re.exec(text))){
+  const body=match[2].replace(/\s+/g,'');
+  const wrapped=(body.match(/.{1,64}/g)||[body]).join('\n');
+  blocks.push(`-----BEGIN ${match[1]}-----\n${wrapped}\n-----END ${match[1]}-----\n`);
+ }
+ if(!blocks.length) throw new AppError('토스 연결 설정이 아직 완료되지 않았어요.',503);
+ return blocks.join('');
+}
 export async function toss(path,body,headers={}) {
- const cert=process.env.TOSS_CLIENT_CERT_BASE64,key=process.env.TOSS_CLIENT_KEY_BASE64;
- if(!cert||!key) throw new AppError('토스 연결 설정이 아직 완료되지 않았어요.',503);
+ const cert=pemFromEnv('TOSS_CLIENT_CERT_BASE64');
+ const key=pemFromEnv('TOSS_CLIENT_KEY_BASE64');
  return new Promise((resolve,reject)=>{
- const request=https.request(`https://apps-in-toss-api.toss.im${path}`,{method:body===undefined?'GET':'POST',cert:Buffer.from(cert,'base64'),key:Buffer.from(key,'base64'),headers:{'Content-Type':'application/json',...headers},timeout:10000},response=>{
- let text='';response.on('data',chunk=>{text+=chunk;if(text.length>1000000)request.destroy();});response.on('end',()=>{
- try{const data=JSON.parse(text);if(response.statusCode>=400||data.resultType!=='SUCCESS')throw new Error();resolve(data.success);}catch{reject(new AppError('토스 요청을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.',502));}
- });});request.on('timeout',()=>request.destroy());request.on('error',()=>reject(new AppError('토스 연결을 확인해 주세요.',502)));if(body!==undefined)request.write(JSON.stringify(body));request.end();
+ let request;
+ try{
+  request=https.request(`https://apps-in-toss-api.toss.im${path}`,{method:body===undefined?'GET':'POST',cert,key,headers:{'Content-Type':'application/json',...headers},timeout:10000},response=>{
+   let text='';response.on('data',chunk=>{text+=chunk;if(text.length>1000000)request.destroy();});response.on('end',()=>{
+    try{const data=JSON.parse(text);if(response.statusCode>=400||data.resultType!=='SUCCESS')throw new Error();resolve(data.success);}catch{reject(new AppError('토스 요청을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.',502));}
+   });
+  });
+ }catch{reject(new AppError('토스 연결을 확인해 주세요.',502));return;}
+ request.on('timeout',()=>request.destroy());request.on('error',()=>reject(new AppError('토스 연결을 확인해 주세요.',502)));if(body!==undefined)request.write(JSON.stringify(body));request.end();
  });
 }
 export async function dispatchOutbox() {

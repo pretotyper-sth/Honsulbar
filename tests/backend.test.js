@@ -222,3 +222,18 @@ test('decryptField accepts plaintext birthdays and quoted env values', async () 
   assert.equal(decryptField(enc.toString('base64')), '20010315');
   assert.equal(isAdult('20010315', new Date('2026-09-26T00:00:00+09:00')), true);
 });
+
+test('pemFromEnv rebuilds stripped certificates and raw PEM env values', async () => {
+  const { pemFromEnv } = await import('../server/platform.js');
+  const { createSecureContext } = await import('node:tls');
+  const { execFileSync } = await import('node:child_process');
+  const pem = execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-keyout', '/dev/stdout', '-out', '/dev/stdout', '-days', '1', '-nodes', '-subj', '/CN=pem-test'], { encoding: 'utf8' });
+  const cert = pem.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/)[0];
+  const key = pem.match(/-----BEGIN PRIVATE KEY-----[\s\S]+?-----END PRIVATE KEY-----/)[0];
+  process.env.TOSS_CLIENT_CERT_BASE64 = Buffer.from(cert.replace(/\n/g, '')).toString('base64');
+  process.env.TOSS_CLIENT_KEY_BASE64 = key;
+  const restoredCert = pemFromEnv('TOSS_CLIENT_CERT_BASE64');
+  const restoredKey = pemFromEnv('TOSS_CLIENT_KEY_BASE64');
+  assert.match(restoredCert, /-----END CERTIFICATE-----\n$/);
+  createSecureContext({ cert: restoredCert, key: restoredKey });
+});
