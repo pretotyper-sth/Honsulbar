@@ -114,7 +114,7 @@ export default async function handler(req,res) {
     const [room]=await database(`hb_rooms?region=eq.${encodeURIComponent(region)}&number=eq.${number}&select=id&limit=1`);
     if(room?.id)await database(`hb_waitlist?member_id=eq.${member}&room_id=eq.${room.id}`,{method:'DELETE'});
    }else await database(`hb_waitlist?member_id=eq.${member}`,{method:'DELETE'});
-   return res.json({result:{},state:withPhotos(await rpc('hb_snapshot',{p_member:member,p_after:Math.max(0,Number(body.after)||0),p_limit:Math.min(100,Math.max(10,Number(body.limit)||10))})});
+   return res.json({result:{},state:withPhotos(await rpc('hb_snapshot',{p_member:member,p_after:Math.max(0,Number(body.after)||0),p_limit:Math.min(100,Math.max(10,Number(body.limit)||10))}))});
   }
   if(action==='purchase'){
    const products=skuPoints();
