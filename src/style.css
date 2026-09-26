@@ -53,11 +53,13 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .regions::-webkit-scrollbar { display:none; }
 .regions>button { flex:0 0 auto; min-width:52px; white-space:nowrap; }
 .regions .region-request-button { min-width:auto; border:1px dashed #d1d6db; color:#6b7684; }
-.list-heading { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; font-size:16px; font-weight:600; }
-.leftover-note { margin:-4px 0 14px; font-size:12px; line-height:1.5; color:#3182f6; word-break:keep-all; }
+.list-heading { display:flex; align-items:center; flex-wrap:nowrap; gap:12px; height:20px; margin-bottom:14px; font-size:16px; font-weight:600; overflow:hidden; }
+.leftover-note { margin:0; font-size:12px; line-height:20px; color:#3182f6; word-break:keep-all; font-weight:400; white-space:nowrap; }
+.leftover-note.is-empty { visibility:hidden; }
 .list-heading b { color:#3182f6; font-size:14px; margin-left:4px; }
-.list-heading>span:last-child { font-size:12px; color:#6b7684; font-weight:400; }
-.green-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:#02a262; margin-right:6px; vertical-align:middle; }
+.green-dot, .blue-dot { display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+.green-dot { background:#02a262; }
+.blue-dot { background:#3182f6; }
 .room-list { display:flex; flex-direction:column; gap:14px; }
 .venue-card { border:1px solid #e5e8eb; border-radius:20px; overflow:hidden; background:#fff; }
 .card-entry { display:flex; align-items:center; gap:16px; width:100%; padding:16px; text-align:left; }
@@ -309,7 +311,7 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .lobby { padding-top:16px; display:flex; flex-direction:column; min-height:calc(100dvh - 60px); }
 .lobby h1 { font-size:24px; margin:8px 0 0; }
 .regions { margin:24px 0; }
-.list-heading { font-size:13px; font-weight:400; color:#6b7684; margin-bottom:14px; }
+.list-heading { font-size:13px; line-height:20px; font-weight:400; color:#6b7684; height:20px; margin-bottom:14px; }
 .room-list { gap:10px; }
 .room-row { border-radius:16px; background:#fff; box-shadow:inset 0 0 0 1px #e5e8eb; overflow:hidden; }
 .room-row.selected { background:#f4f9ff; box-shadow:inset 0 0 0 1.5px #3182f6; }

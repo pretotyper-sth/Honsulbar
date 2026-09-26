@@ -43,7 +43,15 @@ export function rewardedAdGroupId() {
 }
 export const newToken = () => randomBytes(32).toString('base64url');
 export const sbUrl = () => (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/,'');
+function useLocalDb() {
+ return process.env.HB_LOCAL_DB === '1' && process.env.VERCEL_ENV !== 'production';
+}
 export async function database(path,{method='GET',body,headers={}}={}) {
+ if (useLocalDb()) {
+  const { rest } = await import('./local-db.js');
+  try { return await rest(path, { method, body, headers }); }
+  catch (error) { throw new AppError(error.message, error.status || 503); }
+ }
  const key=process.env.SUPABASE_SERVICE_ROLE_KEY;
  if(!sbUrl()||!key) throw new AppError('서비스 연결을 준비 중이에요. 잠시 후 다시 시도해 주세요.',503);
  let response;
