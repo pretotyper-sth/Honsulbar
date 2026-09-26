@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { getPermission, openPermissionDialog, requestPermission } from '@apps-in-toss/web-framework';
+
+export async function ensureTossMediaPermission(name) {
+  try {
+    let status = await getPermission({ name, access: 'access' });
+    if (status === 'notDetermined') status = await requestPermission({ name, access: 'access' });
+    else if (status !== 'allowed') status = await openPermissionDialog({ name, access: 'access' });
+    return status === 'allowed';
+  } catch {
+    return true;
+  }
+}
 
 const MIC_KEY = 'honsulbar:mic:v1';
-const CONSENT = { microphone: 'honsulbar:consent:mic', camera: 'honsulbar:consent:cam' };
-
-export function hasMediaConsent(kind) {
-  try { return localStorage.getItem(CONSENT[kind]) === '1'; } catch { return false; }
-}
-
-export function setMediaConsent(kind, on) {
-  try { on ? localStorage.setItem(CONSENT[kind], '1') : localStorage.removeItem(CONSENT[kind]); } catch {}
-}
 
 function writeMicPref(on) {
   try { on ? localStorage.setItem(MIC_KEY, '1') : localStorage.removeItem(MIC_KEY); } catch {}
@@ -43,6 +46,9 @@ export function useVoice(enabled, onError, live = true) {
     acquiring.current = true; setPending(true);
     let stream, context;
     try {
+      const allowed = await ensureTossMediaPermission('microphone');
+      if (!allowed) throw Object.assign(new Error('denied'), { name: 'NotAllowedError' });
+      if (token !== generation.current) return;
       stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
       if (token !== generation.current) { stream.getTracks().forEach(track => track.stop()); return; }
       context = new (window.AudioContext || window.webkitAudioContext)();

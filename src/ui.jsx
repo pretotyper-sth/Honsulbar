@@ -34,31 +34,3 @@ export function BottomSheet({ open, onClose, children, className = '', ariaLabel
     </section>
   </div>;
 }
-
-const PERM_COPY = {
-  microphone: { title: '마이크 사용을 허용할까요?', body: '바에서 이야기하려면 마이크가 필요해요.', allow: '허용', deny: '허용 안 함' },
-  camera: { title: '카메라 사용을 허용할까요?', body: '얼굴 확인을 위해 카메라를 사용해요.', allow: '허용', deny: '허용 안 함' },
-};
-
-export function PermissionPrompt({ open, kind, onAllow, onDeny }) {
-  React.useEffect(() => {
-    if (!open) return undefined;
-    const html = document.documentElement;
-    const already = html.classList.contains('sheet-open');
-    html.classList.add('sheet-open');
-    return () => { if (!already) html.classList.remove('sheet-open'); };
-  }, [open]);
-  if (!open) return null;
-  const copy = PERM_COPY[kind] || PERM_COPY.microphone;
-  return <div className="perm-backdrop" role="presentation">
-    <section className="perm-sheet" role="dialog" aria-modal="true" aria-labelledby="perm-title">
-      <div className="ui-sheet-handle" aria-hidden="true" />
-      <h2 id="perm-title">{copy.title}</h2>
-      <p>{copy.body}</p>
-      <div className="perm-actions">
-        <Button color="dark" variant="weak" size="xlarge" onClick={onDeny}>{copy.deny}</Button>
-        <Button size="xlarge" onClick={onAllow}>{copy.allow}</Button>
-      </div>
-    </section>
-  </div>;
-}

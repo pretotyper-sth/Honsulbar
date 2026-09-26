@@ -5,7 +5,10 @@ export default defineConfig({
   brand: {
     primaryColor: '#3182f6',
   },
-  permissions: [{ name: 'camera', access: 'access' }],
+  permissions: [
+    { name: 'camera', access: 'access' },
+    { name: 'microphone', access: 'access' },
+  ],
   navigationBar: {
     transparentBackground: true,
   },

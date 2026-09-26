@@ -3,10 +3,10 @@ import '@tensorflow/tfjs';
 import * as blazeface from '@tensorflow-models/blazeface';
 import { createRoot } from 'react-dom/client';
 import { IAP, loadFullScreenAd, showFullScreenAd, SafeAreaInsets, NavigationBar } from '@apps-in-toss/web-framework';
-import { Button, BottomSheet, Badge, PermissionPrompt } from './ui';
+import { Button, BottomSheet, Badge } from './ui';
 import { ArrowLeft, ArrowRight, Bell, Camera, Check, ChevronDown, Clock3, DoorOpen, Coins, MessageCircleMore, Mic, MicOff, Plus, Volume2, VolumeX, Speaker, Wine, X, Flag, Wallet, Eye, LockKeyhole, ArrowLeftRight, Settings, UserRound } from 'lucide-react';
 import { REGIONS, CAPACITY, DRINKS } from './model';
-import { hasMediaConsent, setMediaConsent, useVoice } from './useVoice';
+import { ensureTossMediaPermission, useVoice } from './useVoice';
 import { useMesh } from './useMesh';
 import { call, getConfig, login, clearSession, hasSession, assetUrl, insideToss, requestPushAgreement } from './api';
 import { Glass } from './Glass';
@@ -332,8 +332,6 @@ function App() {
   const freezeTimer = useRef(0);
   const moveLockUntil = useRef(0);
   const [seatFrozen, setSeatFrozen] = useState(false);
-  const [mediaAsk, setMediaAsk] = useState(null);
-  const startCameraRef = useRef(null);
   const stateHandler = useRef(null);
   const sheetStack = useRef([]);
 
@@ -505,8 +503,8 @@ function App() {
   }, []);
   useEffect(() => {
     if (!insideToss() || typeof NavigationBar?.setOptions !== 'function') return;
-    NavigationBar.setOptions({ transparentBackground: true, backgroundColor: (sheet || mediaAsk) ? null : '#ffffff' }).catch(() => {});
-  }, [sheet, mediaAsk]);
+    NavigationBar.setOptions({ transparentBackground: true, backgroundColor: sheet ? null : '#ffffff' }).catch(() => {});
+  }, [sheet]);
   useEffect(() => { getConfig().then(setConfig).catch(() => setConfig({})); }, []);
   useEffect(() => {
     if (screen !== 'loading') return;
@@ -674,23 +672,21 @@ function App() {
         if (!cancelled) { setVerificationState('unavailable'); setVerificationMessage('얼굴 확인을 준비하지 못했어요. 잠시 후 다시 시도해 주세요.'); }
       });
     };
-    const startCamera = () => navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 720 } },
-      audio: false,
-    }).then(attachStream).catch(() => {
+    const startCamera = () => ensureTossMediaPermission('camera').then(ok => {
+      if (cancelled) return null;
+      if (!ok) throw Object.assign(new Error('denied'), { name: 'NotAllowedError' });
+      return navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 720 } },
+        audio: false,
+      });
+    }).then(stream => { if (stream) attachStream(stream); }).catch(() => {
       if (!cancelled) {
         setVerificationState('unavailable');
         setVerificationMessage('카메라 권한이 필요해요. 허용하면 이 화면에서 바로 촬영할 수 있어요.');
       }
     });
-    startCameraRef.current = startCamera;
-    if (hasMediaConsent('camera')) startCamera();
-    else {
-      setVerificationState('unavailable');
-      setVerificationMessage('카메라 사용을 허용하면 이 화면에서 바로 촬영할 수 있어요.');
-      setMediaAsk(current => current?.kind === 'camera' ? current : { kind: 'camera' });
-    }
-    return () => { cancelled = true; startCameraRef.current = null; stopPreview(); };
+    startCamera();
+    return () => { cancelled = true; stopPreview(); };
   }, [sheet]);
   const previousRoomCount = useRef({ region, count: rooms[region].length });
   useEffect(() => {
@@ -1246,42 +1242,19 @@ function App() {
     }
     finally { leaving.current = false; }
   }
-  function allowMedia() {
-    const ask = mediaAsk;
-    setMediaAsk(null);
-    if (!ask) return;
-    setMediaConsent(ask.kind, true);
-    if (ask.kind === 'microphone') {
-      voice.toggle();
-      if (ask.speakerOn) setSpeaker(true);
-    }
-    if (ask.kind === 'camera') startCameraRef.current?.();
-  }
-  function denyMedia() {
-    const kind = mediaAsk?.kind;
-    setMediaAsk(null);
-    if (kind === 'microphone') setToast('마이크 권한을 허용하면 이야기할 수 있어요.');
-    if (kind === 'camera') {
-      setVerificationState('unavailable');
-      setVerificationMessage('카메라 권한이 필요해요. 허용하면 이 화면에서 바로 촬영할 수 있어요.');
-    }
-  }
   function requestMic() {
     mesh.resume();
     if (seconds === 0 && seat !== 11) { open('menu'); return; }
-    if (voice.mic) { voice.toggle(); setSpeaker(false); return; }
-    if (hasMediaConsent('microphone')) { voice.toggle(); return; }
-    setMediaAsk({ kind: 'microphone' });
+    const micOn = voice.mic;
+    voice.toggle();
+    if (micOn) setSpeaker(false);
   }
   function toggleSpeaker() {
     mesh.resume();
     if (seconds === 0 && seat !== 11) { open('menu'); return; }
-    if (speaker) { setSpeaker(false); return; }
-    if (!voice.mic) {
-      if (!hasMediaConsent('microphone')) { setMediaAsk({ kind: 'microphone', speakerOn: true }); return; }
-      voice.toggle();
-    }
-    setSpeaker(true);
+    const next = !speaker;
+    if (next && !voice.mic) voice.toggle();
+    setSpeaker(next);
   }
   const time = `${String(Math.floor(seconds / 60)).padStart(2,'0')}:${String(seconds % 60).padStart(2,'0')}`;
   const localRooms = rooms[region];
@@ -1474,7 +1447,6 @@ function App() {
       {sheet === 'leave' && <><DoorOpen size={28}/><h2 id="sheet-title">오늘은 여기까지 할까요?</h2><p className="sheet-description">바를 나가도 이용시간은 계속 흘러요.<br/>자리가 있으면 같은 호점에 다시 들어갈 수 있어요.</p><div className="actions"><Button color="dark" variant="weak" onClick={() => setSheet(null)}>더 머무르기</Button><Button size="xlarge" onClick={leave}>바 나가기</Button></div></>}
       {error && <p className="error" role="alert">{error}</p>}
     </div></BottomSheet>
-    <PermissionPrompt open={!!mediaAsk} kind={mediaAsk?.kind} onAllow={allowMedia} onDeny={denyMedia}/>
     {toast && <div className="toast" role="status">{toast}</div>}
   </>;
 }
