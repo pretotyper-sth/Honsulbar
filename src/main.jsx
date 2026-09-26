@@ -458,9 +458,10 @@ function App() {
   useEffect(() => {
     const apply = insets => {
       const top = Math.max(Number(insets?.top) || 0, 0);
-      document.documentElement.style.setProperty('--ait-safe-top', `${top}px`);
+      const chrome = insideToss() ? (top > 70 ? top : Math.max(top, 47) + 56) : 0;
+      document.documentElement.style.setProperty('--ait-chrome-top', `${chrome}px`);
     };
-    try { apply(SafeAreaInsets.get()); } catch {}
+    try { apply(SafeAreaInsets.get()); } catch { apply({ top: 0 }); }
     let off = () => {};
     try { off = SafeAreaInsets.subscribe({ onEvent: apply }) || (() => {}); } catch {}
     return () => { try { off(); } catch {} };
