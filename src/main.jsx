@@ -1054,14 +1054,18 @@ function App() {
     } catch (e) { setToast(e.message); }
     finally { setGate(null); }
   }
-  function proceedEntry(target) {
+  function proceedEntry(target, { confirm } = {}) {
     setPendingEntry(null);
     setEntryRoom({ region: target.region || region, number: target.number, count: target.count });
     if (!member?.photo || !member?.gender) { openProfileEditor(); return; }
-    if (leftoverFor(target)) { open('rejoin'); return; }
+    if (leftoverFor(target)) {
+      if (confirm) open('rejoin');
+      else rejoinRoom(target);
+      return;
+    }
     setSelection('highball'); open('welcome');
   }
-  function requestEntry(target, { ignoreReport } = {}) {
+  function requestEntry(target, { ignoreReport, confirm } = {}) {
     if (!target) return;
     const regionKey = target.region || region;
     target = rooms[regionKey]?.find(r => r.number === target.number) || { ...target, region: regionKey };
@@ -1071,7 +1075,7 @@ function App() {
       open('reported-entry');
       return;
     }
-    proceedEntry({ ...target, region: regionKey });
+    proceedEntry({ ...target, region: regionKey }, { confirm });
   }
   async function confirmOrder() {
     if (orderLock.current) return;
@@ -1328,7 +1332,7 @@ function App() {
       <p className="branch-note">자리가 다 차면 다음 호점이 열려요.</p>
       <div className="lobby-footer">
         <p className="entry-benefit">입장 시 포인트가 차감돼요.</p>
-        <div className="entry-actions"><Button color="dark" variant="weak" size="xlarge" disabled={!recommended || !!gate} onClick={()=>requestEntry(recommended)}>빠른 입장</Button><Button size="xlarge" disabled={!selected||selected.count===CAPACITY} onClick={()=>requestEntry(selected)}>{selected?selected.count===CAPACITY?'만석이에요':leftover && leftover.region===region && leftover.number===selected.number?`${region} ${selected.number}호점 다시 입장하기`:`${region} ${selected.number}호점 입장하기`:'호점을 선택해 주세요'}</Button></div>
+        <div className="entry-actions"><Button color="dark" variant="weak" size="xlarge" disabled={!recommended || !!gate} onClick={()=>requestEntry(recommended, { confirm: true })}>빠른 입장</Button><Button size="xlarge" disabled={!selected||selected.count===CAPACITY} onClick={()=>requestEntry(selected)}>{selected?selected.count===CAPACITY?'만석이에요':leftover && leftover.region===region && leftover.number===selected.number?`${region} ${selected.number}호점 다시 입장하기`:`${region} ${selected.number}호점 입장하기`:'호점을 선택해 주세요'}</Button></div>
       </div>
     </section> : <section className="bar-screen">
       <div className="room-heading"><div><button className="room-title" onClick={() => open('leave')}>{room.region} {room.number}호점 <ChevronDown size={17}/></button></div><span className="occupancy"><i className="green-dot"/>{guests.length+1}<span> / 12</span></span></div>
