@@ -352,7 +352,7 @@ function App() {
   const inquiries = useMemo(() => (server?.inquiries || []).map(t => ({ id: t.id, type: t.category, message: t.message, answer: t.answer, createdAt: Date.parse(t.created_at) })), [server?.inquiries]);
   const ledger = useMemo(() => (server?.ledger || []).map(l => ({ id: l.id, label: l.label, amount: l.amount, date: Date.parse(l.created_at) })), [server?.ledger]);
   const ledgerCount = server?.ledgerCount ?? ledger.length;
-  const profileVerified = photoDraft ? draftVerified : !!member?.photoChecked;
+  const profileVerified = !!profile.photo && (photoDraft ? draftVerified : !!member?.photoChecked);
   const nicknameError = validateNickname(profile.nickname || '');
   const subscription = !!member?.subscribed || !!devSubscription;
   const subscriptionCancelAt = subscription && (member?.subAutoRenew === false || devSubscription?.cancelAt) ? (member?.subExpiresAt || devSubscription?.expiresAt) : null;
@@ -860,7 +860,6 @@ function App() {
     const file = event.target.files?.[0]; event.target.value = ''; if (!file) return;
     if (!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024) { setError('10MB 이하의 JPG, PNG, WebP 사진을 골라주세요.'); return; }
     const requestId = ++photoInspect.current;
-    const previous = profile.photo;
     const started = Date.now();
     setError('');
     setDraftVerified(false);
@@ -877,7 +876,9 @@ function App() {
       if (requestId !== photoInspect.current) return;
       if (!ok) {
         setPhotoCheck('fail');
-        setProfile(v => ({ ...v, photo: previous }));
+        setPhotoDraft(null);
+        setDraftVerified(false);
+        setProfile(v => ({ ...v, photo: null }));
         setError('얼굴이 잘 보이는 사진을 등록해 주세요.');
         return;
       }
@@ -886,7 +887,9 @@ function App() {
     } catch (e) {
       if (requestId !== photoInspect.current) return;
       setPhotoCheck('fail');
-      setProfile(v => ({ ...v, photo: previous }));
+      setPhotoDraft(null);
+      setDraftVerified(false);
+      setProfile(v => ({ ...v, photo: null }));
       setError(e.message === '사진을 읽지 못했어요. 다른 사진을 골라주세요.' ? e.message : '사진을 확인하지 못했어요. 다른 사진을 골라 주세요.');
     }
   }
