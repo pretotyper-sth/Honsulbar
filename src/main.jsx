@@ -327,11 +327,11 @@ function App() {
   const signalCursor = useRef(0);
   const previousState = useRef(null);
   const leaving = useRef(false);
+  const entering = useRef(false);
   const pendingMove = useRef(null);
   const freezeTimer = useRef(0);
   const moveLockUntil = useRef(0);
   const [seatFrozen, setSeatFrozen] = useState(false);
-  const [gate, setGate] = useState(null);
   const stateHandler = useRef(null);
   const sheetStack = useRef([]);
 
@@ -440,6 +440,8 @@ function App() {
       mesh.receive(fresher.filter(s => ids.has(s.sender)));
     }
     if (!fresh) return;
+    if (entering.current && !(state.visit && !state.visit.away)) { setScreen('bar'); return; }
+    if (leaving.current && state.visit && !state.visit.away) { setScreen('lobby'); return; }
     const target = pendingMove.current;
     if (target != null && state.visit && state.visit.seat !== target) {
       state = { ...state, visit: { ...state.visit, seat: target } };
@@ -450,6 +452,7 @@ function App() {
     setScreen(current => {
       if (!['loading', 'onboarding', 'lobby', 'bar'].includes(current)) return current;
       if (leaving.current) return 'lobby';
+      if (entering.current) return 'bar';
       return state.visit && !state.visit.away ? 'bar' : 'lobby';
     });
     if (!before) return;
@@ -512,7 +515,7 @@ function App() {
     let stopped = false; let timer;
     const loop = async () => {
       if (stopped) return;
-      if (!document.hidden && !polling.current) {
+      if (!document.hidden && !polling.current && !entering.current && !leaving.current) {
         polling.current = true;
         try { await run(screen === 'bar' ? 'heartbeat' : 'state', screen === 'bar' ? { speaker, mic: voice.mic } : undefined); } catch (e) { if (e.status === 401) fail(e); }
         polling.current = false;
@@ -1049,14 +1052,19 @@ function App() {
     return leftover && leftover.region === (target.region || region) && leftover.number === target.number;
   }
   async function rejoinRoom(target) {
-    setGate({ type: 'enter', label: '입장하는 중' });
+    entering.current = true;
     setSheet(null);
-    try {
-      await run('enter', { region: target.region || region, number: target.number });
-      resetConversation(); setWaveSent([]); setSpeaker(false); setSoundOn(true); setMutedGuests([]);
-      setToast('남은 시간으로 다시 들어왔어요.');
-    } catch (e) { setToast(e.message); }
-    finally { setGate(null); }
+    setServer(s => s?.visit ? { ...s, visit: { ...s.visit, away: false } } : s);
+    setScreen('bar');
+    resetConversation(); setWaveSent([]); setSpeaker(false); setSoundOn(true); setMutedGuests([]);
+    setToast('남은 시간으로 다시 들어왔어요.');
+    try { await run('enter', { region: target.region || region, number: target.number }); }
+    catch (e) {
+      setServer(s => s?.visit ? { ...s, visit: { ...s.visit, away: true } } : s);
+      setScreen('lobby');
+      setToast(e.message);
+    }
+    finally { entering.current = false; }
   }
   function proceedEntry(target, { confirm } = {}) {
     setPendingEntry(null);
@@ -1085,27 +1093,40 @@ function App() {
     if (orderLock.current) return;
     orderLock.current = true; setError('');
     const welcome = isWelcome;
+    const previous = server;
     if (welcome) {
-      setGate({ type: 'enter', label: '입장하는 중' });
+      entering.current = true;
+      const taken = new Set((server?.guests || []).map(g => g.seat));
+      let seatGuess = 0;
+      for (let i = 0; i < 12; i++) { if (!taken.has(i)) { seatGuess = i; break; } }
       setSheet(null);
+      setServer(s => ({
+        ...s,
+        visit: { region: room.region, number: room.number, drinkId: selection, seconds: chosen.minutes * 60, seat: seatGuess, away: false },
+        member: s?.member && !subscription ? { ...s.member, balance: Math.max(0, (s.member.balance ?? 0) - price) } : s?.member,
+      }));
+      setScreen('bar');
+      resetConversation(); setWaveSent([]); setSpeaker(false); setSoundOn(true); setMutedGuests([]);
+      mesh.resume();
     }
     try {
-      if (welcome) {
-        mesh.resume();
-        await run('enter', { region: room.region, number: room.number, drinkId: selection });
-        resetConversation(); setWaveSent([]); setSpeaker(false); setSoundOn(true); setMutedGuests([]);
-      } else {
+      if (welcome) await run('enter', { region: room.region, number: room.number, drinkId: selection });
+      else {
         await run('order', { drinkId: selection });
         setSheet(null);
       }
       setToast(welcome ? `${chosen.name} ${chosen.minutes}분으로 시작했어요.` : `${chosen.minutes}분 연장했어요.`);
     } catch (e) {
-      if (welcome) open('welcome');
+      if (welcome) {
+        setServer(previous);
+        setScreen('lobby');
+        open('welcome');
+      }
       setError(e.message);
     }
     finally {
       orderLock.current = false;
-      if (welcome) setGate(null);
+      entering.current = false;
     }
   }
   async function inspectProfilePhoto(dataUrl) {
@@ -1210,16 +1231,16 @@ function App() {
     resetConversation();
     voice.stop(); setSpeaker(false); setSoundOn(true); setSheet(null);
     leaving.current = true;
-    setGate({ type: 'leave', label: '나가는 중' });
     setServer(s => s?.visit ? { ...s, visit: { ...s.visit, away: true } } : s);
     setScreen('lobby');
-    try { await run('leave'); setEntryRoom(null); }
+    setEntryRoom(null);
+    try { await run('leave'); }
     catch (e) {
       setServer(s => s?.visit ? { ...s, visit: { ...s.visit, away: false } } : s);
       setScreen('bar');
       setToast(e.message);
     }
-    finally { leaving.current = false; setGate(null); }
+    finally { leaving.current = false; }
   }
   function toggleSpeaker() {
     mesh.resume();
@@ -1336,7 +1357,7 @@ function App() {
       <p className="branch-note">자리가 다 차면 다음 호점이 열려요.</p>
       <div className="lobby-footer">
         <p className="entry-benefit">입장 시 포인트가 차감돼요.</p>
-        <div className="entry-actions"><Button color="dark" variant="weak" size="xlarge" disabled={!recommended || !!gate} onClick={()=>requestEntry(recommended, { confirm: true })}>빠른 입장</Button><Button size="xlarge" disabled={!selected||selected.count===CAPACITY} onClick={()=>requestEntry(selected)}>{selected?selected.count===CAPACITY?'만석이에요':leftover && leftover.region===region && leftover.number===selected.number?`${region} ${selected.number}호점 다시 입장하기`:`${region} ${selected.number}호점 입장하기`:'호점을 선택해 주세요'}</Button></div>
+        <div className="entry-actions"><Button color="dark" variant="weak" size="xlarge" disabled={!recommended} onClick={()=>requestEntry(recommended, { confirm: true })}>빠른 입장</Button><Button size="xlarge" disabled={!selected||selected.count===CAPACITY} onClick={()=>requestEntry(selected)}>{selected?selected.count===CAPACITY?'만석이에요':leftover && leftover.region===region && leftover.number===selected.number?`${region} ${selected.number}호점 다시 입장하기`:`${region} ${selected.number}호점 입장하기`:'호점을 선택해 주세요'}</Button></div>
       </div>
     </section> : <section className="bar-screen">
       <div className="room-heading"><div><button className="room-title" onClick={() => open('leave')}>{room.region} {room.number}호점 <ChevronDown size={17}/></button></div><span className="occupancy"><i className="green-dot"/>{guests.length+1}<span> / 12</span></span></div>
@@ -1420,7 +1441,6 @@ function App() {
       {error && <p className="error" role="alert">{error}</p>}
     </div></BottomSheet>
     {toast && <div className="toast" role="status">{toast}</div>}
-    {gate && <div className="route-gate" role="status" aria-live="polite"><div className="route-gate-inner"><i className="app-spinner" aria-hidden="true"/><span>{gate.label}</span></div></div>}
   </>;
 }
 createRoot(document.getElementById('root')).render(new URLSearchParams(location.search).has('admin') ? <AdminPage/> : <App/>);

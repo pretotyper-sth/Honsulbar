@@ -33,9 +33,6 @@ img { object-fit:cover; }
 .onboarding-screen { min-height:calc(100dvh - var(--ait-chrome-top)); background:linear-gradient(180deg,#f7faff 0%,#fff 52%); }
 .loading-screen { min-height:calc(100dvh - var(--ait-chrome-top)); display:grid; place-items:center; background:#fff; }
 .app-spinner { width:28px; height:28px; border:2.5px solid #e5e8eb; border-top-color:#3182f6; border-radius:50%; animation:spin .7s linear infinite; }
-.route-gate { position:fixed; inset:0; z-index:1200; display:grid; place-items:center; padding-top:var(--ait-chrome-top); background:#fffffff2; }
-.route-gate-inner { display:flex; flex-direction:column; align-items:center; gap:14px; }
-.route-gate span { color:#4e5968; font-size:14px; font-weight:600; }
 @keyframes spin { to { transform:rotate(360deg); } }
 .legal-frame { width:100%; height:min(68dvh,520px); border:0; border-radius:12px; background:#fff; } .legal-frame html, .sheet .legal-frame { font-size:14px; }
 .onboarding-scroll { min-height:calc(100dvh - var(--ait-chrome-top)); display:flex; flex-direction:column; padding:56px 28px max(28px,env(safe-area-inset-bottom)); overflow:auto; }
