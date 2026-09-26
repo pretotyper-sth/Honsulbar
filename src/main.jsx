@@ -167,6 +167,7 @@ function App() {
   const cameraStream = useRef(null);
   const faceModel = useRef(null);
   const faceModelLoading = useRef(null);
+  const photoInspect = useRef(0);
   const subscriptionSection = useRef(null);
   const cueContext = useRef(null);
   const orderLock = useRef(false);
@@ -701,29 +702,47 @@ function App() {
     finally { orderLock.current = false; }
   }
   async function inspectProfilePhoto(dataUrl) {
-    const model = await loadFaceModel();
     const image = new Image();
     image.src = dataUrl;
     await image.decode();
-    const faces = await model.estimateFaces(image, false);
-    const width = image.naturalWidth || image.width;
-    const height = image.naturalHeight || image.height;
-    return faces.some(face => isLikelyRealFace(face, width, height));
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth || image.width;
+    canvas.height = image.naturalHeight || image.height;
+    canvas.getContext('2d').drawImage(image, 0, 0);
+    const detect = async () => {
+      const model = await loadFaceModel();
+      return model.estimateFaces(canvas, false);
+    };
+    let faces;
+    try {
+      faces = await detect();
+    } catch {
+      faceModel.current = null;
+      faceModelLoading.current = null;
+      faces = await detect();
+    }
+    return (faces || []).some(face => isLikelyRealFace(face, canvas.width, canvas.height));
   }
   async function choosePhoto(event) {
     const file = event.target.files?.[0]; event.target.value = ''; if (!file) return;
     if (!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024) { setError('10MB 이하의 JPG, PNG, WebP 사진을 골라주세요.'); return; }
+    const requestId = ++photoInspect.current;
     const previous = profile.photo;
+    setError('');
+    setDraftVerified(false);
+    setPhotoDraft(null);
+    setPhotoCheck('checking');
     try {
       const photo = await resizePhoto(file);
-      setDraftVerified(false);
-      setPhotoDraft(null);
-      setPhotoCheck('checking');
+      if (requestId !== photoInspect.current) return;
       setProfile(v => ({ ...v, photo }));
-      setError('');
+      const started = Date.now();
       const ok = await inspectProfilePhoto(photo);
+      const remain = 480 - (Date.now() - started);
+      if (remain > 0) await new Promise(resolve => setTimeout(resolve, remain));
+      if (requestId !== photoInspect.current) return;
       if (!ok) {
-        setPhotoCheck(previous ? 'idle' : 'fail');
+        setPhotoCheck('fail');
         setProfile(v => ({ ...v, photo: previous }));
         setError('얼굴이 잘 보이는 사진을 등록해 주세요.');
         return;
@@ -731,7 +750,8 @@ function App() {
       setPhotoDraft(photo);
       setPhotoCheck('ok');
     } catch (e) {
-      setPhotoCheck(previous ? 'idle' : 'fail');
+      if (requestId !== photoInspect.current) return;
+      setPhotoCheck('fail');
       setProfile(v => ({ ...v, photo: previous }));
       setError(e.message === '사진을 읽지 못했어요. 다른 사진을 골라주세요.' ? e.message : '사진을 확인하지 못했어요. 다른 사진을 골라 주세요.');
     }
