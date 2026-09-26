@@ -11,6 +11,7 @@ async function setup() {
   await db.exec(sql('20260924_toss_login_disconnect.sql'));
   await db.exec(sql('20260924_service_backend.sql'));
   await db.exec(sql('20260924_admin_ops.sql'));
+  await db.exec(sql('20260926_rejoin_visit.sql'));
   const one = async (query, params) => (await db.query(query, params)).rows[0];
   const action = async (member, name, data = {}) => (await one('select hb_action($1,$2,$3::jsonb) as r', [member, name, JSON.stringify(data)])).r;
   const snapshot = async member => (await one('select hb_snapshot($1) as s', [member])).s;
@@ -55,7 +56,40 @@ test('entering, ordering, moving to the host seat and leaving', async () => {
   assert.equal(state.visit.seat, 4);
   assert.ok(Math.abs(state.visit.seconds - (held + 1800)) <= 1);
   await action(me, 'leave');
-  assert.equal((await snapshot(me)).visit, null);
+  state = await snapshot(me);
+  assert.equal(state.visit.away, true);
+  assert.equal(state.visit.seat, null);
+  assert.ok(state.visit.seconds > 0);
+  assert.equal(state.rooms.find(r => r.region === '서울' && r.number === 1).count, 0);
+});
+
+
+test('same branch can be rejoined while leftover time keeps running', async () => {
+  const { action, snapshot, login, ready, db } = await setup();
+  const me = await login('9001');
+  await ready(me, '돌아온 토끼');
+  await action(me, 'enter', { region: '서울', number: 1, drinkId: 'highball' });
+  const started = (await snapshot(me)).visit.seconds;
+  await action(me, 'leave');
+  let state = await snapshot(me);
+  assert.equal(state.visit.away, true);
+  assert.equal(state.member.balance, 1500);
+  await db.query(`update hb_visits set expires_at = expires_at - interval '5 minutes' where member_id=$1`, [me]);
+  state = await snapshot(me);
+  assert.ok(state.visit.seconds <= started - 299);
+  await action(me, 'enter', { region: '서울', number: 1 });
+  state = await snapshot(me);
+  assert.equal(state.visit.away, false);
+  assert.ok(state.visit.seat != null);
+  assert.equal(state.member.balance, 1500);
+  assert.ok(state.visit.seconds <= started - 299);
+  await action(me, 'leave');
+  await action(me, 'enter', { region: '부산', number: 1, drinkId: 'beer' });
+  state = await snapshot(me);
+  assert.equal(state.visit.region, '부산');
+  assert.equal(state.visit.away, false);
+  assert.equal(state.member.balance, 1000);
+  assert.ok(state.visit.seconds > 1790 && state.visit.seconds <= 1800);
 });
 
 test('seat swap moves points and seats atomically, focus pairs neighbours', async () => {
