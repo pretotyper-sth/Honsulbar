@@ -70,7 +70,7 @@ if (!existsSync(bundle)) {
 
 const key = apiKey();
 const note = memo();
-const deploy = ['deploy', '--location', bundle, '-m', note, '--timeout', '180'];
+const deploy = ['deploy', '--location', bundle, '-m', note];
 if (key) deploy.push('--api-key', key);
 if (process.env.AIT_PROFILE) deploy.push('--profile', process.env.AIT_PROFILE);
 
