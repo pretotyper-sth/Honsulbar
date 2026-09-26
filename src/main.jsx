@@ -720,7 +720,9 @@ function App() {
     } catch { done(); setToast('결제를 시작하지 못했어요. 잠시 후 다시 시도해 주세요.'); }
   }
   function requestPreview(target) {
-    setPreviewRoom({ ...target, region }); previewLock.current = false; open('preview');
+    const current = rooms[target.region || region]?.find(room => room.number === target.number) || target;
+    if (!(current.count > 0)) return;
+    setPreviewRoom({ ...target, region: target.region || region }); previewLock.current = false; open('preview');
   }
   async function buyPreview() {
     if (previewLock.current || previews[previewKey]) return;
@@ -1029,7 +1031,7 @@ function App() {
           <Badge size="small" variant="weak" color={r.count===CAPACITY?'elephant':'blue'}>{r.count===CAPACITY?'만석':r.count===0?'새로 열림':'입장 가능'}</Badge>
           <span className="room-count"><b>{r.count}</b> / 12</span>
         </button>
-        {selected?.number===r.number&&<div className="selected-room-detail"><span>{r.count===CAPACITY?'빈자리가 생기면 알려드려요':`빈자리 ${CAPACITY-r.count}석`}</span>{r.count===CAPACITY?<div className="room-detail-actions"><button onClick={()=>requestPreview(r)}><Eye size={14}/>{previews[`${region}:${r.number}`]?'미리보기 보기':'미리보기 · 500P'}</button><button onClick={()=>requestWaitlist(r)}><Bell size={14}/>{waitlist.includes(`${region}:${r.number}`)?'알림 신청됨':'빈자리 알림'}</button></div>:<button onClick={()=>requestPreview(r)}><Eye size={14}/>{previews[`${region}:${r.number}`]?'구매한 미리보기':'미리보기 · 500P'}</button>}</div>}
+        {selected?.number===r.number&&<div className="selected-room-detail"><span>{r.count===CAPACITY?'빈자리가 생기면 알려드려요':`빈자리 ${CAPACITY-r.count}석`}</span>{r.count===CAPACITY?<div className="room-detail-actions"><button onClick={()=>requestPreview(r)}><Eye size={14}/>{previews[`${region}:${r.number}`]?'미리보기 보기':'미리보기 · 500P'}</button><button onClick={()=>requestWaitlist(r)}><Bell size={14}/>{waitlist.includes(`${region}:${r.number}`)?'알림 신청됨':'빈자리 알림'}</button></div>:r.count>0&&<button onClick={()=>requestPreview(r)}><Eye size={14}/>{previews[`${region}:${r.number}`]?'구매한 미리보기':'미리보기 · 500P'}</button>}</div>}
       </div>)}</div>
       <p className="branch-note">자리가 다 차면 다음 호점이 열려요.</p>
       <div className="lobby-footer">
