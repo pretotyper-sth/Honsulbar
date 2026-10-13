@@ -1353,7 +1353,7 @@ function App() {
       <div className="header-actions"><button className="header-icon-button" aria-label="설정" onClick={()=>open('settings')}><Settings size={18}/></button><button className="notification-button" aria-label={`알림 ${notifications.length}개`} onClick={openNotifications}><Bell size={18}/>{notifications.some(item=>item.unread)&&<i/>}</button><button className="profile-button" aria-label="내 프로필" onClick={()=>openProfileEditor()}>{myPhoto ? <img src={myPhoto} alt="내 프로필"/> : <UserRound size={18}/>}</button></div>
     </header>
     {screen === 'lobby' ? <section className="lobby">
-      <div className="lobby-heading"><h1>오늘은 어디서 마실까요?</h1></div>
+      <div className="lobby-heading"><h1>마음 가는 곳에서 잠시 머물러요</h1></div>
       <div className="regions" aria-label="지역">{REGIONS.map(r=><Button key={r} size="small" variant="weak" color={r===region?'primary':'dark'} aria-pressed={r===region} onClick={()=>{setRegion(r);setSelectedRoom(null);}}>{r}</Button>)}<Button className="region-request-button" size="small" variant="weak" color="dark" onClick={()=>{setRequestedRegion('');setCustomRegion('');setShowCustomRegion(false);open('region-request');}}>+ 지역 추가 요청</Button></div>
       <div className="list-heading"><span><i className="green-dot"/>{localRooms.reduce((sum,r)=>sum+r.count,0)}명 머무는 중</span><span className={`leftover-note${leftover?.region===region?'':' is-empty'}`} role={leftover?.region===region?'status':undefined} aria-hidden={leftover?.region!==region}><i className="blue-dot"/>{leftover?.region===region?`${leftover.number}호점 남은 이용시간 ${time}`:'1호점 남은 이용시간 00:00'}</span></div>
       {newRoom && <div className="new-room-notice" role="status">{region} {newRoom}호점이 열렸어요.</div>}
