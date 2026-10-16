@@ -19,11 +19,15 @@ const MIGRATIONS = [
   '20260924_admin_ops.sql',
   '20260924_report_guard.sql',
   '20260926_rejoin_visit.sql',
+  '20261012_safety_automation.sql',
+  '20261014_report_triage.sql',
+  '20261016_face_verification.sql',
 ];
 const TABLES = new Set([
   'hb_members', 'hb_sessions', 'hb_tickets', 'hb_outbox', 'hb_visits', 'hb_rooms',
   'hb_ledger', 'hb_notifications', 'hb_waitlist', 'hb_requests', 'hb_focus',
   'toss_login_links', 'hb_orders', 'hb_ad_claims', 'hb_events',
+  'hb_photo_checks', 'hb_photo_challenges', 'hb_restrictions', 'hb_photo_access',
 ]);
 const GUESTS = [
   { key: '91880001', nick: '느긋한 토끼', gender: 'male', drink: 'highball', file: '1.jpg' },
@@ -53,8 +57,9 @@ async function seed(db) {
       : 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wAAAAD/wAALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEAMQAAAB/wA=';
     const login = await db.query('select hb_login($1) as id', [guest.key]);
     const id = login.rows[0].id;
+    await db.query("insert into hb_photo_checks(token_hash,member_id,photo_digest) values(encode(sha256(convert_to('local-seed:'||$1::text,'UTF8')),'hex'),$1,encode(sha256(convert_to($2,'UTF8')),'hex')) on conflict do nothing",[id,photo]);
     await db.query('select hb_action($1,$2,$3::jsonb)', [id, 'profile', JSON.stringify({
-      nickname: guest.nick, gender: guest.gender, photo, photoChecked: true,
+      nickname: guest.nick, gender: guest.gender, photo, photoProof: `local-seed:${id}`, faceConsent: true,
     })]);
     await db.query('select hb_action($1,$2,$3::jsonb)', [id, 'enter', JSON.stringify({
       region: '서울', number: 1, drinkId: guest.drink,
@@ -64,14 +69,36 @@ async function seed(db) {
   console.log('local db: 서울 1호점에 손님 4명을 넣어 두었어요.');
 }
 
+export async function grantLocalTestPoints(db,memberId) {
+  if (process.env.HB_LOCAL_DB!=='1'||process.env.HB_DEV_LOGIN!=='1'||process.env.VERCEL_ENV==='production'||process.env.NODE_ENV==='production') return;
+  await db.exec('create table if not exists hb_local_test_grants(member_id uuid primary key references hb_members(id) on delete cascade)');
+  await db.query(`with granted as (
+    insert into hb_local_test_grants(member_id) select id from hb_members where id=$1 and toss_key ~ '^9[0-9]{1,8}$'
+    on conflict do nothing returning member_id
+  ), topup as (
+    select m.id,greatest(0,10000-m.balance) as amount from hb_members m join granted g on g.member_id=m.id for update of m
+  ), updated as (
+    update hb_members m set balance=m.balance+t.amount from topup t where m.id=t.id returning m.id,t.amount
+  ) insert into hb_ledger(member_id,label,amount,reference)
+    select id,'로컬 테스트 포인트',amount,'local-test:10000:'||id from updated where amount>0`,[memberId]);
+}
+
 async function start() {
+  if(process.env.VERCEL_ENV==='production'||process.env.NODE_ENV==='production')throw new LocalDbError('운영 환경에서는 로컬 DB를 사용할 수 없어요.',503);
   console.log('local db: PGlite로 켜요. 프로덕션 DB는 쓰지 않아요.');
-  const db = new PGlite(join(root, '.local-pg'));
+  const db = new PGlite(process.env.HB_LOCAL_DB_PATH || join(root, '.local-pg'));
   for (const role of ['anon', 'authenticated', 'service_role']) {
     try { await db.exec(`create role ${role}`); } catch {}
   }
   for (const name of MIGRATIONS) await db.exec(sqlFile(name));
+  if (process.env.HB_LOCAL_SAFETY_CHECKS !== '1') {
+    await db.exec(`create or replace function public.hb_safety_paused() returns boolean language sql stable security definer set search_path=public as $$ select false $$;`);
+    await db.query('select hb_sync_safety_time()');
+    console.log('local db: 운영 공백에 따른 안전 점검을 로컬에서만 해제했어요.');
+  }
   await seed(db);
+  const members=await db.query("select id from hb_members where toss_key ~ '^9[0-9]{1,8}$'");
+  for(const member of members.rows)await grantLocalTestPoints(db,member.id);
   setInterval(() => {
     db.query(`update hb_visits set heartbeat_at=now() where member_id in (select id from hb_members where toss_key like '9188%')`).catch(() => {});
   }, 25000);
@@ -83,7 +110,7 @@ function getDb() {
   return boot;
 }
 
-function parseFilters(search) {
+export function parseFilters(search) {
   const params = new URLSearchParams(search);
   const filters = [];
   const values = [];
@@ -95,7 +122,7 @@ function parseFilters(search) {
   for (const [rawKey, rawValue] of params.entries()) {
     const key = decodeURIComponent(rawKey);
     const value = decodeURIComponent(rawValue);
-    if (key === 'select') { select = value.split(',').map(ident).join(', '); continue; }
+    if (key === 'select') { select = value === '*' ? '*' : value.split(',').map(ident).join(', '); continue; }
     if (key === 'limit') { limit = ` limit ${Math.min(200, Math.max(0, Number(value) || 0))}`; continue; }
     if (key === 'offset') { offset = ` offset ${Math.max(0, Number(value) || 0)}`; continue; }
     if (key === 'order') {
@@ -126,7 +153,9 @@ async function callRpc(db, name, body = {}) {
     ? `select ${ident(name)}(${keys.map((key, index) => `${ident(key)} => $${index + 1}`).join(', ')}) as r`
     : `select ${ident(name)}() as r`;
   const result = await db.query(sql, keys.map(key => args[key]));
-  return result.rows[0]?.r ?? null;
+  const value=result.rows[0]?.r ?? null;
+  if(name==='hb_login'&&value)await grantLocalTestPoints(db,value);
+  return value;
 }
 
 export async function rest(path, { method = 'GET', body } = {}) {

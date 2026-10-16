@@ -1,1 +1,17 @@
-{"crons":[{"path":"/api/maintenance","schedule":"0 18 * * *"}],"functions":{"api/*.js":{"maxDuration":60}}}
+{
+  "crons": [
+    {
+      "path": "/api/maintenance",
+      "schedule": "0 18 * * *"
+    }
+  ],
+  "functions": {
+    "api/*.js": {
+      "maxDuration": 60,
+      "includeFiles": "server/**"
+    }
+  },
+  "regions": [
+    "icn1"
+  ]
+}

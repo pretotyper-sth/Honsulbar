@@ -51,6 +51,8 @@ if (!existsSync(ait)) {
   process.exit(1);
 }
 
+if (!skipUpload) run(process.execPath, ['scripts/check-release-policy.js', '--release']);
+
 if (!uploadOnly) {
   if (!existsSync(vite)) {
     console.error('vite가 없습니다. npm install 후 다시 실행해 주세요.');

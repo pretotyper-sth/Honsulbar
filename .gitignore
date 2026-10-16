@@ -11,3 +11,4 @@ dist/
 *.crt
 .DS_Store
 .local-pg/
+ai-history/

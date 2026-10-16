@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-- 앱은 토스 인가 코드를 서버에서 토큰으로 바꾸고, 생년월일을 복호화해 만 19세를 확인한 뒤 세션을 발급합니다. 구현 위치: `src/api.js`, `api/service.js`, `server/platform.js`.
+- 앱은 토스 인가 코드를 서버에서 토큰으로 바꾸고, 이름 제공 여부와 생년월일을 확인해 만 19세인 경우 세션을 발급합니다. 이름·생년월일 원문·CI는 저장하지 않습니다. 토스 로그인만으로 만남 서비스 실명 인증 기준이 충족된다고 단정하지 않습니다. 구현 위치: `src/api.js`, `api/service.js`, `server/platform.js`.
 - 연결 끊기 콜백 `api/toss-unlink.js`는 세션 무효화와 회원 삭제를 `apply_toss_login_disconnect`로 처리합니다.
 - 콘솔에 이용약관·개인정보처리방침 URL은 등록되어 있습니다. 실제 로그인이 되려면 Vercel에 mTLS 인증서, 복호화 키, AAD, 연결 끊기 Basic Auth가 있어야 합니다.
 
@@ -137,3 +137,7 @@ URL을 저장하면 토스가 `callback.registration_verification`을 보냅니�
 이후 `npm run toss:build`는 번들을 만들고, 키가 있으면 커밋 제목으로 메모(`-m`, 최대 1000자)를 붙여 자동 업로드합니다. 올리기만 하려면 `npm run toss:upload`. 업로드를 건너뛰려면 `AIT_AUTO_DEPLOY=0 npm run toss:build`.
 
 카메라 권한(`camera`)은 번들에 들어 있습니다. 웹 Vercel 배포와 `.ait` 업로드는 별개입니다. 토스 앱에서 보려면 번들이 올라가야 합니다.
+
+## 안전 보완 배포 설정 (2026-10-12)
+
+`HB_IDENTITY_HASH_KEY`는 32자 이상의 독립적인 서버 비밀키로 설정합니다. 제재 회피 방지 식별자에 사용하므로 기존 값을 임의로 교체하지 않습니다. `SUPPORT_TO_EMAIL`의 기본 수신자는 기존 고객센터인 `pretotyper.sth@gmail.com`입니다. 운영 환경에서는 `HB_DEV_LOGIN`·미리보기 비밀값을 통한 테스트 로그인을 허용하지 않습니다. 사진 검사 모델은 서버에 포함되며 촬영본을 외부 분석 API에 보내지 않습니다.

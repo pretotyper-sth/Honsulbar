@@ -1,9 +1,16 @@
+import {emailReady as notificationEmailReady, sendNotificationEmail} from './notification-email.js';
 import https from 'node:https';
 import { createHash, createHmac, createDecipheriv, randomBytes, timingSafeEqual } from 'node:crypto';
 export class AppError extends Error { constructor(message,status=400){super(message);this.status=status;} }
 export const hash = value => createHash('sha256').update(value).digest('hex');
-export const signPhoto = (id,v) => createHmac('sha256',`photo:${process.env.SUPABASE_SERVICE_ROLE_KEY||''}`).update(`${id}.${v}`).digest('base64url').slice(0,22);
-export const photoMatches = (id,v,s) => typeof s==='string'&&s.length===22&&timingSafeEqual(Buffer.from(s),Buffer.from(signPhoto(id,v)));
+export const isProduction = () => process.env.VERCEL_ENV==='production'||process.env.NODE_ENV==='production';
+export const signPhoto = (id,v,viewer,expires) => createHmac('sha256',`photo:${process.env.SUPABASE_SERVICE_ROLE_KEY||''}`).update(`${id}.${v}.${viewer}.${expires}`).digest('base64url').slice(0,22);
+export const photoMatches = (id,v,viewer,expires,s,now=Date.now()) => /^\d{10}$/.test(String(expires||''))&&Number(expires)>Math.floor(now/1000)&&Number(expires)<=Math.floor(now/1000)+360&&typeof s==='string'&&s.length===22&&timingSafeEqual(Buffer.from(s),Buffer.from(signPhoto(id,v,viewer,expires)));
+export function identityKey(userKey) {
+ const secret=process.env.HB_IDENTITY_HASH_KEY;
+ if(!secret||secret.length<32)throw new AppError('안전한 로그인 설정을 준비 중이에요.',503);
+ return createHmac('sha256',secret).update(`toss-user-key:${userKey}`).digest('hex');
+}
 const PRODUCT_ALIASES = {
   honsulbar_p1000: 'ait.0000078228.10e9c057.abb16a92b7.0232936136',
   honsulbar_p3300: 'ait.0000078228.6ec058de.36dbc34bc4.0233037038',
@@ -68,7 +75,7 @@ export function rewardedAdGroupId() {
 export const newToken = () => randomBytes(32).toString('base64url');
 export const sbUrl = () => (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/$/,'');
 function useLocalDb() {
- return process.env.HB_LOCAL_DB === '1' && process.env.VERCEL_ENV !== 'production';
+ return process.env.HB_LOCAL_DB === '1' && !isProduction();
 }
 export async function database(path,{method='GET',body,headers={}}={}) {
  if (useLocalDb()) {
@@ -167,15 +174,14 @@ export async function toss(path,body,headers={}) {
 export async function dispatchOutbox() {
  const jobs=await rpc('hb_claim_outbox',{});
  for(const job of jobs||[]) {
-  const emailReady=process.env.RESEND_API_KEY&&process.env.SUPPORT_FROM_EMAIL;
+  const emailReady=notificationEmailReady();
   const template=job.data.kind==='available'?pushAvailableTemplate():pushReplyTemplate();
   if((job.kind==='email'&&!emailReady)||(job.kind==='push'&&(!template||!process.env.TOSS_CLIENT_CERT_BASE64))) {
    await database(`hb_outbox?id=eq.${job.id}`,{method:'PATCH',body:{attempts:job.attempts-1,locked_until:null,next_attempt_at:new Date(Date.now()+3600000).toISOString(),last_error:'configuration_required'}}); continue;
   }
   try{
    if(job.kind==='email') {
-    const r=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:`Bearer ${process.env.RESEND_API_KEY}`,'Content-Type':'application/json','Idempotency-Key':job.id},body:JSON.stringify({from:process.env.SUPPORT_FROM_EMAIL,to:['pretotyper.sth@gmail.com'],subject:'[혼술바] 새 문의가 접수되었습니다',text:`새 문의 번호: ${job.data.ticketId}\n관리자 화면에서 내용을 확인하고 답변해 주세요.\nhttps://honsulbar-app.vercel.app/?admin=1`}),signal:AbortSignal.timeout(8000)});
-    if(!r.ok)throw new Error('delivery_failed');
+    await sendNotificationEmail(job);
    }else{
     const [m]=await database(`hb_members?id=eq.${job.data.memberId}&select=toss_key`);
     if(m)await toss('/api-partner/v1/apps-in-toss/messenger/send-message',{templateSetCode:template,context:{}},{'x-toss-user-key':m.toss_key});

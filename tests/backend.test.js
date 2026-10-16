@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {randomUUID} from 'node:crypto';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
@@ -12,11 +13,19 @@ async function setup() {
   await db.exec(sql('20260924_service_backend.sql'));
   await db.exec(sql('20260924_admin_ops.sql'));
   await db.exec(sql('20260926_rejoin_visit.sql'));
+  await db.exec(sql('20261012_safety_automation.sql'));
+  await db.exec(sql('20261014_report_triage.sql'));
+  await db.exec(sql('20261016_face_verification.sql'));
   const one = async (query, params) => (await db.query(query, params)).rows[0];
   const action = async (member, name, data = {}) => (await one('select hb_action($1,$2,$3::jsonb) as r', [member, name, JSON.stringify(data)])).r;
   const snapshot = async member => (await one('select hb_snapshot($1) as s', [member])).s;
   const login = async key => (await one('select hb_login($1) as id', [key])).id;
-  const ready = async (member, nickname) => action(member, 'profile', { nickname, gender: 'male', photo: 'data:image/jpeg;base64,AAAA', photoChecked: true });
+  const ready = async (member, nickname) => {
+    const photo='data:image/jpeg;base64,AAAA';
+    const proof=randomUUID();
+    await db.query("insert into hb_photo_checks(token_hash,member_id,photo_digest) values(encode(sha256(convert_to($1,'UTF8')),'hex'),$2,encode(sha256(convert_to($3,'UTF8')),'hex'))",[proof,member,photo]);
+    return action(member,'profile',{nickname,gender:'male',photo,photoProof:proof,faceConsent:true});
+  };
   return { db, one, action, snapshot, login, ready };
 }
 
@@ -140,6 +149,8 @@ test('reported guests are listed and marked on their current room', async () => 
   await action(other, 'enter', { region: '서울', number: 1, drinkId: 'beer' });
   assert.deepEqual((await snapshot(me)).reportedIds, []);
   assert.equal((await snapshot(me)).rooms.find(r => r.region === '서울' && r.number === 1).hasReportedGuest, false);
+  await ready(me,'안전한 구름');
+  await action(me,'enter',{region:'서울',number:1,drinkId:'beer'});
   await action(me, 'ticket', { kind: 'report', category: '욕설·불쾌한 발언', message: '불편한 말이 오갔어요.', targetId: other });
   const state = await snapshot(me);
   assert.deepEqual(state.reportedIds.map(String), [String(other)]);
@@ -150,6 +161,7 @@ test('preview, waitlist and daily ad reward', async () => {
   const { action, snapshot, login, ready, db } = await setup();
   const guest = await login('5001'), me = await login('5002');
   await ready(guest, '포근한 오렌지');
+  await ready(me, '노을빛 구름');
   await action(guest, 'enter', { region: '대구', number: 1, drinkId: 'citrus' });
   const preview = await action(me, 'preview', { region: '대구', number: 1 });
   assert.equal(preview.length, 1);
@@ -261,13 +273,196 @@ test('pemFromEnv rebuilds stripped certificates and raw PEM env values', async (
   const { pemFromEnv } = await import('../server/platform.js');
   const { createSecureContext } = await import('node:tls');
   const { execFileSync } = await import('node:child_process');
-  const pem = execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-keyout', '/dev/stdout', '-out', '/dev/stdout', '-days', '1', '-nodes', '-subj', '/CN=pem-test'], { encoding: 'utf8' });
-  const cert = pem.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/)[0];
-  const key = pem.match(/-----BEGIN PRIVATE KEY-----[\s\S]+?-----END PRIVATE KEY-----/)[0];
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const folder = mkdtempSync(join(tmpdir(),'honsulbar-pem-'));
+  let cert,key;
+  try {
+    execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-keyout', join(folder,'key.pem'), '-out', join(folder,'cert.pem'), '-days', '1', '-nodes', '-subj', '/CN=pem-test'], { stdio: 'ignore' });
+    cert=readFileSync(join(folder,'cert.pem'),'utf8');key=readFileSync(join(folder,'key.pem'),'utf8');
+  } finally { rmSync(folder,{recursive:true,force:true}); }
   process.env.TOSS_CLIENT_CERT_BASE64 = Buffer.from(cert.replace(/\n/g, '')).toString('base64');
   process.env.TOSS_CLIENT_KEY_BASE64 = key;
   const restoredCert = pemFromEnv('TOSS_CLIENT_CERT_BASE64');
   const restoredKey = pemFromEnv('TOSS_CLIENT_KEY_BASE64');
   assert.match(restoredCert, /-----END CERTIFICATE-----\n$/);
   createSecureContext({ cert: restoredCert, key: restoredKey });
+});
+
+test('server proof binds account, photo, consent and expiry and is consumed once', async () => {
+  const {db,login,action,snapshot}=await setup();
+  const me=await login('81001'),other=await login('81002');
+  const photo='data:image/jpeg;base64,AAAA';
+  const data={nickname:'검증 구름',gender:'male',photo,faceConsent:true};
+  const issue=async(proof,expired=false)=>db.query("insert into hb_photo_checks(token_hash,member_id,photo_digest,expires_at) values(encode(sha256(convert_to($1,'UTF8')),'hex'),$2,encode(sha256(convert_to($3,'UTF8')),'hex'),now()+($4||' minutes')::interval)",[proof,me,photo,expired?'-1':'10']);
+  await assert.rejects(action(me,'profile',{...data,photoChecked:true}),/먼저 확인/);
+  await issue('valid-proof');
+  await assert.rejects(action(other,'profile',{...data,photoProof:'valid-proof'}),/먼저 확인/);
+  await assert.rejects(action(me,'profile',{...data,photoProof:'valid-proof',photo:'data:image/jpeg;base64,BBBB'}),/먼저 확인/);
+  await assert.rejects(action(me,'profile',{...data,photoProof:'valid-proof',faceConsent:false}),/동의/);
+  await issue('expired-proof',true);
+  await assert.rejects(action(me,'profile',{...data,photoProof:'expired-proof'}),/먼저 확인/);
+  await action(me,'profile',{...data,photoProof:'valid-proof'});
+  assert.equal((await snapshot(me)).member.photoChecked,true);
+  await assert.rejects(action(me,'profile',{...data,photoProof:'valid-proof'}),/먼저 확인/);
+  await action(me,'profile',{nickname:'새로운 구름',gender:'male'});
+  await db.close();
+});
+
+test('a single report protects both directions, cancels connections and refuses entry before spending', async () => {
+  const {db,login,ready,action,snapshot,one}=await setup();
+  const a=await login('82001'),b=await login('82002');
+  await ready(a,'달빛 구름');await ready(b,'조용한 달');
+  for(const id of [a,b])await action(id,'enter',{region:'서울',number:1,drinkId:'beer'});
+  const request=await action(a,'request',{targetId:b,kind:'focus'});
+  await action(b,'respond',{id:request.id,accept:true});
+  await action(a,'signal',{targetId:b,signal:{type:'offer',sdp:'test'}});
+  await action(a,'ticket',{kind:'report',category:'협박·스토킹',message:'불편한 접근',targetId:b});
+  assert.deepEqual((await snapshot(a)).reportedIds,[b]);
+  assert.deepEqual((await snapshot(b)).reportedIds,[a]);
+  for (const id of [a,b]) {
+    const visit=(await snapshot(id)).visit;
+    assert.equal(visit.away,false);
+    assert.notEqual(visit.seat,null);
+  }
+  assert.equal((await one('select count(*)::int n from hb_focus')).n,0);
+  assert.equal((await one('select count(*)::int n from hb_signals')).n,0);
+  await assert.rejects(action(b,'signal',{targetId:a,signal:{type:'offer',sdp:'test'}}),/보호/);
+  await assert.rejects(action(b,'request',{targetId:a,kind:'wave'}),/보호/);
+  await action(b,'leave');
+  const balance=(await snapshot(b)).member.balance;
+  await assert.rejects(action(b,'enter',{region:'서울',number:1,ignoreReport:true,drinkId:'wine'}),/보호/);
+  await assert.rejects(action(b,'preview',{region:'서울',number:1}),/보호/);
+  await assert.rejects(action(b,'waitlist',{region:'서울',number:1}),/보호/);
+  assert.equal((await snapshot(b)).member.balance,balance);
+  await action(a,'leave');
+  await assert.rejects(action(b,'enter',{region:'서울',number:1}),/보호/);
+  await action(b,'enter',{region:'부산',number:1,drinkId:'beer'});
+  await action(a,'enter',{region:'대구',number:1,drinkId:'beer'});
+  await assert.rejects(action(a,'ticket',{kind:'report',category:'기타',message:'다른 방의 대상',targetId:b}),/같은 바/);
+  await db.close();
+});
+
+test('independent blocks revoke paid photo access and photo versions invalidate older links', async () => {
+  const {db,login,ready,action,snapshot,one}=await setup();
+  const a=await login('83001'),b=await login('83002');
+  await ready(a,'노을빛 달');await ready(b,'포근한 산책');
+  for(const id of [a,b])await db.query('insert into hb_sessions(token_hash,member_id) values($1,$2)',[id,id]);
+  await action(b,'enter',{region:'서울',number:1,drinkId:'beer'});
+  const photo=(await action(a,'preview',{region:'서울',number:1}))[0];
+  const visible=async()=> (await one('select hb_can_view_photo($1,$2,$3) ok',[a,b,photo.photo])).ok;
+  assert.equal(await visible(),true);
+  await action(a,'enter',{region:'서울',number:1,drinkId:'beer'});
+  await action(a,'block',{targetId:b});
+  for (const id of [a,b]) {
+    const visit=(await snapshot(id)).visit;
+    assert.equal(visit.away,false);
+    assert.notEqual(visit.seat,null);
+  }
+  assert.equal(await visible(),false);
+  assert.deepEqual((await snapshot(b)).reportedIds,[a]);
+  assert.equal((await one("select count(*)::int n from hb_tickets where kind='report'")).n,0);
+  const previous=(await snapshot(a)).member.photo;
+  await db.query("update hb_members set photo='data:image/jpeg;base64,BBBB' where id=$1",[a]);
+  assert.notEqual((await snapshot(a)).member.photo,previous);
+  assert.equal((await one('select hb_can_view_photo($1,$1,$2) ok',[a,previous])).ok,false);
+  await db.close();
+});
+
+test('capture challenges expire, belong to their member and cannot be reused', async () => {
+  const {db,login,one}=await setup();
+  const a=await login('84001'),b=await login('84002');
+  const challenge=(await one('select hb_new_photo_challenge($1) c',[a])).c;
+  await assert.rejects(one('select hb_use_photo_challenge($1,$2)',[b,challenge.id]),/다시 시작/);
+  assert.equal((await one('select hb_use_photo_challenge($1,$2) motion',[a,challenge.id])).motion,challenge.motion);
+  await assert.rejects(one('select hb_use_photo_challenge($1,$2)',[a,challenge.id]),/다시 시작/);
+  const expired=(await one('select hb_new_photo_challenge($1) c',[a])).c;
+  await db.query("update hb_photo_challenges set created_at=now()-interval '4 minutes' where id=$1",[expired.id]);
+  await assert.rejects(one('select hb_use_photo_challenge($1,$2)',[a,expired.id]),/다시 시작/);
+  await db.close();
+});
+
+test('unhandled reports and operator absence pause paid entry without charging', async () => {
+  const {db,login,ready,action,snapshot}=await setup();
+  const a=await login('85001');await ready(a,'안전한 달빛');
+  await action(a,'ticket',{kind:'report',category:'서비스 신고',message:'문제 확인 요청'});
+  await db.query("update hb_tickets set created_at=now()-interval '19 hours'");
+  assert.equal((await snapshot(a)).safetyPaused,true);
+  await assert.rejects(action(a,'enter',{region:'서울',number:1,drinkId:'beer'}),/안전 점검/);
+  assert.equal((await snapshot(a)).member.balance,2000);
+  await db.query("update hb_tickets set status='closed'");
+  await db.query("update hb_safety_ops set reviewed_at=now()-interval '25 hours'");
+  assert.equal((await snapshot(a)).safetyPaused,true);
+  await db.query("select hb_ops_ping('pretotyper.sth@gmail.com')");
+  assert.equal((await snapshot(a)).safetyPaused,false);
+  await db.close();
+});
+
+test('safety pause preserves unused paid time and releases the room until review resumes', async () => {
+  const {db,login,ready,action,snapshot,one}=await setup();
+  const a=await login('85501');await ready(a,'남은 시간');
+  await action(a,'enter',{region:'서울',number:1,drinkId:'beer'});
+  await db.query("update hb_safety_ops set reviewed_at=now()-interval '24 hours 1 second'");
+  let state=await snapshot(a);
+  assert.equal(state.safetyPaused,true);assert.equal(state.visit.away,true);
+  const held=state.visit.seconds;assert.ok(held>=1799 && held<=1802);
+  await db.query("update hb_visits set heartbeat_at=now()-interval '2 hours' where member_id=$1",[a]);
+  await db.query('select hb_cleanup()');
+  assert.equal((await snapshot(a)).visit.seconds,held);
+  await assert.rejects(action(a,'move',{seat:2}),/안전 점검/);
+  await db.query("select hb_ops_ping('pretotyper.sth@gmail.com')");
+  state=await snapshot(a);assert.equal(state.safetyPaused,false);assert.equal(state.visit.away,true);
+  assert.ok(Math.abs(state.visit.seconds-held)<=1);
+  assert.equal((await one('select safety_remaining from hb_visits where member_id=$1',[a])).safety_remaining,null);
+  await action(a,'enter',{region:'서울',number:1,drinkId:'beer'});
+  assert.equal((await snapshot(a)).member.balance,1500);
+  await db.close();
+});
+
+test('restriction identifiers survive account deletion and are erased after their retention period', async () => {
+  const {db,login,one}=await setup();
+  const me=await login('86001');
+  await db.query('update hb_members set identity_key=$1 where id=$2',['f'.repeat(64),me]);
+  await db.query("select hb_restrict($1,'9999-12-31',true,'반복 위반',true)",[me]);
+  await db.query("select apply_toss_login_disconnect('86001','withdraw')");
+  assert.equal((await one('select count(*)::int n from hb_restrictions')).n,1);
+  await db.query("update hb_restrictions set delete_after=now()-interval '1 day'");
+  await db.query('select hb_retention()');
+  assert.equal((await one('select count(*)::int n from hb_restrictions')).n,0);
+  await db.close();
+});
+
+test('reports preserve visits, group duplicate submissions and triage claims without punishing the target', async()=>{
+ const {db,login,ready,action,snapshot,one}=await setup();
+ const a=await login('89101'),b=await login('89102');await ready(a,'느긋한 달');await ready(b,'포근한 산');
+ for(const id of [a,b])await action(id,'enter',{region:'서울',number:1,drinkId:'beer'});
+ const data={kind:'report',category:'기타',message:'돈을 보내지 않으면 죽이겠다고 협박함',targetId:b};
+ const first=await action(a,'ticket',data),second=await action(a,'ticket',data);
+ assert.equal(first.id,second.id);assert.equal(second.duplicate,true);
+ assert.equal((await one("select count(*)::int n from hb_tickets where kind='report'")).n,1);
+ const ticket=await one('select * from hb_tickets where id=$1',[first.id]);assert.equal(ticket.context.priority,'urgent');assert.equal(ticket.context.evidenceStatus,'unverified');assert.equal(ticket.context.audioRecorded,false);
+ assert.equal((await one('select banned_until from hb_members where id=$1',[b])).banned_until,null);
+ assert.equal((await snapshot(a)).visit.away,false);assert.equal((await snapshot(b)).visit.away,false);
+ const jobs=await one("select count(*)::int n from hb_outbox where kind='email'");assert.equal(jobs.n,1);
+ const summary=(await one('select hb_report_summary($1::uuid[]) s',[[b]])).s;assert.equal(summary[b].reporters,1);
+ await db.close();
+});
+
+test('moderator action records a private rationale and notifies the target with an appeal route',async()=>{
+ const {db,login,one}=await setup();const member=await login('89201');
+ await db.query("select hb_restrict($1,now()+interval '24 hours',true,$2,true)",[member,'verified internal review without disclosing reporter']);
+ const notice=await one("select body from hb_notifications where member_id=$1 and kind='moderation'",[member]);assert.match(notice.body,/이의 제기/);assert.match(notice.body,/까지/);assert.ok(!notice.body.includes('internal review'));
+ await db.close();
+});
+
+test('restricted members can read their action notice and appeal without regaining voice access',async()=>{
+ const {db,login,ready,action,snapshot,one}=await setup();const member=await login('89301');await ready(member,'차분한 달');
+ await db.query("select hb_restrict($1,now()+interval '24 hours',true,'safety review pending',true)",[member]);
+ await action(member,'state');const state=await snapshot(member);assert.ok(state.notifications.some(n=>n.kind==='moderation'));
+ await action(member,'ticket',{kind:'inquiry',category:'기타 문의',message:'이용 제한 사유를 재검토해 주세요.'});
+ assert.equal((await one("select category from hb_tickets where member_id=$1",[member])).category,'이용 제한 이의 제기');
+ await assert.rejects(action(member,'enter',{region:'서울',number:1,drinkId:'beer'}),/제한/);
+ await assert.rejects(action(member,'ticket',{kind:'report',targetId:member,category:'기타',message:'test'}),/제한/);
+ await db.close();
 });

@@ -22,6 +22,8 @@ export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains })
   const track = useRef(null);
   const gainValues = useRef({});
   const active = useRef(enabled);
+  const wantedPeers = useRef(new Set(peerIds));
+  wantedPeers.current = new Set(peerIds);
   const [talking, setTalking] = useState([]);
   track.current = stream?.getAudioTracks()[0] || null;
   gainValues.current = gains;
@@ -73,14 +75,14 @@ export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains })
 
   const describe = useCallback(async peer => {
     await waitForIce(peer.pc);
-    if (peers.current.get(peer.id) !== peer || !peer.pc.localDescription) return;
+    if (!active.current || !wantedPeers.current.has(peer.id) || peers.current.get(peer.id) !== peer || !peer.pc.localDescription) return;
     const { type, sdp } = peer.pc.localDescription;
     await call('signal', { targetId: peer.id, signal: { type, sdp, session: peer.session } });
   }, []);
 
   const offer = useCallback(async id => {
     close(id);
-    if (!active.current) return;
+    if (!active.current || !wantedPeers.current.has(id)) return;
     const peer = create(id, true);
     peer.session = crypto.randomUUID();
     try {
@@ -98,7 +100,7 @@ export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains })
 
   const receive = useCallback(async signals => {
     for (const { sender, data } of signals || []) {
-      if (!active.current || !data?.sdp) continue;
+      if (!active.current || !wantedPeers.current.has(sender) || !data?.sdp) continue;
       try {
         if (data.type === 'offer') {
           close(sender);

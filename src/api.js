@@ -57,23 +57,36 @@ function setToken(value) {
 }
 export const clearSession = () => setToken(null);
 
-async function request(body, method = 'POST') {
-  let response;
+async function request(body, method = 'POST', {signal} = {}) {
+  const photoRequest=body?.action?.startsWith('photo-');
+  const controller=photoRequest?new AbortController():null;
+  const cancel=()=>controller?.abort();
+  signal?.addEventListener('abort',cancel,{once:true});
+  if(signal?.aborted)cancel();
+  const timer=controller?setTimeout(cancel,body.action==='photo-verify'?50000:20000):null;
   try {
-    response = await fetch(`${API_BASE}/api/service`, {
+    const response = await fetch(`${API_BASE}/api/service`, {
       method,
+      signal:controller?.signal || signal,
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: method === 'POST' ? JSON.stringify(body) : undefined,
     });
-  } catch { throw new ApiError('인터넷 연결을 확인해 주세요.', 0); }
-  const data = await response.json().catch(() => ({}));
-  if (response.status === 401 && body?.action !== 'login') setToken(null);
-  if (!response.ok) throw new ApiError(data.error || '요청을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.', response.status);
-  return data;
+    const data = await response.json().catch(error => {
+      if(controller?.signal.aborted)throw error;
+      return {};
+    });
+    if (response.status === 401 && body?.action !== 'login') setToken(null);
+    if (!response.ok) throw new ApiError(data.error || '요청을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.', response.status);
+    return data;
+  } catch (error) {
+    if(controller?.signal.aborted)throw new ApiError(signal?.aborted?'검사를 중단했어요.':'검사 연결이 지연돼요. 잠시 후 다시 시도해 주세요.',0);
+    if(error instanceof ApiError)throw error;
+    throw new ApiError('인터넷 연결을 확인해 주세요.', 0);
+  } finally {clearTimeout(timer);signal?.removeEventListener('abort',cancel);}
 }
 
 export const getConfig = () => request(null, 'GET');
-export const call = (action, data, extra = {}) => request({ action, data, ...extra });
+export const call = (action, data, extra = {}, options = {}) => request({ action, data, ...extra }, 'POST', options);
 
 export async function login(config) {
   let result;

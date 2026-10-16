@@ -1,25 +1,28 @@
-import {AppError,authenticate,admin,database,rpc,toss,decryptField,isAdult,newToken,hash,dispatchOutbox,sbUrl,signPhoto,photoMatches,skuPoints,findProduct,rewardedAdGroupId,subscriptionSku,isSubscriptionSku,parseTossTime,pushAvailableTemplate,pushReplyTemplate} from '../server/platform.js';
-const allowedActions=new Set(['state','profile','ticket','read','region','waitlist','enter','order','leave','heartbeat','move','request','respond','cancel','focus-end','preview','signal','ad-start','ad-claim']);
+import {verifyPhoto,warmPhotoVerifier} from '../server/photo-verification.js';
+import {AppError,authenticate,admin,database,rpc,toss,decryptField,isAdult,newToken,hash,dispatchOutbox,sbUrl,signPhoto,photoMatches,skuPoints,findProduct,rewardedAdGroupId,subscriptionSku,isSubscriptionSku,parseTossTime,pushAvailableTemplate,pushReplyTemplate,isProduction,identityKey} from '../server/platform.js';
+const allowedActions=new Set(['state','profile','ticket','read','region','waitlist','enter','order','leave','heartbeat','move','request','respond','cancel','focus-end','preview','signal','ad-start','ad-claim','block']);
 const origins=new Set(['https://honsulbar-app.vercel.app','https://honsulbar.apps.tossmini.com','https://honsulbar.private-apps.tossmini.com','https://honsulbar.web.tossmini.com','https://honsulbar.private-web.tossmini.com']);
-function withPhotos(value){
- if(Array.isArray(value))return value.map(withPhotos);
+function withPhotos(value,viewer){
+ const expires=Math.floor(Date.now()/60000)*60+300;
+ if(Array.isArray(value))return value.map(item=>withPhotos(item,viewer));
  if(!value||typeof value!=='object')return value;
  const out={};
- for(const [k,v] of Object.entries(value))out[k]=k==='photo'&&typeof v==='number'&&value.id?`/api/service?photo=${value.id}&v=${v}&s=${signPhoto(value.id,v)}`:withPhotos(v);
+ for(const [k,v] of Object.entries(value))out[k]=k==='photo'&&typeof v==='number'&&value.id?`/api/service?photo=${value.id}&v=${v}&viewer=${viewer}&expires=${expires}&s=${signPhoto(value.id,v,viewer,expires)}`:withPhotos(v,viewer);
  return out;
 }
 async function sendPhoto(req,res){
- const {photo:id,v,s}=req.query||{};
- if(!/^[\da-f-]{36}$/.test(id||'')||!/^\d{1,12}$/.test(v||'')||!photoMatches(id,v,s))return res.status(404).end();
+ const {photo:id,v,viewer,expires,s}=req.query||{};
+ if(!/^[\da-f-]{36}$/.test(id||'')||!/^\d{1,16}$/.test(v||'')||!/^([\da-f-]{36})$/.test(viewer||'')||!photoMatches(id,v,viewer,expires,s))return res.status(404).end();
+ if(!await rpc('hb_can_view_photo',{p_viewer:viewer,p_target:id,p_version:Number(v)}))return res.status(404).end();
  const [m]=await database(`hb_members?id=eq.${id}&select=photo`);
  const match=/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(m?.photo||'');
  if(!match)return res.status(404).end();
- res.setHeader('Content-Type',match[1]);res.setHeader('Cache-Control','public, max-age=31536000, immutable');
+ res.setHeader('Content-Type',match[1]);res.setHeader('Cache-Control','private, no-store');res.setHeader('Referrer-Policy','no-referrer');
  return res.status(200).send(Buffer.from(match[2],'base64'));
 }
 async function startSession(res,memberId){
  const session=newToken();await database('hb_sessions',{method:'POST',body:{token_hash:hash(session),member_id:memberId}});
- return res.json({token:session,state:withPhotos(await rpc('hb_snapshot',{p_member:memberId}))});
+ return res.json({token:session,state:withPhotos(await rpc('hb_snapshot',{p_member:memberId}),memberId)});
 }
 export default async function handler(req,res) {
  res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');
@@ -33,16 +36,22 @@ export default async function handler(req,res) {
   let body=req.body||{};if(typeof body==='string')body=JSON.parse(body);
   if(JSON.stringify(body).length>1500000)throw new AppError('요청이 너무 커요.',413);
   const action=req.method==='GET'?'config':body.action;
-  if(action==='config')return res.json({apiReady:!!(sbUrl()&&process.env.SUPABASE_SERVICE_ROLE_KEY),loginReady:!!(process.env.TOSS_CLIENT_CERT_BASE64&&process.env.TOSS_CLIENT_KEY_BASE64&&process.env.TOSS_DECRYPTION_KEY&&process.env.TOSS_AAD),devLogin:process.env.HB_DEV_LOGIN==='1',supabaseUrl:sbUrl(),supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_ANON_KEY||'',adGroupId:rewardedAdGroupId(),products:skuPoints(),subscriptionSku:subscriptionSku(),pushAvailableTemplate:pushAvailableTemplate(),pushReplyTemplate:pushReplyTemplate(),iceServers:process.env.WEBRTC_ICE_SERVERS?JSON.parse(process.env.WEBRTC_ICE_SERVERS):[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]});
+  if(action==='config')return res.json({apiReady:!!(sbUrl()&&process.env.SUPABASE_SERVICE_ROLE_KEY),loginReady:!!(process.env.TOSS_CLIENT_CERT_BASE64&&process.env.TOSS_CLIENT_KEY_BASE64&&process.env.TOSS_DECRYPTION_KEY&&process.env.TOSS_AAD),devLogin:!isProduction()&&process.env.HB_DEV_LOGIN==='1',supabaseUrl:sbUrl(),supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_ANON_KEY||'',adGroupId:rewardedAdGroupId(),products:skuPoints(),subscriptionSku:subscriptionSku(),pushAvailableTemplate:pushAvailableTemplate(),pushReplyTemplate:pushReplyTemplate(),iceServers:process.env.WEBRTC_ICE_SERVERS?JSON.parse(process.env.WEBRTC_ICE_SERVERS):[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]});
   if(action==='login'){
    const code=typeof body.authorizationCode==='string'?body.authorizationCode.trim():'';
    const referrer=String(body.referrer||'').trim().toUpperCase();
    if(!code||code.length>8192||!['DEFAULT','SANDBOX'].includes(referrer))throw new AppError('로그인 정보를 확인해 주세요.');
+   if(isProduction()&&referrer==='SANDBOX')throw new AppError('운영 환경에서는 토스 계정으로 로그인해 주세요.',403);
    const token=await toss('/api-partner/v1/apps-in-toss/user/oauth2/generate-token',{authorizationCode:code,referrer});
    const info=await toss('/api-partner/v1/apps-in-toss/user/oauth2/login-me',undefined,{Authorization:`Bearer ${token?.accessToken||token?.access_token||''}`});
    if(!info||!/^\d{1,30}$/.test(String(info.userKey||''))||!info.birthday)throw new AppError('생년월일 동의 후 다시 로그인해 주세요.',403);
    if(!isAdult(decryptField(info.birthday)))throw new AppError('혼술바는 만 19세 이상만 이용할 수 있어요.',403);
+   if(!info.name||!decryptField(info.name).trim())throw new AppError('이름 정보 제공에 동의한 뒤 다시 로그인해 주세요.',403);
+   const identity=identityKey(String(info.userKey));
+   const [restriction]=await database(`hb_restrictions?identity_key=eq.${identity}&blocked_until=gt.${encodeURIComponent(new Date().toISOString())}&delete_after=gt.${encodeURIComponent(new Date().toISOString())}&select=identity_key&limit=1`);
+   if(restriction)throw new AppError('이용이 제한된 계정이에요.',403);
    const memberId=await rpc('hb_login',{p_key:String(info.userKey)});
+   await database(`hb_members?id=eq.${memberId}`,{method:'PATCH',body:{identity_key:identity}});
    const [member]=await database(`hb_members?id=eq.${memberId}&select=banned_until`);
    if(member?.banned_until&&new Date(member.banned_until)>new Date())throw new AppError('이용이 제한된 계정이에요.',403);
    await database('toss_login_links?on_conflict=user_key',{method:'POST',headers:{Prefer:'resolution=merge-duplicates'},body:{user_key:String(info.userKey),is_connected:true,disconnected_at:null}}).catch(()=>{});
@@ -50,15 +59,17 @@ export default async function handler(req,res) {
   }
   if(action==='dev-login'){
    const preview=typeof body.preview==='string'?body.preview:'';
-   const previewOk=!!process.env.HB_WEB_PREVIEW&&preview===process.env.HB_WEB_PREVIEW;
-   const localOk=process.env.HB_DEV_LOGIN==='1'&&process.env.VERCEL_ENV!=='production';
+   const previewOk=!isProduction()&&!!process.env.HB_WEB_PREVIEW&&preview===process.env.HB_WEB_PREVIEW;
+   const localOk=!isProduction()&&process.env.HB_DEV_LOGIN==='1';
    if(!localOk&&!previewOk)throw new AppError('지원하지 않는 요청이에요.',404);
    if(!/^9\d{1,8}$/.test(String(body.key||'')))throw new AppError('테스트 계정을 확인해 주세요.');
    return await startSession(res,await rpc('hb_login',{p_key:String(body.key)}));
   }
   if(action?.startsWith('admin-')){
    const email=await admin(req);
+   if(action==='admin-session')return res.json({email});
    if(action==='admin-list'){
+    await rpc('hb_ops_ping',{p_email:email});
     const page=Math.max(0,Math.min(10000,Number(body.page)||0));
     const status=['pending','reviewing','answered','closed'].includes(body.status)?`&status=eq.${body.status}`:'';
     const [tickets,outbox,stats]=await Promise.all([
@@ -69,7 +80,8 @@ export default async function handler(req,res) {
     const ids=[...new Set(tickets.flatMap(t=>[t.member_id,t.target_id]).filter(Boolean))];
     const rows=ids.length?await database(`hb_members?id=in.(${ids.join(',')})&select=id,nickname,gender,banned_until`):[];
     const members=Object.fromEntries((rows||[]).map(m=>[m.id,{id:m.id,nickname:m.nickname,gender:m.gender,banned_until:m.banned_until}]));
-    return res.json({tickets:tickets.slice(0,20),hasMore:tickets.length>20,outbox,email,members,stats});
+    const summaries=ids.length?await rpc('hb_report_summary',{p_targets:ids}):{};
+    return res.json({tickets:tickets.slice(0,20),hasMore:tickets.length>20,outbox,email,members,stats,summaries});
    }
    if(action==='admin-reply'){
     if(!/^[\da-f-]{36}$/.test(body.id)||typeof body.answer!=='string'||!body.answer.trim()||body.answer.length>5000)throw new AppError('답변 내용을 확인해 주세요.');
@@ -85,7 +97,8 @@ export default async function handler(req,res) {
    if(action==='admin-restrict'){
     if(!/^[\da-f-]{36}$/.test(body.memberId))throw new AppError('회원을 확인해 주세요.');
     if(!['24h','7d','perm','clear','kick'].includes(body.until))throw new AppError('제한 기간을 확인해 주세요.');
-    const reason=typeof body.reason==='string'?body.reason.slice(0,80):'';
+    const reason=typeof body.reason==='string'?body.reason.trim().slice(0,80):'';
+    if(body.until!=='clear'&&reason.length<8)throw new AppError('조치 근거를 8자 이상 입력해 주세요.');
     const until={
      '24h':new Date(Date.now()+24*3600*1000).toISOString(),
      '7d':new Date(Date.now()+7*24*3600*1000).toISOString(),
@@ -99,6 +112,19 @@ export default async function handler(req,res) {
    throw new AppError('지원하지 않는 관리자 요청이에요.');
   }
   const member=await authenticate(req);
+  if(action==='photo-prepare'){await warmPhotoVerifier();return res.json({result:{ready:true}});}
+  if(action==='photo-challenge'){ await warmPhotoVerifier(); return res.json({result:await rpc('hb_new_photo_challenge',{p_member:member})}); }
+  if(action==='photo-verify'){
+   const data=body.data||{};
+   if(data.consent!==true||!Array.isArray(data.frames)||data.frames.length!==2||typeof data.photo!=='string'||data.frames.some(frame=>typeof frame!=='string'))throw new AppError('얼굴 비교 처리에 동의한 뒤 다시 촬영해 주세요.');
+   if(!/^[\da-f-]{36}$/.test(data.challengeId||''))throw new AppError('얼굴 확인을 다시 시작해 주세요.');
+   const motion=await rpc('hb_use_photo_challenge',{p_member:member,p_id:data.challengeId});
+   const verified=await verifyPhoto(data.photo,data.frames,motion);
+   const proof=newToken();
+   await database('hb_photo_checks',{method:'POST',body:{token_hash:hash(proof),member_id:member,photo_digest:verified.photoDigest}});
+   await rpc('hb_log',{p_name:'photo-check',p_member:member,p_data:{model:verified.model,consentVersion:'2026-10-16'}});
+   return res.json({result:{proof}});
+  }
   if(action==='logout'){await database(`hb_sessions?token_hash=eq.${hash(req.headers.authorization.slice(7))}`,{method:'DELETE'});return res.json({ok:true});}
   if(action==='withdraw'){
    const [m]=await database(`hb_members?id=eq.${member}&select=toss_key,sub_access,sub_auto_renew,sub_expires_at`);
@@ -114,7 +140,7 @@ export default async function handler(req,res) {
     const [room]=await database(`hb_rooms?region=eq.${encodeURIComponent(region)}&number=eq.${number}&select=id&limit=1`);
     if(room?.id)await database(`hb_waitlist?member_id=eq.${member}&room_id=eq.${room.id}`,{method:'DELETE'});
    }else await database(`hb_waitlist?member_id=eq.${member}`,{method:'DELETE'});
-   return res.json({result:{},state:withPhotos(await rpc('hb_snapshot',{p_member:member,p_after:Math.max(0,Number(body.after)||0),p_limit:Math.min(100,Math.max(10,Number(body.limit)||10))}))});
+   return res.json({result:{},state:withPhotos(await rpc('hb_snapshot',{p_member:member,p_after:Math.max(0,Number(body.after)||0),p_limit:Math.min(100,Math.max(10,Number(body.limit)||10))}),member)});
   }
   if(action==='purchase'){
    if(typeof body.orderId!=='string'||!/^[\w-]{8,80}$/.test(body.orderId))throw new AppError('주문 정보를 확인해 주세요.');
@@ -123,13 +149,13 @@ export default async function handler(req,res) {
    if(isSubscriptionSku(order?.sku)){
     if(!['PAYMENT_COMPLETED','PURCHASED','ACTIVE'].includes(order.status))throw new AppError('결제가 완료되지 않았어요.',409);
     await rpc('hb_apply_subscription',{p_member:member,p_order:body.orderId,p_sku:order.sku,p_access:true,p_auto_renew:true,p_expires:parseTossTime(order.expiresAt||order.expires_at)});
-    return res.json({ok:true,state:withPhotos(await rpc('hb_snapshot',{p_member:member}))});
+    return res.json({ok:true,state:withPhotos(await rpc('hb_snapshot',{p_member:member}),member)});
    }
    const product=findProduct(order?.sku);
    if(!product)throw new AppError('등록되지 않은 상품이에요. 고객센터에 문의해 주세요.',400);
    if(!['PAYMENT_COMPLETED','PURCHASED'].includes(order.status))throw new AppError('결제가 완료되지 않았어요.',409);
    await rpc('hb_credit_order',{p_member:member,p_order:body.orderId,p_sku:order.sku,p_points:product.points,p_amount:product.won});
-   return res.json({ok:true,state:withPhotos(await rpc('hb_snapshot',{p_member:member}))});
+   return res.json({ok:true,state:withPhotos(await rpc('hb_snapshot',{p_member:member}),member)});
   }
   if(!allowedActions.has(action))throw new AppError('지원하지 않는 요청이에요.');
   if(action==='profile'){
@@ -141,6 +167,6 @@ export default async function handler(req,res) {
   if(action==='ticket')await dispatchOutbox().catch(()=>{});
   if(action==='signal')return res.json({ok:true});
   const state=await rpc('hb_snapshot',{p_member:member,p_after:Math.max(0,Number(body.after)||0),p_limit:Math.min(100,Math.max(10,Number(body.limit)||10))});
-  return res.json({result:withPhotos(result),state:withPhotos(state)});
+  return res.json({result:withPhotos(result,member),state:withPhotos(state,member)});
  }catch(error){console.error(error);return res.status(error.status||500).json({error:error instanceof AppError?error.message:'요청을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.'});}
 }

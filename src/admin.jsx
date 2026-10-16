@@ -5,7 +5,7 @@ const TOKEN_KEY = 'honsulbar:admin-token:v1';
 const STATUS = { pending: '대기', reviewing: '확인 중', answered: '답변 완료', closed: '종료' };
 const DAY_LABELS = { signup: '가입', login: '로그인', enter: '입장', leave: '퇴장', waitlist: '대기', purchase: '충전', subscribe: '구독', 'ad-claim': '광고', ticket: '문의', report: '신고', restrict: '제재' };
 const styles = {
-  page: { maxWidth: 720, margin: '0 auto', padding: '24px 16px 80px', fontFamily: 'inherit', color: '#191f28' },
+  page: { height: '100dvh', overflowY: 'auto', maxWidth: 720, margin: '0 auto', padding: '24px 16px 80px', fontFamily: 'inherit', color: '#191f28' },
   card: { border: '1px solid #e5e8eb', borderRadius: 16, padding: 16, margin: '12px 0', background: '#fff' },
   input: { width: '100%', boxSizing: 'border-box', border: '1px solid #d1d6db', borderRadius: 12, padding: 12, fontSize: 15, font: 'inherit' },
   button: { border: 0, borderRadius: 10, padding: '10px 14px', background: '#3182f6', color: '#fff', fontWeight: 600, fontSize: 14, cursor: 'pointer' },
@@ -69,56 +69,87 @@ function contextLine(ctx) {
 export function AdminPage() {
   const [token, setToken] = useState(readToken);
   const [email, setEmail] = useState('pretotyper.sth@gmail.com');
+  const [password, setPassword] = useState('');
+  const [loginMode, setLoginMode] = useState('password');
+  const [loggingIn, setLoggingIn] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
   const [page, setPage] = useState(0);
   const [data, setData] = useState(null);
   const [answers, setAnswers] = useState({});
+  const [reviewNotes, setReviewNotes] = useState({});
   const [message, setMessage] = useState('');
 
   async function load() {
     if (!token) return;
-    try { setData(await adminCall(token, 'admin-list', { status, page })); setMessage(''); }
-    catch (e) {
-      if (e.status === 401 || e.status === 403) { try { sessionStorage.removeItem(TOKEN_KEY); } catch {} setToken(null); }
-      setMessage(e.message);
-    }
+    setLoading(true);
+    try {setData(await adminCall(token,'admin-list',{status,page}));setMessage('');}
+    catch(error){
+      if(error.status===401||error.status===403){try{sessionStorage.removeItem(TOKEN_KEY);}catch{}setToken(null);}
+      setData(null);setMessage(error.message);
+    }finally{setLoading(false);}
   }
-  useEffect(() => { load(); }, [token, status, page]);
-
-  async function sendLink() {
+  useEffect(()=>{load();},[token,status,page]);
+  async function passwordLogin(event) {
+    event.preventDefault();
+    if(loggingIn||!email.trim()||!password)return;
+    setLoggingIn(true);setMessage('');
+    let candidate,config;
     try {
-      const config = await getConfig();
-      const redirect = `${location.origin}/?admin=1`;
-      const response = await fetch(`${config.supabaseUrl}/auth/v1/otp?redirect_to=${encodeURIComponent(redirect)}`, { method: 'POST', headers: { apikey: config.supabaseKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.trim(), create_user: true }) });
-      setMessage(response.ok ? '로그인 링크를 메일로 보냈어요. 메일의 링크를 이 기기에서 열어 주세요.' : '로그인 링크를 보내지 못했어요. 잠시 후 다시 시도해 주세요.');
-    } catch { setMessage('로그인 링크를 보내지 못했어요.'); }
+      config=await getConfig();
+      if(!config.supabaseUrl||!config.supabaseKey)throw new Error('관리자 인증 설정을 확인해 주세요.');
+      const response=await fetch(`${config.supabaseUrl}/auth/v1/token?grant_type=password`,{method:'POST',headers:{apikey:config.supabaseKey,'Content-Type':'application/json'},body:JSON.stringify({email:email.trim(),password})});
+      const auth=await response.json().catch(()=>({}));
+      if(!response.ok||!auth.access_token)throw new Error(response.status===429?'시도가 많아요. 잠시 후 다시 로그인해 주세요.':'이메일 또는 비밀번호를 확인해 주세요.');
+      candidate=auth.access_token;
+      await adminCall(candidate,'admin-session');
+      try{sessionStorage.setItem(TOKEN_KEY,candidate);}catch{}
+      setPassword('');setToken(candidate);setData(null);
+    }catch(error){
+      if(candidate&&config)await fetch(`${config.supabaseUrl}/auth/v1/logout?scope=local`,{method:'POST',headers:{apikey:config.supabaseKey,Authorization:`Bearer ${candidate}`}}).catch(()=>{});
+      setMessage(error.message||'로그인하지 못했어요. 다시 시도해 주세요.');
+    }finally{setLoggingIn(false);}
   }
-  async function reply(ticket) {
-    const answer = (answers[ticket.id] ?? ticket.answer ?? '').trim();
-    if (!answer) return;
-    try { await adminCall(token, 'admin-reply', { id: ticket.id, answer }); setMessage('답변을 등록했어요. 이용자에게 알림이 전송돼요.'); load(); }
-    catch (e) { setMessage(e.message); }
+  async function logout(){
+    const current=token;
+    try{sessionStorage.removeItem(TOKEN_KEY);}catch{}
+    setToken(null);setData(null);setMessage('');setPassword('');
+    const config=await getConfig().catch(()=>null);
+    if(config&&current)await fetch(`${config.supabaseUrl}/auth/v1/logout?scope=local`,{method:'POST',headers:{apikey:config.supabaseKey,Authorization:`Bearer ${current}`}}).catch(()=>{});
   }
-  async function changeStatus(ticket, next) {
-    try { await adminCall(token, 'admin-status', { id: ticket.id, status: next }); load(); }
-    catch (e) { setMessage(e.message); }
+  async function sendLink(){
+    try{
+      const config=await getConfig(),redirect=`${location.origin}/?admin=1`;
+      const response=await fetch(`${config.supabaseUrl}/auth/v1/otp?redirect_to=${encodeURIComponent(redirect)}`,{method:'POST',headers:{apikey:config.supabaseKey,'Content-Type':'application/json'},body:JSON.stringify({email:email.trim(),create_user:false})});
+      setMessage(response.ok?'로그인 링크를 메일로 보냈어요. 메일의 링크를 이 기기에서 열어 주세요.':'로그인 링크를 보내지 못했어요.');
+    }catch{setMessage('로그인 링크를 보내지 못했어요.');}
   }
-  async function restrict(memberId, until, ticket) {
-    if (!memberId) return;
-    if (until === 'perm' && !window.confirm('이 계정을 영구 제한할까요? 방에 있으면 바로 퇴장됩니다.')) return;
-    try {
-      await adminCall(token, 'admin-restrict', { memberId, until, reason: ticket?.category || '' });
-      setMessage(until === 'clear' ? '이용 제한을 해제했어요.' : until === 'kick' ? '해당 계정을 방에서 퇴장시켰어요.' : '이용 제한을 적용했어요.');
-      load();
-    } catch (e) { setMessage(e.message); }
+  async function reply(ticket){
+    const answer=(answers[ticket.id]??ticket.answer??'').trim();if(!answer)return;
+    try{await adminCall(token,'admin-reply',{id:ticket.id,answer});await load();setMessage('답변을 등록했어요. 이용자에게 알림이 전송돼요.');}catch(error){setMessage(error.message);}
+  }
+  async function changeStatus(ticket,next){
+    try{await adminCall(token,'admin-status',{id:ticket.id,status:next});await load();}catch(error){setMessage(error.message);}
+  }
+  async function restrict(memberId,until,ticket){
+    if(!memberId)return;
+    if(until==='perm'&&!window.confirm('이 계정을 영구 제한할까요? 방에 있으면 바로 퇴장됩니다.'))return;
+    try{
+      await adminCall(token,'admin-restrict',{memberId,until,reason:ticket?(reviewNotes[ticket.id]||''):''});
+      await load();setMessage(until==='clear'?'이용 제한을 해제했어요.':until==='kick'?'해당 계정을 방에서 퇴장시켰어요.':'이용 제한을 적용했어요.');
+    }catch(error){setMessage(error.message);}
   }
 
   if (!token) return <main style={styles.page}>
     <h1>혼술바 운영 관리</h1>
-    <p style={styles.meta}>운영자 이메일로 로그인 링크를 받아 문의와 신고를 확인해요.</p>
-    <input style={styles.input} value={email} onChange={e => setEmail(e.target.value)} type="email" />
-    <p><button style={styles.button} onClick={sendLink}>로그인 링크 받기</button></p>
-    {message && <p style={styles.meta}>{message}</p>}
+    <p style={styles.meta}>{loginMode==='password'?'운영자 이메일과 비밀번호로 로그인해요.':'운영자 이메일로 로그인 링크를 받아요.'}</p>
+    <form onSubmit={passwordLogin}>
+      <label>이메일<input aria-label="관리자 이메일" style={{...styles.input,margin:'6px 0 14px'}} value={email} onChange={e=>setEmail(e.target.value)} type="email" autoComplete="username" required /></label>
+      {loginMode==='password'&&<label>비밀번호<input aria-label="관리자 비밀번호" style={{...styles.input,marginTop:6}} value={password} onChange={e=>setPassword(e.target.value)} type="password" autoComplete="current-password" required /></label>}
+      <p>{loginMode==='password'?<button style={styles.button} type="submit" disabled={loggingIn||!password}>{loggingIn?'로그인 중…':'로그인'}</button>:<button type="button" style={styles.button} onClick={sendLink}>로그인 링크 받기</button>}</p>
+    </form>
+    <button style={styles.weak} onClick={()=>{setLoginMode(loginMode==='password'?'link':'password');setMessage('');setPassword('');}}>{loginMode==='password'?'이메일 링크로 로그인':'비밀번호로 로그인'}</button>
+    {message&&<p role="alert" style={styles.meta}>{message}</p>}
   </main>;
 
   const stats = data?.stats || {};
@@ -127,7 +158,7 @@ export function AdminPage() {
   return <main style={styles.page}>
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
       <h1>문의·신고</h1>
-      <button style={styles.weak} onClick={() => { try { sessionStorage.removeItem(TOKEN_KEY); } catch {} setToken(null); }}>로그아웃</button>
+      <button style={styles.weak} onClick={logout}>로그아웃</button>
     </div>
     {data?.stats && <section style={{ ...styles.card, background: stats.overdue ? '#fff5f5' : '#f9fafb' }}>
       <p style={{ margin: 0, fontWeight: 700 }}>미처리 신고 {stats.openReports ?? 0} · 미처리 문의 {stats.openInquiries ?? 0} · <span style={{ color: stats.overdue ? '#de3412' : undefined }}>24시간 초과 {stats.overdue ?? 0}</span> · 제한 중 {stats.banned ?? 0}</p>
@@ -137,7 +168,8 @@ export function AdminPage() {
       {[['', '전체'], ...Object.entries(STATUS)].map(([value, label]) => <button key={value} style={{ ...styles.weak, ...(status === value ? { background: '#e8f3ff', color: '#1b64da' } : {}) }} onClick={() => { setStatus(value); setPage(0); }}>{label}</button>)}
       <button style={styles.weak} onClick={load}>새로고침</button>
     </div>
-    {message && <p style={styles.meta}>{message}</p>}
+    {message && <p role="alert" style={styles.meta}>{message}</p>}
+    {loading && <p role="status" style={styles.meta}>문의·신고를 불러오고 있어요.</p>}
     {data?.outbox?.length > 0 && <p style={styles.meta}>발송 대기 알림 {data.outbox.length}건{data.outbox.some(item => item.last_error === 'configuration_required') ? ' · 메일/푸시 설정이 필요해요' : ''}</p>}
     {data && !data.tickets.length && <p style={styles.meta}>접수된 문의가 없어요.</p>}
     {data?.tickets.map(ticket => {
@@ -145,6 +177,7 @@ export function AdminPage() {
       const reporter = party(data.members, ticket.member_id);
       const target = party(data.members, ticket.target_id);
       const ctx = contextLine(ticket.context);
+      const summary = data.summaries?.[ticket.target_id];
       return <section key={ticket.id} style={{ ...styles.card, ...(overdue ? { borderColor: '#f15b50', background: '#fff8f7' } : {}) }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
           <strong>{ticket.kind === 'report' ? '🚩 신고' : '문의'} · {ticket.category}</strong>
@@ -152,6 +185,8 @@ export function AdminPage() {
         </div>
         <p style={styles.meta}>{new Date(ticket.created_at).toLocaleString('ko-KR')} · 접수 {reporter ? `${reporter.nickname} (${ticket.member_id?.slice(0, 8) || '탈퇴'})` : '탈퇴'}{target ? ` · 대상 ${target.nickname} (${ticket.target_id.slice(0, 8)})` : ''}{banLabel(target?.banned_until) ? ` · ${banLabel(target.banned_until)}` : ''}{banLabel(reporter?.banned_until) ? ` · 접수자 ${banLabel(reporter.banned_until)}` : ''}</p>
         {ctx && <p style={styles.meta}>{ctx}</p>}
+        {ticket.kind === 'report' && <><p style={styles.meta}>{ticket.context?.priority === 'urgent' ? '긴급 우선 확인 · ' : ''}원본 음성 없음 · 신고 내용은 미확인 주장입니다.{summary ? ` 최근 30일 ${summary.reports}건 / 서로 다른 신고자 ${summary.reporters}명` : ''}</p><p style={styles.meta}>신고 횟수만으로 제재하지 마세요. 이용 기록·구체적 설명·기존 확인된 조치를 검토해 주세요.</p><div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{[['추가 설명 요청','신고를 확인하고 있어요. 당시 상대가 한 말과 상황을 기억나는 범위에서 알려주세요. 상대와의 연결 제한은 유지돼요.'],['확인 어려움 안내','현재 설명과 이용 기록만으로 위반 여부를 확정하기 어려워요. 원본 음성은 저장하지 않으며, 상대와의 연결 제한은 유지돼요. 추가 설명은 문의로 보내주세요.'],['검토 결과 안내','신고 내용과 이용 기록을 검토해 필요한 조치를 진행했어요. 상대와의 연결 제한은 유지되며, 상대방의 개인정보와 구체적인 계정 정보는 안내하지 않아요.']].map(([label,text])=><button key={label} style={styles.weak} onClick={()=>setAnswers(v=>({...v,[ticket.id]:text}))}>{label}</button>)}</div><textarea aria-label="조치 근거" style={{...styles.input,marginTop:10}} maxLength={80} placeholder="조치 근거 (제재 전 8자 이상, 신고자 정보 제외)" value={reviewNotes[ticket.id] || ''} onChange={e=>setReviewNotes(v=>({...v,[ticket.id]:e.target.value}))}/></>}
+
         <p style={{ whiteSpace: 'pre-wrap' }}>{ticket.message}</p>
         <textarea style={{ ...styles.input, minHeight: 90 }} placeholder="답변을 입력하면 이용자에게 알림이 가요." value={answers[ticket.id] ?? ticket.answer ?? ''} onChange={e => setAnswers(v => ({ ...v, [ticket.id]: e.target.value }))} />
         <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
