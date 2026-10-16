@@ -1,4 +1,5 @@
 from pathlib import Path
+import argparse
 import html
 import re
 import shutil
@@ -88,17 +89,24 @@ def render_pdf(source, target):
         else:
             text = ('- ' if kind == 'li' else '') + content.replace('—','-').replace('–','-')
             story.append(Paragraph(inline(text),styles[kind]))
+    effective_date = re.search(r'^시행일:\s*(.+)$', source.read_text(), re.MULTILINE)
+    effective_date = effective_date.group(1).strip() if effective_date else ''
     def footer(pdf, document):
         pdf.setFont('Policy',8)
         pdf.setFillColor(colors.HexColor('#6b7684'))
-        pdf.drawString(54,30,'상지컴퍼니 주식회사 | 혼술바 | 2026-10-12')
+        pdf.drawString(54,30,f'상지컴퍼니 주식회사 | 혼술바 | {effective_date}')
         pdf.drawRightString(A4[0]-54,30,str(document.page))
     SimpleDocTemplate(str(target),pagesize=A4,rightMargin=54,leftMargin=54,topMargin=45,bottomMargin=50,title='혼술바 모니터링 및 대응 정책',author='상지컴퍼니 주식회사').build(story,onFirstPage=footer,onLaterPages=footer)
 
 
-for markdown, page in PAIRS.items():
-    render_html(ROOT/'docs'/markdown,ROOT/'public/legal'/page)
-pdf = ROOT/'docs/honsulbar-monitoring-response-policy.pdf'
-render_pdf(ROOT/'docs/honsulbar-monitoring-response-policy.md', pdf)
-shutil.copyfile(pdf,ROOT/'public/legal'/pdf.name)
-print('정책 HTML 6개와 모니터링 정책 PDF 갱신 완료')
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--monitoring-only', action='store_true')
+    args = parser.parse_args()
+    pairs = {'honsulbar-monitoring-response-policy.md': 'monitoring.html'} if args.monitoring_only else PAIRS
+    for markdown, page in pairs.items():
+        render_html(ROOT/'docs'/markdown, ROOT/'public/legal'/page)
+    pdf = ROOT/'docs/honsulbar-monitoring-response-policy.pdf'
+    render_pdf(ROOT/'docs/honsulbar-monitoring-response-policy.md', pdf)
+    shutil.copyfile(pdf, ROOT/'public/legal'/pdf.name)
+    print(f'정책 HTML {len(pairs)}개와 모니터링 정책 PDF 갱신 완료')
