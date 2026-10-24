@@ -23,6 +23,7 @@ const MIGRATIONS = [
   '20261014_report_triage.sql',
   '20261016_face_verification.sql',
   '20261024_voice_evidence.sql',
+  '20261025_scoped_safety_cleanup.sql',
 ];
 const TABLES = new Set([
   'hb_voice_evidence', 'hb_voice_consents',

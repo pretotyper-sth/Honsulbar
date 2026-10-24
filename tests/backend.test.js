@@ -16,6 +16,7 @@ async function setup() {
   await db.exec(sql('20261012_safety_automation.sql'));
   await db.exec(sql('20261014_report_triage.sql'));
   await db.exec(sql('20261016_face_verification.sql'));
+  await db.exec(sql('20261025_scoped_safety_cleanup.sql'));
   const one = async (query, params) => (await db.query(query, params)).rows[0];
   const action = async (member, name, data = {}) => (await one('select hb_action($1,$2,$3::jsonb) as r', [member, name, JSON.stringify(data)])).r;
   const snapshot = async member => (await one('select hb_snapshot($1) as s', [member])).s;
@@ -403,9 +404,16 @@ test('safety pause preserves unused paid time and releases the room until review
   const {db,login,ready,action,snapshot,one}=await setup();
   const a=await login('85501');await ready(a,'남은 시간');
   await action(a,'enter',{region:'서울',number:1,drinkId:'beer'});
+  const b=await login('85502');await ready(b,'옆자리');
+  await action(b,'enter',{region:'서울',number:1,drinkId:'beer'});
+  await db.query('insert into hb_focus(member_id,partner_id) values($1,$2),($2,$1)',[a,b]);
+  await db.query("insert into hb_signals(sender,receiver,data) values($1,$2,'{}')",[a,b]);
   await db.query("update hb_safety_ops set reviewed_at=now()-interval '24 hours 1 second'");
   let state=await snapshot(a);
   assert.equal(state.safetyPaused,true);assert.equal(state.visit.away,true);
+  assert.equal((await one('select count(*)::int n from hb_focus')).n,0);
+  assert.equal((await one('select count(*)::int n from hb_signals')).n,0);
+  assert.doesNotMatch((await one("select prosrc from pg_proc where proname='hb_sync_safety_time'")).prosrc,/delete from \w+\s*;/i);
   const held=state.visit.seconds;assert.ok(held>=1799 && held<=1802);
   await db.query("update hb_visits set heartbeat_at=now()-interval '2 hours' where member_id=$1",[a]);
   await db.query('select hb_cleanup()');

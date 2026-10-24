@@ -56,7 +56,7 @@ test('database requires both consents and a shared room, stores evidence atomica
  const db=new PGlite();
  try {
   await db.exec('create role anon;create role authenticated;create role service_role;');
-  for(const name of ['20260924_toss_login_disconnect.sql','20260924_service_backend.sql','20260924_admin_ops.sql','20260926_rejoin_visit.sql','20261012_safety_automation.sql','20261014_report_triage.sql','20261016_face_verification.sql','20261024_voice_evidence.sql'])await db.exec(readFileSync(new URL('../supabase/migrations/'+name,import.meta.url),'utf8'));
+  for(const name of ['20260924_toss_login_disconnect.sql','20260924_service_backend.sql','20260924_admin_ops.sql','20260926_rejoin_visit.sql','20261012_safety_automation.sql','20261014_report_triage.sql','20261016_face_verification.sql','20261024_voice_evidence.sql','20261025_scoped_safety_cleanup.sql'])await db.exec(readFileSync(new URL('../supabase/migrations/'+name,import.meta.url),'utf8'));
   const one=async(sql,args=[])=>(await db.query(sql,args)).rows[0];
   const a=(await one("select hb_login('50101') id")).id,b=(await one("select hb_login('50102') id")).id;
   await db.query("update hb_members set nickname='검증사용자',gender='male',photo='data:image/jpeg;base64,AAAA',photo_checked=true where id in($1,$2)",[a,b]);
