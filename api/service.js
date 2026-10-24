@@ -1,3 +1,6 @@
+import {voiceEvidenceReady,VOICE_CONSENT_VERSION,validateVoiceEvidence,encryptEvidence,decryptEvidence} from '../server/voice-evidence.js';
+import {emailReady,sendNotificationEmail} from '../server/notification-email.js';
+import {randomUUID} from 'node:crypto';
 import {verifyPhoto,warmPhotoVerifier} from '../server/photo-verification.js';
 import {AppError,authenticate,admin,database,rpc,toss,decryptField,isAdult,newToken,hash,dispatchOutbox,sbUrl,signPhoto,photoMatches,skuPoints,findProduct,rewardedAdGroupId,subscriptionSku,isSubscriptionSku,parseTossTime,pushAvailableTemplate,pushReplyTemplate,isProduction,identityKey} from '../server/platform.js';
 const allowedActions=new Set(['state','profile','ticket','read','region','waitlist','enter','order','leave','heartbeat','move','request','respond','cancel','focus-end','preview','signal','ad-start','ad-claim','block']);
@@ -36,7 +39,7 @@ export default async function handler(req,res) {
   let body=req.body||{};if(typeof body==='string')body=JSON.parse(body);
   if(JSON.stringify(body).length>1500000)throw new AppError('요청이 너무 커요.',413);
   const action=req.method==='GET'?'config':body.action;
-  if(action==='config')return res.json({apiReady:!!(sbUrl()&&process.env.SUPABASE_SERVICE_ROLE_KEY),loginReady:!!(process.env.TOSS_CLIENT_CERT_BASE64&&process.env.TOSS_CLIENT_KEY_BASE64&&process.env.TOSS_DECRYPTION_KEY&&process.env.TOSS_AAD),devLogin:!isProduction()&&process.env.HB_DEV_LOGIN==='1',supabaseUrl:sbUrl(),supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_ANON_KEY||'',adGroupId:rewardedAdGroupId(),products:skuPoints(),subscriptionSku:subscriptionSku(),pushAvailableTemplate:pushAvailableTemplate(),pushReplyTemplate:pushReplyTemplate(),iceServers:process.env.WEBRTC_ICE_SERVERS?JSON.parse(process.env.WEBRTC_ICE_SERVERS):[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]});
+  if(action==='config')return res.json({voiceEvidenceReady:voiceEvidenceReady(),voiceConsentVersion:VOICE_CONSENT_VERSION,apiReady:!!(sbUrl()&&process.env.SUPABASE_SERVICE_ROLE_KEY),loginReady:!!(process.env.TOSS_CLIENT_CERT_BASE64&&process.env.TOSS_CLIENT_KEY_BASE64&&process.env.TOSS_DECRYPTION_KEY&&process.env.TOSS_AAD),devLogin:!isProduction()&&process.env.HB_DEV_LOGIN==='1',supabaseUrl:sbUrl(),supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_ANON_KEY||'',adGroupId:rewardedAdGroupId(),products:skuPoints(),subscriptionSku:subscriptionSku(),pushAvailableTemplate:pushAvailableTemplate(),pushReplyTemplate:pushReplyTemplate(),iceServers:process.env.WEBRTC_ICE_SERVERS?JSON.parse(process.env.WEBRTC_ICE_SERVERS):[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]});
   if(action==='login'){
    const code=typeof body.authorizationCode==='string'?body.authorizationCode.trim():'';
    const referrer=String(body.referrer||'').trim().toUpperCase();
@@ -68,8 +71,36 @@ export default async function handler(req,res) {
   if(action?.startsWith('admin-')){
    const email=await admin(req);
    if(action==='admin-session')return res.json({email});
+   if(action==='admin-alert-state'){
+    await dispatchOutbox().catch(()=>{});
+    return res.json({result:await rpc('hb_admin_stats')});
+   }
+   if(action==='admin-health'){
+    let evidenceSchema=false;
+    try{await database('hb_voice_evidence?select=ticket_id&limit=1');evidenceSchema=true;}catch{}
+    return res.json({result:{evidenceSchema,evidenceEnabled:voiceEvidenceReady(),emailConfigured:emailReady(),loginConfigured:!!(process.env.TOSS_CLIENT_CERT_BASE64&&process.env.TOSS_CLIENT_KEY_BASE64&&process.env.TOSS_DECRYPTION_KEY&&process.env.TOSS_AAD),checkedAt:new Date().toISOString()}});
+   }
+   if(action==='admin-test-alert'){
+    // Claim a bounded daily test allowance before contacting the email provider.
+    await rpc('hb_admin_alert_test',{p_email:email});
+    await sendNotificationEmail({id:randomUUID(),data:{test:true,urgent:true,ticketId:'운영자 연결 시험'}});
+    await rpc('hb_log',{p_name:'alert-test-sent',p_data:{operator:email}});
+    return res.json({result:{providerAccepted:true}});
+   }
+   if(action==='admin-retry-alerts'){
+    await dispatchOutbox();return res.json({ok:true});
+   }
+   if(action==='admin-evidence'){
+    if(!/^[\da-f-]{36}$/.test(body.id||''))throw new AppError('신고 번호를 확인해 주세요.');
+    const [row]=await database(`hb_voice_evidence?ticket_id=eq.${body.id}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=*`);
+    if(!row)throw new AppError('음성 증거가 없거나 보관 기간이 끝났어요.',404);
+    const audio=decryptEvidence(row);
+    await rpc('hb_log',{p_name:'evidence-view',p_data:{operator:email,ticketId:body.id}});
+    return res.json({result:{audio:audio.toString('base64'),expiresAt:row.expires_at}});
+   }
    if(action==='admin-list'){
     await rpc('hb_ops_ping',{p_email:email});
+    await dispatchOutbox().catch(()=>{});
     const page=Math.max(0,Math.min(10000,Number(body.page)||0));
     const status=['pending','reviewing','answered','closed'].includes(body.status)?`&status=eq.${body.status}`:'';
     const [tickets,outbox,stats]=await Promise.all([
@@ -112,6 +143,30 @@ export default async function handler(req,res) {
    throw new AppError('지원하지 않는 관리자 요청이에요.');
   }
   const member=await authenticate(req);
+  if(action==='voice-consent-revoke'){
+   await rpc('hb_revoke_voice_consent',{p_member:member});
+   return res.json({result:{revoked:true},state:withPhotos(await rpc('hb_snapshot',{p_member:member}),member)});
+  }
+  if(action==='voice-consent'){
+   if(!voiceEvidenceReady()||body.data?.version!==VOICE_CONSENT_VERSION||body.data?.agreed!==true)throw new AppError('안내를 확인하고 동의해 주세요.');
+   await database('hb_voice_consents?on_conflict=member_id',{method:'POST',headers:{Prefer:'resolution=merge-duplicates'},body:{member_id:member,version:VOICE_CONSENT_VERSION,agreed_at:new Date().toISOString()}});
+   return res.json({result:{version:VOICE_CONSENT_VERSION}});
+  }
+  if(voiceEvidenceReady()&&['enter','signal'].includes(action)){
+   const ids=[member];if(action==='signal'&&body.data?.targetId)ids.push(body.data.targetId);
+   if(ids.some(id=>!/^[\da-f-]{36}$/.test(id)))throw new AppError('연결 대상을 확인해 주세요.');
+   const consents=await database(`hb_voice_consents?member_id=in.(${ids.join(',')})&version=eq.${VOICE_CONSENT_VERSION}&select=member_id`);
+   if(new Set(consents.map(row=>row.member_id)).size!==new Set(ids).size)throw new AppError('입장 전 음성 안전 처리 안내에 동의해 주세요.',403);
+   if(action==='signal'&&!await rpc('hb_voice_pair_allowed',{p_member:member,p_target:body.data.targetId}))throw new AppError('참여 가능한 대화 상대가 아니에요.',403);
+  }
+  if(action==='ticket'&&body.data?.audioEvidence){
+   if(!voiceEvidenceReady()||body.data.kind!=='report'||!/^[\da-f-]{36}$/.test(body.data.targetId||''))throw new AppError('음성 신고를 확인해 주세요.');
+   const {audioEvidence,...data}=body.data;
+   const encrypted=encryptEvidence(validateVoiceEvidence(audioEvidence));
+   const result=await rpc('hb_submit_voice_report',{p_member:member,p_data:data,p_evidence:encrypted});
+   await dispatchOutbox().catch(()=>{});
+   return res.json({result,state:withPhotos(await rpc('hb_snapshot',{p_member:member}),member)});
+  }
   if(action==='photo-prepare'){await warmPhotoVerifier();return res.json({result:{ready:true}});}
   if(action==='photo-challenge'){ await warmPhotoVerifier(); return res.json({result:await rpc('hb_new_photo_challenge',{p_member:member})}); }
   if(action==='photo-verify'){

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { call } from './api';
+import { createVoiceBuffer, evidencePayload } from './voice-evidence';
 
 const GATHER_TIMEOUT = 3000;
 const RETRY_MS = 15000;
@@ -16,7 +17,7 @@ function waitForIce(pc) {
 
 // Full-mesh voice between guests in the same room. The member with the smaller id always offers,
 // so both sides never create competing offers for the same pair.
-export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains }) {
+export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains, evidenceEnabled = false }) {
   const peers = useRef(new Map());
   const context = useRef(null);
   const track = useRef(null);
@@ -44,6 +45,8 @@ export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains })
     clearTimeout(peer.retry);
     peer.pc.ontrack = null; peer.pc.onconnectionstatechange = null;
     peer.pc.close();
+    if (peer.capture) { peer.capture.onaudioprocess = null; peer.capture.disconnect(); }
+    peer.evidence?.clear();
     peer.source?.disconnect(); peer.gain?.disconnect();
     if (peer.element) { peer.element.srcObject = null; }
     peers.current.delete(id);
@@ -68,10 +71,22 @@ export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains })
       peer.source.connect(peer.analyser);
       peer.source.connect(peer.gain);
       peer.gain.connect(ctx.destination);
+      if (evidenceEnabled) {
+        peer.evidence = createVoiceBuffer();
+        // Capture only this peer's audible output. Zero output avoids a second playback path.
+        peer.capture = ctx.createScriptProcessor(4096, 1, 1);
+        peer.capture.onaudioprocess = event => {
+          event.outputBuffer.getChannelData(0).fill(0);
+          if (document.hidden || !(gainValues.current[id] > 0)) { peer.evidence.clear(); return; }
+          peer.evidence.append(event.inputBuffer.getChannelData(0), event.inputBuffer.sampleRate);
+          peer.lastSampleAt = Date.now();
+        };
+        peer.gain.connect(peer.capture); peer.capture.connect(ctx.destination);
+      }
     };
     peers.current.set(id, peer);
     return peer;
-  }, [iceServers, audio]);
+  }, [iceServers, audio, evidenceEnabled]);
 
   const describe = useCallback(async peer => {
     await waitForIce(peer.pc);
@@ -125,7 +140,13 @@ export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains })
     const wanted = new Set(peerIds);
     for (const id of [...peers.current.keys()]) if (!wanted.has(id)) close(id);
     for (const id of wanted) if (!peers.current.has(id) && selfId < id) offer(id);
-  }, [enabled, selfId, peerKey]);
+  }, [enabled, selfId, peerKey, evidenceEnabled]);
+
+  useEffect(() => {
+    const clear = () => { if(document.hidden) for(const peer of peers.current.values())peer.evidence?.clear(); };
+    document.addEventListener('visibilitychange', clear);
+    return () => document.removeEventListener('visibilitychange', clear);
+  }, []);
 
   useEffect(() => () => { [...peers.current.keys()].forEach(close); context.current?.close().catch(() => {}); }, [close]);
 
@@ -135,7 +156,10 @@ export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains })
 
   useEffect(() => {
     const ctx = context.current;
-    for (const [id, peer] of peers.current) if (peer.gain && ctx) peer.gain.gain.setTargetAtTime(gains[id] ?? 0, ctx.currentTime, 0.08);
+    for (const [id, peer] of peers.current) {
+      if (!(gains[id] > 0)) peer.evidence?.clear();
+      if (peer.gain && ctx) peer.gain.gain.setTargetAtTime(gains[id] ?? 0, ctx.currentTime, 0.08);
+    }
   }, [JSON.stringify(gains)]);
 
   useEffect(() => {
@@ -154,5 +178,10 @@ export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains })
     return () => clearInterval(timer);
   }, [enabled]);
 
-  return { receive, talking, resume: audio };
+  const evidenceFor = id => {
+    const peer=peers.current.get(id);
+    if(document.hidden || !enabled || !evidenceEnabled || !(gains[id]>0) || !peer?.lastSampleAt || Date.now()-peer.lastSampleAt>2000)return null;
+    return evidencePayload(peer.evidence);
+  };
+  return { receive, talking, resume: audio, evidenceFor };
 }

@@ -79,6 +79,30 @@ export function AdminPage() {
   const [answers, setAnswers] = useState({});
   const [reviewNotes, setReviewNotes] = useState({});
   const [message, setMessage] = useState('');
+  const [health,setHealth] = useState(null);
+  const [liveStats,setLiveStats] = useState(null);
+  const [evidence,setEvidence] = useState({});
+  useEffect(()=>{
+    if(!token)return;
+    let stopped=false;
+    const refresh=()=>{if(document.hidden)return;adminCall(token,'admin-alert-state').then(r=>{if(!stopped)setLiveStats(r.result);}).catch(()=>{});};
+    adminCall(token,'admin-health').then(r=>{if(!stopped)setHealth(r.result);}).catch(()=>{});
+    const timer=setInterval(refresh,15000);refresh();
+    return()=>{stopped=true;clearInterval(timer);};
+  },[token]);
+  useEffect(()=>()=>{Object.values(evidence).forEach(url=>URL.revokeObjectURL(url));},[evidence]);
+  async function playEvidence(ticket){
+    try {
+      const {result}=await adminCall(token,'admin-evidence',{id:ticket.id});
+      const bytes=Uint8Array.from(atob(result.audio),c=>c.charCodeAt(0));
+      const url=URL.createObjectURL(new Blob([bytes],{type:'audio/wav'}));
+      setEvidence({[ticket.id]:url});
+    }catch(error){setMessage(error.message);}
+  }
+  async function testAlert(){
+    try {await adminCall(token,'admin-test-alert');setMessage('메일 업체가 시험 메일을 접수했어요. 실제 메일함에서 수신을 확인해 주세요.');}
+    catch(error){setMessage(error.message);}
+  }
 
   async function load() {
     if (!token) return;
@@ -113,7 +137,7 @@ export function AdminPage() {
   async function logout(){
     const current=token;
     try{sessionStorage.removeItem(TOKEN_KEY);}catch{}
-    setToken(null);setData(null);setMessage('');setPassword('');
+    setToken(null);setData(null);setEvidence({});setMessage('');setPassword('');
     const config=await getConfig().catch(()=>null);
     if(config&&current)await fetch(`${config.supabaseUrl}/auth/v1/logout?scope=local`,{method:'POST',headers:{apikey:config.supabaseKey,Authorization:`Bearer ${current}`}}).catch(()=>{});
   }
@@ -168,6 +192,7 @@ export function AdminPage() {
       {[['', '전체'], ...Object.entries(STATUS)].map(([value, label]) => <button key={value} style={{ ...styles.weak, ...(status === value ? { background: '#e8f3ff', color: '#1b64da' } : {}) }} onClick={() => { setStatus(value); setPage(0); }}>{label}</button>)}
       <button style={styles.weak} onClick={load}>새로고침</button>
     </div>
+    {health && <section style={styles.card}><h2>라이브 연결 점검</h2><p style={styles.meta}>토스 로그인 설정 {health.loginConfigured?'있음':'미설정'} · 신고 메일 설정 {health.emailConfigured?'있음':'미설정'} · 음성 DB {health.evidenceSchema?'있음':'미적용'} · 음성 보관 {health.evidenceEnabled?'켜짐':'꺼짐'}</p><p style={styles.meta}>설정 존재 여부이며 실제 인증·수신 성공을 의미하지 않습니다. 최근 미처리 신고 {liveStats?.openReports ?? '-'}건 (화면이 켜져 있을 때 15초 간격 확인)</p><button style={styles.weak} onClick={testAlert}>운영자 시험 메일 보내기</button> <button style={styles.weak} onClick={async()=>{try{await adminCall(token,'admin-retry-alerts');setMessage('재시도 시각이 된 알림을 발송 시도했어요.');}catch(e){setMessage(e.message);}}}>대기 알림 재시도</button><p style={styles.meta}>시험 메일은 하루 3회 한도. 메일함에서 도착을 직접 확인해 주세요. 새 신고 상세는 새로고침으로 확인합니다.</p></section>}
     {message && <p role="alert" style={styles.meta}>{message}</p>}
     {loading && <p role="status" style={styles.meta}>문의·신고를 불러오고 있어요.</p>}
     {data?.outbox?.length > 0 && <p style={styles.meta}>발송 대기 알림 {data.outbox.length}건{data.outbox.some(item => item.last_error === 'configuration_required') ? ' · 메일/푸시 설정이 필요해요' : ''}</p>}
@@ -185,8 +210,9 @@ export function AdminPage() {
         </div>
         <p style={styles.meta}>{new Date(ticket.created_at).toLocaleString('ko-KR')} · 접수 {reporter ? `${reporter.nickname} (${ticket.member_id?.slice(0, 8) || '탈퇴'})` : '탈퇴'}{target ? ` · 대상 ${target.nickname} (${ticket.target_id.slice(0, 8)})` : ''}{banLabel(target?.banned_until) ? ` · ${banLabel(target.banned_until)}` : ''}{banLabel(reporter?.banned_until) ? ` · 접수자 ${banLabel(reporter.banned_until)}` : ''}</p>
         {ctx && <p style={styles.meta}>{ctx}</p>}
-        {ticket.kind === 'report' && <><p style={styles.meta}>{ticket.context?.priority === 'urgent' ? '긴급 우선 확인 · ' : ''}원본 음성 없음 · 신고 내용은 미확인 주장입니다.{summary ? ` 최근 30일 ${summary.reports}건 / 서로 다른 신고자 ${summary.reporters}명` : ''}</p><p style={styles.meta}>신고 횟수만으로 제재하지 마세요. 이용 기록·구체적 설명·기존 확인된 조치를 검토해 주세요.</p><div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{[['추가 설명 요청','신고를 확인하고 있어요. 당시 상대가 한 말과 상황을 기억나는 범위에서 알려주세요. 상대와의 연결 제한은 유지돼요.'],['확인 어려움 안내','현재 설명과 이용 기록만으로 위반 여부를 확정하기 어려워요. 원본 음성은 저장하지 않으며, 상대와의 연결 제한은 유지돼요. 추가 설명은 문의로 보내주세요.'],['검토 결과 안내','신고 내용과 이용 기록을 검토해 필요한 조치를 진행했어요. 상대와의 연결 제한은 유지되며, 상대방의 개인정보와 구체적인 계정 정보는 안내하지 않아요.']].map(([label,text])=><button key={label} style={styles.weak} onClick={()=>setAnswers(v=>({...v,[ticket.id]:text}))}>{label}</button>)}</div><textarea aria-label="조치 근거" style={{...styles.input,marginTop:10}} maxLength={80} placeholder="조치 근거 (제재 전 8자 이상, 신고자 정보 제외)" value={reviewNotes[ticket.id] || ''} onChange={e=>setReviewNotes(v=>({...v,[ticket.id]:e.target.value}))}/></>}
+        {ticket.kind === 'report' && <><p style={styles.meta}>{ticket.context?.priority === 'urgent' ? '긴급 우선 확인 · ' : ''}{ticket.context?.audioRecorded ? '참여자가 제출한 음성 있음 · 조작 가능성을 포함해 검토하세요.' : '첨부 음성 없음 · 신고 내용은 미확인 주장입니다.'}{summary ? ` 최근 30일 ${summary.reports}건 / 서로 다른 신고자 ${summary.reporters}명` : ''}</p><p style={styles.meta}>신고 횟수만으로 제재하지 마세요. 이용 기록·구체적 설명·기존 확인된 조치를 검토해 주세요.</p><div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{[['추가 설명 요청','신고를 확인하고 있어요. 당시 상대가 한 말과 상황을 기억나는 범위에서 알려주세요. 상대와의 연결 제한은 유지돼요.'],['확인 어려움 안내','현재 설명과 이용 기록만으로 위반 여부를 확정하기 어려워요. 확보된 자료만으로 확인이 어려우며, 상대와의 연결 제한은 유지돼요. 추가 설명은 문의로 보내주세요.'],['검토 결과 안내','신고 내용과 이용 기록을 검토해 필요한 조치를 진행했어요. 상대와의 연결 제한은 유지되며, 상대방의 개인정보와 구체적인 계정 정보는 안내하지 않아요.']].map(([label,text])=><button key={label} style={styles.weak} onClick={()=>setAnswers(v=>({...v,[ticket.id]:text}))}>{label}</button>)}</div><textarea aria-label="조치 근거" style={{...styles.input,marginTop:10}} maxLength={80} placeholder="조치 근거 (제재 전 8자 이상, 신고자 정보 제외)" value={reviewNotes[ticket.id] || ''} onChange={e=>setReviewNotes(v=>({...v,[ticket.id]:e.target.value}))}/></>}
 
+        {ticket.context?.audioRecorded && <div><p style={styles.meta}>음성 보관 종료: {new Date(ticket.context.audioExpiresAt).toLocaleString('ko-KR')} · 진위·화자·맥락이 자동 검증된 자료가 아닙니다.</p>{evidence[ticket.id] ? <audio controls controlsList="nodownload" src={evidence[ticket.id]}/> : <button style={styles.weak} onClick={()=>playEvidence(ticket)}>신고 음성 열람 (접근 기록 남음)</button>}</div>}
         <p style={{ whiteSpace: 'pre-wrap' }}>{ticket.message}</p>
         <textarea style={{ ...styles.input, minHeight: 90 }} placeholder="답변을 입력하면 이용자에게 알림이 가요." value={answers[ticket.id] ?? ticket.answer ?? ''} onChange={e => setAnswers(v => ({ ...v, [ticket.id]: e.target.value }))} />
         <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>

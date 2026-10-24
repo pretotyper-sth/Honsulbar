@@ -501,3 +501,5 @@ html.sheet-open .controls { position:relative; }
 @keyframes camera-near { 50% { transform:scale(1.12); } }
 @keyframes camera-far { 50% { transform:scale(.86); } }
 @media(prefers-reduced-motion:reduce) { .camera-spinner,.is-move .camera-guide { animation:none; } }
+/* A quiet, always-visible reminder while voice evidence buffering is enabled. */
+.voice-safety-notice{position:fixed;left:12px;right:12px;bottom:8px;text-align:center;font-size:10px;color:#6b7684;pointer-events:none;z-index:5;margin:0}

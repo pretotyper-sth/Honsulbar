@@ -10,6 +10,9 @@ export const POINT_PACKS = [
 ];
 export const SUBSCRIPTIONS = [{id:'monthly',name:'정기 구독',price:13200,description:'포인트 차감 없이 입장·시간 연장·미리보기 이용'}];
 export const adjacent = (a,b) => a !== 11 && b !== 11 && Math.abs(a-b) === 1;
+export function voicePeerIds(guests, partners, blocked = new Set()) {
+  return guests.filter(g => !blocked.has(g.id) && (!partners.me || partners.me === g.id) && (!partners[g.id] || partners[g.id] === 'me')).map(g => g.id);
+}
 export function drinkLevel(seconds, host = false) {
   return { fill:host ? 1 : Math.max(0,Math.min(1,seconds/1800)), low:!host && seconds > 0 && seconds <= 60 };
 }
