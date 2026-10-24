@@ -89,7 +89,12 @@ export async function database(path,{method='GET',body,headers={}}={}) {
  try{response=await fetch(`${sbUrl()}/rest/v1/${path}`,{method,headers:{apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(12000)});}
  catch{throw new AppError('서비스 연결을 준비 중이에요. 잠시 후 다시 시도해 주세요.',503);}
  const text=await response.text(); let data; try{data=text?JSON.parse(text):null;}catch{data=null;}
- if(!response.ok) throw new AppError(data?.code==='P0001'?data.message:'요청을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.',data?.code==='P0001'?400:503);
+ if(!response.ok) {
+  const error=new AppError(data?.code==='P0001'?data.message:'요청을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.',data?.code==='P0001'?400:503);
+  error.databaseStatus=response.status;
+  error.databaseCode=/^[A-Z0-9]{5,12}$/.test(data?.code||'')?data.code:'unknown';
+  throw error;
+ }
  return data;
 }
 export const rpc = (name,body) => database(`rpc/${name}`,{method:'POST',body});

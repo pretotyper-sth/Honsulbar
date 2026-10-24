@@ -8,5 +8,8 @@ if(!token)throw new Error('Workflow authentication token unavailable.');
 const response=await fetch('https://honsulbar-app.vercel.app/api/maintenance',{
  headers:{Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(60000),
 });
-if(!response.ok)throw new Error(`Safety maintenance failed: HTTP ${response.status}`);
+if(!response.ok){
+ const details=await response.json().catch(()=>({}));
+ throw new Error(`Safety maintenance failed: HTTP ${response.status}; stage=${details.stage||'unknown'}; database=${details.databaseStatus||'unknown'}/${details.databaseCode||'unknown'}`);
+}
 console.log('Safety notification retries and retention completed.');
