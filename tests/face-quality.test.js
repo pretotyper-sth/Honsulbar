@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {faceQualityError,comparisonError} from '../server/face-quality.js';
+import {faceQualityError,comparisonError,mirrorImage} from '../server/face-quality.js';
 function fixture(){
  const width=320,height=320,data=new Uint8Array(width*height*4);
  for(let y=0;y<height;y++)for(let x=0;x<width;x++){const i=(y*width+x)*4;data[i]=data[i+1]=data[i+2]=100+((x+y)%4)*25;data[i+3]=255;}
@@ -19,10 +19,27 @@ test('quality gates accept measurable frontal features and reject incomplete, oc
  assert.match(faceQualityError(result,image),/가린 곳/);
  ({image,result}=fixture());result.face[0].live=.1;assert.match(faceQualityError(result,image,{capture:true}),/실제 얼굴/);
 });
-test('all three identity comparisons and the server-selected motion must pass',()=>{
+test('profile matching tolerates bounded variation but live continuity and selected motion must pass',()=>{
  const results=[{embedding:[1],scale:.4},{embedding:[2],scale:.4},{embedding:[3],scale:.5}];
  assert.equal(comparisonError(results,()=>.8,'near'),null);
- for(const failed of [0,1,2]){let index=0;assert.match(comparisonError(results,()=>index++===failed ? .2 : .8,'near'),/사진과 얼굴/);}
- assert.match(comparisonError(results,()=>NaN,'near'),/사진과 얼굴/);
+ for(const failed of [0,1,2]){let index=0;assert.match(comparisonError(results,()=>index++===failed ? .2 : .8,'near'),/사진과 얼굴|촬영 중/);}
+ assert.match(comparisonError(results,()=>NaN,'near'),/촬영 중/);
  assert.match(comparisonError(results,()=>.8,'far'),/움직여/);
+});
+
+test('profile decisions require both scores in one orientation, not a different mirror per frame',()=>{
+ const results=[{embedding:[1],scale:.4},{embedding:[2],scale:.4},{embedding:[3],scale:.5}],flipped={embedding:[4]};
+ const score=values=>(a,b)=>values[`${a[0]}:${b[0]}`]??.8;
+ assert.equal(comparisonError(results,score({'1:2':.53,'1:3':.60}),'near'),null);
+ assert.match(comparisonError(results,score({'1:2':.49,'1:3':.9}),'near'),/사진과 얼굴/);
+ assert.equal(comparisonError(results,score({'1:2':.3,'1:3':.3,'4:2':.6,'4:3':.58}),'near',flipped),null);
+ assert.match(comparisonError(results,score({'1:2':.7,'1:3':.3,'4:2':.3,'4:3':.7}),'near',flipped),/사진과 얼굴/);
+ assert.match(comparisonError(results,score({'2:3':.4}),'near',flipped),/촬영 중/);
+});
+test('mirroring preserves pixels and never changes the source image',()=>{
+ const image={width:2,height:1,data:new Uint8Array([1,2,3,255,4,5,6,255])};
+ const flipped=mirrorImage(image);
+ assert.deepEqual([...flipped.data],[4,5,6,255,1,2,3,255]);
+ assert.deepEqual([...mirrorImage(flipped).data],[...image.data]);
+ assert.notEqual(flipped.data,image.data);
 });

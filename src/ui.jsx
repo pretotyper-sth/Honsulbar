@@ -51,18 +51,12 @@ export function FaceConsent({ checked, onChange }) {
 }
 
 export function CameraVerificationStatus({ guide, message, state, elapsed }) {
-  const step={align:1,move:2,compare:3,done:3}[guide.stage];
   const waiting=(guide.stage==='prepare'||guide.stage==='compare')&&(state==='starting'||state==='checking');
-  const hint=guide.stage==='move'?'고개는 정면 그대로 유지해 주세요.':guide.stage==='compare'?(elapsed>=8?'조금 더 걸리고 있어요. 검사 중이에요.':'잠시만 기다려 주세요.'):guide.stage==='ready'?'촬영을 시작하면 움직일 방향을 알려드려요.':guide.stage==='align'?'첫 사진을 자동으로 촬영해요.':'';
-  return <>
-    <div className="camera-stage" aria-label="얼굴 확인 단계">
-      {step ? `${step} / 3 · ${guide.stage==='align'?'정면 촬영':guide.stage==='move'?'거리 조절':guide.stage==='done'?'확인 완료':'얼굴 비교'}` : state==='unavailable'?'카메라 확인':guide.stage==='error'?'다시 촬영해 주세요':waiting?'검사 준비 중':'정면 → 거리 조절 → 얼굴 비교'}
-      {waiting&&<span className="camera-spinner" aria-hidden="true"/>}
-    </div>
-    <div className={`camera-feedback${guide.stage==='error'||state==='unavailable'?' is-error':''}`}>
-      <div role="status" aria-live="polite" aria-atomic="true"><strong>{message}</strong>{hint&&<small>{hint}</small>}</div>
-      {guide.stage==='move'&&<progress max="100" value={guide.progress} aria-label="안내한 거리로 이동한 정도"/>}
-      {waiting&&elapsed>0&&<span className="camera-elapsed" aria-label={`대기 ${elapsed}초`}>{elapsed}초 경과</span>}
-    </div>
-  </>;
+  const hint=guide.stage==='compare'?(elapsed>=8?'조금 더 걸리고 있어요. 잠시만 기다려 주세요.':'움직이지 않아도 돼요.'):guide.stage==='ready'?'밝은 곳에서 얼굴 전체가 보이게 맞춰 주세요.':'';
+  return <div className={`camera-feedback${guide.stage==='error'||state==='unavailable'?' is-error':''}`}>
+    {waiting&&<span className="camera-spinner" aria-hidden="true"/>}
+    <div role="status" aria-live="polite" aria-atomic="true"><strong>{message}</strong>{hint&&<small>{hint}</small>}</div>
+    {guide.stage==='move'&&<progress max="100" value={guide.progress} aria-label="안내한 거리로 이동한 정도"/>}
+    {waiting&&elapsed>=8&&<span className="camera-elapsed">{elapsed}초 경과</span>}
+  </div>;
 }

@@ -1,4 +1,4 @@
-export const FACE_RULES = Object.freeze({boxScore:0.8,meshScore:0.9,similarity:0.62,live:0.5,minSize:0.2,maxYaw:0.4,maxPitch:0.4});
+export const FACE_RULES = Object.freeze({boxScore:0.8,meshScore:0.9,profileSimilarity:0.5,profileMean:0.56,liveSimilarity:0.62,live:0.5,minSize:0.2,maxYaw:0.4,maxPitch:0.4});
 const finitePoint = p => Array.isArray(p) && p.length>=2 && p.every(Number.isFinite);
 const overlap = (a,b) => Math.max(0,Math.min(a[0]+a[2],b[0]+b[2])-Math.max(a[0],b[0]))*Math.max(0,Math.min(a[1]+a[3],b[1]+b[3])-Math.max(a[1],b[1]));
 function patch(image,cx,cy,w,h){
@@ -37,14 +37,26 @@ export function faceQualityError(result,image,{capture=false}={}){
  if(!Array.isArray(face.embedding)||face.embedding.length!==1024||!face.embedding.every(Number.isFinite)||!face.embedding.some(v=>v!==0))return '얼굴을 확인하지 못했어요. 다시 촬영해 주세요.';
  return null;
 }
-export function comparisonError(results,similarity,motion){
+export function comparisonError(results,similarity,motion,alternateProfile=null){
  if(results.length!==3||!['near','far'].includes(motion))return '얼굴 확인을 다시 시작해 주세요.';
  const [photo,first,last]=results;
- for(const [a,b] of [[photo,first],[photo,last],[first,last]]){
-  const score=similarity(a.embedding,b.embedding);
-  if(!Number.isFinite(score)||score<FACE_RULES.similarity)return '사진과 얼굴이 달라요. 본인 사진을 사용해 주세요.';
- }
+ const continuous=similarity(first.embedding,last.embedding);
+ if(!Number.isFinite(continuous)||continuous<FACE_RULES.liveSimilarity)return '촬영 중 얼굴을 확인하기 어려웠어요. 정면을 보고 다시 촬영해 주세요.';
+ // Profile photos vary in light, retouching and mirror orientation; live frames must stay consistent.
+ const matched=[photo,alternateProfile].filter(Boolean).some(reference=>{
+  const scores=[first,last].map(frame=>similarity(reference.embedding,frame.embedding));
+  return scores.every(score=>Number.isFinite(score)&&score>=FACE_RULES.profileSimilarity)&&(scores[0]+scores[1])/2>=FACE_RULES.profileMean;
+ });
+ if(!matched)return '사진과 얼굴을 확인하기 어려워요. 밝은 곳에서 정면으로 다시 촬영해 주세요.';
  const ratio=last.scale/first.scale;
  if(!Number.isFinite(ratio)||(motion==='near'?ratio<1.12||ratio>1.9:ratio>.89||ratio<.53))return '안내에 따라 휴대폰을 움직여 주세요.';
  return null;
+}
+export function mirrorImage(image){
+ const data=new Uint8Array(image.data.length);
+ for(let y=0;y<image.height;y++)for(let x=0;x<image.width;x++){
+  const from=(y*image.width+x)*4,to=(y*image.width+image.width-1-x)*4;
+  data.set(image.data.subarray(from,from+4),to);
+ }
+ return {width:image.width,height:image.height,data};
 }

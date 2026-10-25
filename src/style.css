@@ -471,7 +471,6 @@ html.sheet-open .controls { position:relative; }
 .sheet-camera .face-consent-block { margin-bottom:8px; }
 .verification-camera { width:min(100%,320px); height:clamp(220px,38dvh,320px); aspect-ratio:auto; margin:8px auto 12px; }
 .verification-camera .camera-guide { inset:19% 20%; }
-.camera-stage { position:absolute; top:10px; left:10px; right:10px; display:flex; align-items:center; justify-content:center; gap:8px; border-radius:12px; padding:8px; color:#fff; background:#191f28bd; font-size:12px; font-weight:600; }
 .camera-feedback { position:absolute; bottom:0; left:0; right:0; padding:28px 12px 12px; background:linear-gradient(transparent,#101827ed 30%); color:#fff; text-align:center; }
 .camera-feedback strong { display:block; font-size:15px; line-height:1.5; word-break:keep-all; }
 .camera-feedback small { display:block; margin-top:3px; font-size:11px; line-height:1.5; color:#e5e8eb; word-break:keep-all; }

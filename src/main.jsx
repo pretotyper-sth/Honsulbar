@@ -271,7 +271,7 @@ function App() {
       verificationAttempt.current++; verificationController.current?.abort(); captureLock.current=false; setPhotoProof(null); setDraftVerified(false); setVerificationGuide({stage:'ready',progress:0});
       if (verificationState==='checking') setVerificationState('ready');
       setVerificationMessage('동의 해제 시 다시 촬영해야 해요.');
-    } else if (verificationState==='verified' && !photoProof) { setVerificationState('ready'); setVerificationGuide({stage:'ready',progress:0}); setVerificationMessage('정면을 보고 움직임 안내를 따라 주세요.'); }
+    } else if (verificationState==='verified' && !photoProof) { setVerificationState('ready'); setVerificationGuide({stage:'ready',progress:0}); setVerificationMessage('준비되면 촬영 시작을 눌러 주세요.'); }
   }
   const [photoCheck, setPhotoCheck] = useState('idle');
   const [devSubscription, setDevSubscription] = useState(null);
@@ -704,7 +704,7 @@ function App() {
       cancelAnimationFrame(cameraDraw.current);
       cameraDraw.current = requestAnimationFrame(paintPreview);
       loadFaceModel().then(() => {
-        if (!cancelled) { setVerificationState('ready'); setVerificationGuide({stage:'ready',progress:0}); setVerificationMessage('정면을 보고 움직임 안내를 따라 주세요.'); }
+        if (!cancelled) { setVerificationState('ready'); setVerificationGuide({stage:'ready',progress:0}); setVerificationMessage('준비되면 촬영 시작을 눌러 주세요.'); }
       }).catch(() => {
         if (!cancelled) { setVerificationState('unavailable'); setVerificationMessage('얼굴 확인을 준비하지 못했어요. 다시 시도해 주세요.'); }
       });
@@ -1334,7 +1334,7 @@ function App() {
           onProgress:(message,guide)=>{if(current()){setVerificationMessage(message);setVerificationGuide(guide);}}});
         if (!current()) return null;
         setVerificationGuide({stage:'compare',progress:0});setVerificationStartedAt(Date.now());
-        setVerificationMessage('촬영 완료! 사진 속 얼굴과 비교 중이에요.');
+        setVerificationMessage('촬영했어요. 사진과 얼굴을 확인하고 있어요.');
         return run('photo-verify',{photo,frames,challengeId:challenge.id,consent:true},{},{signal:controller.signal});
       });
       if (!current()) return;

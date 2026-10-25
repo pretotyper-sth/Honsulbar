@@ -8,7 +8,7 @@ import {fileURLToPath} from 'node:url';
 setWasmPaths(fileURLToPath(new URL('./vendor/',import.meta.url)));
 setThreadsCount(1);
 import humanModule from './vendor/human-cpu.cjs';
-import {faceQualityError,comparisonError} from './face-quality.js';
+import {faceQualityError,comparisonError,mirrorImage} from './face-quality.js';
 class AppError extends Error {}
 const hash=value=>createHash('sha256').update(value).digest('hex');
 tf.io.registerLoadRouter(url=>typeof url==='string'&&url.startsWith(new URL('./face-models/',import.meta.url).href)?{load:async()=>{
@@ -57,9 +57,14 @@ export async function verifyImages(profile,frames,motion){
    try{results.push(await analyzeFace(image,index>0));}
    catch(error){if(error instanceof AppError)throw new AppError(`${index===0?'등록 사진':'촬영 사진'}: ${error.message}`);throw error;}
   }
-  const error=comparisonError(results,(a,b)=>human.match.similarity(a,b),motion);
+  let alternateProfile=null;
+  const mirrored=mirrorImage(images[0]);images.push(mirrored);
+  try{alternateProfile=await analyzeFace(mirrored,false);}
+  catch(error){if(!(error instanceof AppError))throw error;}
+  const error=comparisonError(results,(a,b)=>human.match.similarity(a,b),motion,alternateProfile);
+  if(alternateProfile)results.push(alternateProfile);
   if(error)throw new AppError(error);
-  return {model:'human-3.3.6-face-v2',photoDigest:hash(profile)};
+  return {model:'human-3.3.6-face-v3',photoDigest:hash(profile)};
  }finally{
   for(const image of images)image.data.fill(0);
   for(const result of results)result.embedding.fill(0);

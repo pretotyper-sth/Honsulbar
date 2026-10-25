@@ -11,7 +11,7 @@ export async function captureFacePair({video,canvas,model,motion,framed,onProgre
  const frames=[];
  const near=motion==='near';
  if(!['near','far'].includes(motion))throw new Error('얼굴 확인을 다시 시작해 주세요.');
- const instruction=near?'얼굴을 화면에 조금 더 가까이 해 주세요.':'얼굴을 화면에서 조금 더 멀리해 주세요.';
+ const instruction=near?'고개는 그대로, 휴대폰을 조금 가까이 가져와 주세요.':'고개는 그대로, 휴대폰을 조금 멀리해 주세요.';
  const report=(message,stage,progress=0)=>onProgress(message,{stage,motion,progress});
  const check=()=>{if(!current())throw new Error('검사가 취소됐어요.');if(!video.videoWidth||video.readyState<2)throw new Error('카메라를 다시 열어 주세요.');};
  const sample=async()=>{
@@ -29,12 +29,12 @@ export async function captureFacePair({video,canvas,model,motion,framed,onProgre
  };
  try{
   const alignStarted=now();let first=0,previous=0,lastIssue='얼굴을 정면으로 맞춰 주세요.';
-  report('정면을 보고 잠시 멈춰 주세요.','align');
+  report('카메라를 정면으로 보고 가만히 있어 주세요.','align');
   while(now()-alignStarted<8000){
    const sampleResult=await sample();
    if(sampleResult.error){previous=0;lastIssue=sampleResult.error;report(lastIssue,'align');}
    else if(previous&&Math.abs(sampleResult.size/previous-1)<.08){first=sampleResult.size;frames.push(canvas.toDataURL('image/jpeg',.88));break;}
-   else {previous=sampleResult.size;report('정면을 보고 잠시 멈춰 주세요.','align');}
+   else {previous=sampleResult.size;report('카메라를 정면으로 보고 가만히 있어 주세요.','align');}
    await wait(220);
   }
   if(!first)throw new Error(lastIssue);
@@ -50,7 +50,7 @@ export async function captureFacePair({video,canvas,model,motion,framed,onProgre
    const tooMuch=near?ratio>=1.75:ratio<=.58;
    stable=moved?stable+1:0;
    const progress=Math.max(0,Math.min(100,Math.round((near?ratio-1:1-ratio)/(near?.16:.15)*100)));
-   const message=moved?'좋아요. 그대로 잠시 멈춰 주세요.':wrong?`반대 방향이에요. ${instruction}`:tooMuch?(near?'너무 가까워요. 조금만 뒤로 가 주세요.':'너무 멀어요. 조금만 다가와 주세요.'):instruction;
+   const message=moved?'좋아요. 잠시만 그대로 있어 주세요.':wrong?`반대 방향이에요. ${instruction}`:tooMuch?(near?'너무 가까워요. 조금만 뒤로 가 주세요.':'너무 멀어요. 조금만 다가와 주세요.'):instruction;
    report(message,'move',tooMuch?0:progress);
    if(stable>=2&&now()-started>=500){frames.push(canvas.toDataURL('image/jpeg',.88));return frames;}
   }
