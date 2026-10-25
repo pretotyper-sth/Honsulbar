@@ -36,37 +36,18 @@ export function BottomSheet({ open, onClose, children, className = '', ariaLabel
 }
 
 export function FaceConsent({ checked, onChange }) {
-  const dialog = React.useRef(null);
-  const titleId = React.useId();
   const descriptionId = React.useId();
-  const showDetails = () => dialog.current?.showModal();
-  const closeDetails = () => dialog.current?.close();
-  return <>
-    <div className="face-consent-row">
-      <label className="face-consent">
-        <input type="checkbox" checked={checked} aria-haspopup="dialog" onChange={() => checked ? onChange(false) : showDetails()}/>
-        <span>[필수] 사진 도용 방지용 촬영본·얼굴 비교 정보 처리 동의</span>
-      </label>
-      <button type="button" className="face-consent-more" aria-label="얼굴 정보 처리 동의 내용 보기" aria-haspopup="dialog" onClick={showDetails}>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
-      </button>
+  return <div className="face-consent-block">
+    <label className="face-consent">
+      <input type="checkbox" checked={checked} aria-describedby={descriptionId} onChange={event=>onChange(event.target.checked)}/>
+      <span>[필수] 사진 도용 방지용 촬영본·얼굴 비교 정보 처리 동의</span>
+    </label>
+    <div id={descriptionId} className="face-consent-info">
+      <p>처리 항목: 촬영본·얼굴 비교 정보(민감정보)</p>
+      <p>서버 검사 중에만 처리하고 검사 후 즉시 삭제해요.</p>
+      <p>거부할 수 있으며, 미동의 시 사진 등록·입장이 제한돼요.</p>
     </div>
-    <dialog ref={dialog} className="face-consent-dialog" aria-labelledby={titleId} aria-describedby={descriptionId}>
-      <h2 id={titleId}>얼굴 정보 처리 동의</h2>
-      <div id={descriptionId}>
-        <p className="face-consent-intro">사진 도용을 막기 위해 얼굴을 비교해요.</p>
-        <dl>
-          <div><dt>처리 항목</dt><dd>촬영본·얼굴 비교 정보(민감정보)</dd></div>
-          <div><dt>이용 기간</dt><dd>서버에서 검사하는 동안만 처리하고, 검사 후 즉시 삭제해요.</dd></div>
-        </dl>
-        <p className="face-consent-refusal">동의를 거부할 수 있어요. 미동의 시 사진 등록과 입장이 제한돼요.</p>
-      </div>
-      <div className="face-consent-actions">
-        <Button variant="weak" onClick={closeDetails}>{checked ? '닫기' : '나중에'}</Button>
-        {!checked && <Button onClick={() => { onChange(true); closeDetails(); }}>동의하기</Button>}
-      </div>
-    </dialog>
-  </>;
+  </div>;
 }
 
 export function CameraVerificationStatus({ guide, message, state, elapsed }) {

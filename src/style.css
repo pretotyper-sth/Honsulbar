@@ -459,26 +459,16 @@ html.sheet-open .controls { position:relative; }
 
 .protected-room .room-select{opacity:.45}.protected-room-note{margin:0 20px 14px;font-size:12px;color:#6b7684}
 
- .face-consent-row { display:flex; align-items:center; gap:4px; margin:4px 0 12px; }
-.face-consent { display:flex; flex:1; align-items:flex-start; gap:8px; min-width:0; padding:8px 0; color:#4e5968; font-size:12px; line-height:1.5; word-break:keep-all; cursor:pointer; }
+.face-consent-block { margin:4px 0 12px; }
+.face-consent { display:flex; align-items:flex-start; gap:8px; min-width:0; padding:8px 0; color:#4e5968; font-size:12px; line-height:1.5; word-break:keep-all; cursor:pointer; }
 .face-consent input { flex-shrink:0; width:16px; height:16px; margin:1px 0 0; accent-color:#3182f6; }
-.face-consent-more { display:grid; place-items:center; flex:0 0 40px; width:40px; height:44px; padding:0; border:0; background:none; color:#8b95a1; cursor:pointer; }
-.face-consent-dialog { box-sizing:border-box; width:calc(100% - 40px); max-width:360px; max-height:82dvh; overflow:auto; overscroll-behavior:contain; padding:24px; border:0; border-radius:24px; color:#333d4b; background:#fff; box-shadow:0 12px 40px #0002; }
-.face-consent-dialog::backdrop { background:rgb(0 0 0 / 45%); }
-.face-consent-dialog h2 { margin:0 0 12px; font-size:20px; line-height:1.4; }
-.face-consent-dialog p,.face-consent-dialog dl { font-size:13px; line-height:1.6; word-break:keep-all; }
-.face-consent-intro { margin:0 0 18px; }
-.face-consent-dialog dl { display:grid; gap:12px; margin:0; }
-.face-consent-dialog dl>div { display:grid; grid-template-columns:62px 1fr; gap:8px; }
-.face-consent-dialog dt { color:#6b7684; }
-.face-consent-dialog dd { margin:0; }
-.face-consent-refusal { margin:18px 0 22px; color:#6b7684; }
-.face-consent-actions { display:flex; gap:8px; }
-.face-consent-actions>button { flex:1; }
+.face-consent-info { padding-left:24px; color:#6b7684; font-size:11px; line-height:1.5; word-break:keep-all; }
+.face-consent-info p { margin:0 0 3px; }
+
 
 .sheet-camera { padding-top:16px; }
 .sheet-camera h2 { font-size:22px; margin-bottom:8px; }
-.sheet-camera .face-consent-row { margin-bottom:8px; }
+.sheet-camera .face-consent-block { margin-bottom:8px; }
 .verification-camera { width:min(100%,320px); height:clamp(220px,38dvh,320px); aspect-ratio:auto; margin:8px auto 12px; }
 .verification-camera .camera-guide { inset:19% 20%; }
 .camera-stage { position:absolute; top:10px; left:10px; right:10px; display:flex; align-items:center; justify-content:center; gap:8px; border-radius:12px; padding:8px; color:#fff; background:#191f28bd; font-size:12px; font-weight:600; }
