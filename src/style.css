@@ -479,7 +479,7 @@ html.sheet-open .controls { position:relative; }
 .camera-feedback progress::-webkit-progress-bar { background:#ffffff40; }
 .camera-feedback progress::-webkit-progress-value { background:#6aa9ff; transition:width .2s; }
 .camera-feedback progress::-moz-progress-bar { background:#6aa9ff; }
-.camera-spinner { width:12px; height:12px; border:2px solid #ffffff55; border-top-color:#fff; border-radius:50%; animation:camera-spin .8s linear infinite; }
+.camera-spinner { display:inline-block; margin-bottom:6px; width:12px; height:12px; border:2px solid #ffffff55; border-top-color:#fff; border-radius:50%; animation:camera-spin .8s linear infinite; }
 .camera-elapsed { display:block; margin-top:4px; font-size:11px; color:#d1d6db; }
 .camera-actions { position:sticky; bottom:-24px; background:#fff; padding:6px 0 0; z-index:2; }
 .camera-cancel { display:block; margin:4px auto 0; padding:10px 20px; background:none; color:#6b7684; font-size:13px; }
