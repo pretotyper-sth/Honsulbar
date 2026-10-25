@@ -45,7 +45,8 @@ test('live entry rejects missing consent and ordinary users cannot read administ
  try {
   const res=response();await handler({method:'POST',headers:{authorization:'Bearer '+'t'.repeat(43)},body:{action:'enter',data:{region:'서울',number:1}}},res);
   assert.equal(res.statusCode,403);assert.match(res.body.error,/동의/);
-  const admin=response();await handler({method:'POST',headers:{authorization:'Bearer ordinary-token'},body:{action:'admin-evidence',id}},admin);
+  const now=Math.floor(Date.now()/1000),ordinary='header.'+Buffer.from(JSON.stringify({iat:now,exp:now+3600})).toString('base64url')+'.signature';
+  const admin=response();await handler({method:'POST',headers:{authorization:'Bearer '+ordinary},body:{action:'admin-evidence',id}},admin);
   assert.equal(admin.statusCode,403);
  } finally {
   global.fetch=originalFetch;for(const key of Object.keys(process.env))if(!(key in previous))delete process.env[key];Object.assign(process.env,previous);

@@ -30,9 +30,11 @@ test('admin API still rejects unverified and unlisted accounts',async()=>{
  try{
   for(const [email,confirmed,allowed] of [['operator@example.com',true,true],['operator@example.com',false,false],['other@example.com',true,false]]){
    globalThis.fetch=async()=>({ok:true,json:async()=>({email,email_confirmed_at:confirmed?'2026-10-16':null})});
-   const request=admin({headers:{authorization:'Bearer provider-token'}});
+   const now=Math.floor(Date.now()/1000);
+   const token='header.'+Buffer.from(JSON.stringify({iat:now,exp:now+3600})).toString('base64url')+'.signature';
+   const request=admin({headers:{authorization:'Bearer '+token}});
    if(allowed)assert.equal(await request,email);else await assert.rejects(request,/관리자 권한/);
   }
-  await assert.rejects(admin({headers:{}}),/관리자 로그인/);
+  await assert.rejects(admin({headers:{}}),/다시 로그인/);
  }finally{globalThis.fetch=original;if(previous===undefined)delete process.env.ADMIN_EMAILS;else process.env.ADMIN_EMAILS=previous;}
 });

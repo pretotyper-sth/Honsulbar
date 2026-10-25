@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { API_BASE, getConfig } from './api';
+import {adminSessionExpiresAt} from './admin-session';
 
 const TOKEN_KEY = 'honsulbar:admin-token:v1';
+const RECOVERY_KEY = 'honsulbar:admin-recovery:v1';
 const STATUS = { pending: '대기', reviewing: '확인 중', answered: '답변 완료', closed: '종료' };
 const DAY_LABELS = { signup: '가입', login: '로그인', enter: '입장', leave: '퇴장', waitlist: '대기', purchase: '충전', subscribe: '구독', 'ad-claim': '광고', ticket: '문의', report: '신고', restrict: '제재' };
 const styles = {
@@ -17,15 +19,23 @@ const styles = {
 function readToken() {
   const hash = new URLSearchParams(location.hash.slice(1));
   const fromLink = hash.get('access_token');
-  if (fromLink) {
-    try { sessionStorage.setItem(TOKEN_KEY, fromLink); } catch {}
-    history.replaceState(null, '', `${location.pathname}?admin=1`);
-    return fromLink;
-  }
-  try { return sessionStorage.getItem(TOKEN_KEY); } catch { return null; }
+  try {
+    if(fromLink){
+      history.replaceState(null,'',`${location.pathname}?admin=1`);
+      if(adminSessionExpiresAt(fromLink)<=Date.now()){sessionStorage.removeItem(TOKEN_KEY);sessionStorage.removeItem(RECOVERY_KEY);return null;}
+      sessionStorage.setItem(TOKEN_KEY,fromLink);
+      hash.get('type')==='recovery'?sessionStorage.setItem(RECOVERY_KEY,'1'):sessionStorage.removeItem(RECOVERY_KEY);
+      return fromLink;
+    }
+    const saved=sessionStorage.getItem(TOKEN_KEY);
+    if(saved&&adminSessionExpiresAt(saved)>Date.now())return saved;
+    sessionStorage.removeItem(TOKEN_KEY);sessionStorage.removeItem(RECOVERY_KEY);
+  }catch{}
+  return null;
 }
 
 async function adminCall(token, action, data = {}) {
+  if(adminSessionExpiresAt(token)<=Date.now()){const error=new Error('로그인한 지 30분이 지났어요. 다시 로그인해 주세요.');error.status=401;throw error;}
   const response = await fetch(`${API_BASE}/api/service`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ action, ...data }) });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) { const error = new Error(body.error || '요청을 완료하지 못했어요.'); error.status = response.status; throw error; }
@@ -70,6 +80,8 @@ export function AdminPage() {
   const [token, setToken] = useState(readToken);
   const [email, setEmail] = useState('pretotyper.sth@gmail.com');
   const [password, setPassword] = useState('');
+  const [passwordAgain,setPasswordAgain]=useState('');
+  const [recovery,setRecovery]=useState(()=>{try{return sessionStorage.getItem(RECOVERY_KEY)==='1';}catch{return false;}});
   const [loginMode, setLoginMode] = useState('password');
   const [loggingIn, setLoggingIn] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -83,12 +95,19 @@ export function AdminPage() {
   const [liveStats,setLiveStats] = useState(null);
   const [evidence,setEvidence] = useState({});
   useEffect(()=>{
-    if(!token)return;
+    if(!token||recovery)return;
     let stopped=false;
     const refresh=()=>{if(document.hidden)return;adminCall(token,'admin-alert-state').then(r=>{if(!stopped)setLiveStats(r.result);}).catch(()=>{});};
     adminCall(token,'admin-health').then(r=>{if(!stopped)setHealth(r.result);}).catch(()=>{});
     const timer=setInterval(refresh,15000);refresh();
     return()=>{stopped=true;clearInterval(timer);};
+  },[token,recovery]);
+  useEffect(()=>{
+    if(!token)return;
+    const expire=()=>{if(adminSessionExpiresAt(token)>Date.now())return;clearLogin();setMessage('로그인한 지 30분이 지났어요. 다시 로그인해 주세요.');};
+    const timer=setTimeout(expire,Math.max(0,adminSessionExpiresAt(token)-Date.now()));
+    window.addEventListener('focus',expire);document.addEventListener('visibilitychange',expire);
+    return()=>{clearTimeout(timer);window.removeEventListener('focus',expire);document.removeEventListener('visibilitychange',expire);};
   },[token]);
   useEffect(()=>()=>{Object.values(evidence).forEach(url=>URL.revokeObjectURL(url));},[evidence]);
   async function playEvidence(ticket){
@@ -105,15 +124,15 @@ export function AdminPage() {
   }
 
   async function load() {
-    if (!token) return;
+    if (!token||recovery) return;
     setLoading(true);
     try {setData(await adminCall(token,'admin-list',{status,page}));setMessage('');}
     catch(error){
-      if(error.status===401||error.status===403){try{sessionStorage.removeItem(TOKEN_KEY);}catch{}setToken(null);}
+      if(error.status===401||error.status===403)clearLogin();
       setData(null);setMessage(error.message);
     }finally{setLoading(false);}
   }
-  useEffect(()=>{load();},[token,status,page]);
+  useEffect(()=>{load();},[token,status,page,recovery]);
   async function passwordLogin(event) {
     event.preventDefault();
     if(loggingIn||!email.trim()||!password)return;
@@ -128,25 +147,45 @@ export function AdminPage() {
       candidate=auth.access_token;
       await adminCall(candidate,'admin-session');
       try{sessionStorage.setItem(TOKEN_KEY,candidate);}catch{}
-      setPassword('');setToken(candidate);setData(null);
+      try{sessionStorage.removeItem(RECOVERY_KEY);}catch{}
+      setRecovery(false);setPassword('');setToken(candidate);setData(null);
     }catch(error){
       if(candidate&&config)await fetch(`${config.supabaseUrl}/auth/v1/logout?scope=local`,{method:'POST',headers:{apikey:config.supabaseKey,Authorization:`Bearer ${candidate}`}}).catch(()=>{});
       setMessage(error.message||'로그인하지 못했어요. 다시 시도해 주세요.');
     }finally{setLoggingIn(false);}
   }
+  function clearLogin(){
+    try{sessionStorage.removeItem(TOKEN_KEY);sessionStorage.removeItem(RECOVERY_KEY);}catch{}
+    setToken(null);setRecovery(false);setData(null);setEvidence({});setPassword('');setPasswordAgain('');setHealth(null);setLiveStats(null);
+  }
   async function logout(){
-    const current=token;
-    try{sessionStorage.removeItem(TOKEN_KEY);}catch{}
-    setToken(null);setData(null);setEvidence({});setMessage('');setPassword('');
+    const current=token;clearLogin();setMessage('');
     const config=await getConfig().catch(()=>null);
     if(config&&current)await fetch(`${config.supabaseUrl}/auth/v1/logout?scope=local`,{method:'POST',headers:{apikey:config.supabaseKey,Authorization:`Bearer ${current}`}}).catch(()=>{});
   }
-  async function sendLink(){
+  async function sendLink(reset=false){
+    if(loggingIn||!email.trim())return;
+    setLoggingIn(true);setMessage('');
     try{
       const config=await getConfig(),redirect=`${location.origin}/?admin=1`;
-      const response=await fetch(`${config.supabaseUrl}/auth/v1/otp?redirect_to=${encodeURIComponent(redirect)}`,{method:'POST',headers:{apikey:config.supabaseKey,'Content-Type':'application/json'},body:JSON.stringify({email:email.trim(),create_user:false})});
-      setMessage(response.ok?'로그인 링크를 메일로 보냈어요. 메일의 링크를 이 기기에서 열어 주세요.':'로그인 링크를 보내지 못했어요.');
-    }catch{setMessage('로그인 링크를 보내지 못했어요.');}
+      const response=await fetch(`${config.supabaseUrl}/auth/v1/${reset?'recover':'otp'}?redirect_to=${encodeURIComponent(redirect)}`,{method:'POST',headers:{apikey:config.supabaseKey,'Content-Type':'application/json'},body:JSON.stringify({email:email.trim(),...(!reset?{create_user:false}:{})})});
+      if(!response.ok)throw new Error(response.status===429?'메일 요청이 많아요. 잠시 후 다시 시도해 주세요.':'메일을 보내지 못했어요. 잠시 후 다시 시도해 주세요.');
+      setMessage(reset?'재설정 메일을 요청했어요. 메일 링크에서 새 비밀번호를 등록해 주세요.':'로그인 링크를 요청했어요. 메일의 링크를 이 기기에서 열어 주세요.');
+    }catch(error){setMessage(error.message||'메일을 보내지 못했어요.');}
+    finally{setLoggingIn(false);}
+  }
+  async function savePassword(event){
+    event.preventDefault();if(loggingIn)return;
+    if(password.length<8||password!==passwordAgain){setMessage('8자 이상으로 입력하고 두 비밀번호를 맞춰 주세요.');return;}
+    setLoggingIn(true);setMessage('');
+    try{
+      await adminCall(token,'admin-session');
+      const config=await getConfig();
+      const response=await fetch(`${config.supabaseUrl}/auth/v1/user`,{method:'PUT',headers:{apikey:config.supabaseKey,Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({password})});
+      if(!response.ok)throw new Error('저장하지 못했어요. 비밀번호 보안 요건을 확인하거나 재설정 메일을 다시 받아 주세요.');
+      await logout();setLoginMode('password');setMessage('새 비밀번호를 저장했어요. 다시 로그인해 주세요.');
+    }catch(error){setMessage(error.message);}
+    finally{setLoggingIn(false);}
   }
   async function reply(ticket){
     const answer=(answers[ticket.id]??ticket.answer??'').trim();if(!answer)return;
@@ -164,15 +203,24 @@ export function AdminPage() {
     }catch(error){setMessage(error.message);}
   }
 
+  if(token&&recovery)return <main style={styles.page}>
+    <h1>새 비밀번호 등록</h1><p style={styles.meta}>8자 이상으로 설정해 주세요. 등록 후 다시 로그인해요.</p>
+    <form onSubmit={savePassword}>
+      <label>새 비밀번호<input aria-label="새 비밀번호" style={styles.input} type="password" autoComplete="new-password" minLength={8} required value={password} onChange={e=>setPassword(e.target.value)}/></label>
+      <label>새 비밀번호 확인<input aria-label="새 비밀번호 확인" style={{...styles.input,marginTop:8}} type="password" autoComplete="new-password" minLength={8} required value={passwordAgain} onChange={e=>setPasswordAgain(e.target.value)}/></label>
+      <p><button type="submit" style={styles.button} disabled={loggingIn||password.length<8||password!==passwordAgain}>{loggingIn?'저장 중…':'비밀번호 등록'}</button></p>
+    </form><button style={styles.weak} onClick={logout}>취소</button>{message&&<p role="alert" style={styles.meta}>{message}</p>}
+  </main>;
   if (!token) return <main style={styles.page}>
     <h1>혼술바 운영 관리</h1>
-    <p style={styles.meta}>{loginMode==='password'?'운영자 이메일과 비밀번호로 로그인해요.':'운영자 이메일로 로그인 링크를 받아요.'}</p>
+    <p style={styles.meta}>{loginMode==='password'?'로그인 후 30분 동안 유지돼요.':'운영자 이메일로 로그인 링크를 받아요.'}</p>
     <form onSubmit={passwordLogin}>
       <label>이메일<input aria-label="관리자 이메일" style={{...styles.input,margin:'6px 0 14px'}} value={email} onChange={e=>setEmail(e.target.value)} type="email" autoComplete="username" required /></label>
       {loginMode==='password'&&<label>비밀번호<input aria-label="관리자 비밀번호" style={{...styles.input,marginTop:6}} value={password} onChange={e=>setPassword(e.target.value)} type="password" autoComplete="current-password" required /></label>}
-      <p>{loginMode==='password'?<button style={styles.button} type="submit" disabled={loggingIn||!password}>{loggingIn?'로그인 중…':'로그인'}</button>:<button type="button" style={styles.button} onClick={sendLink}>로그인 링크 받기</button>}</p>
+      <p>{loginMode==='password'?<button style={styles.button} type="submit" disabled={loggingIn||!password}>{loggingIn?'로그인 중…':'로그인'}</button>:<button type="button" style={styles.button} disabled={loggingIn||!email.trim()} onClick={()=>sendLink(false)}>{loggingIn?'요청 중…':'로그인 링크 받기'}</button>}</p>
     </form>
     <button style={styles.weak} onClick={()=>{setLoginMode(loginMode==='password'?'link':'password');setMessage('');setPassword('');}}>{loginMode==='password'?'이메일 링크로 로그인':'비밀번호로 로그인'}</button>
+    <p><button style={styles.weak} disabled={loggingIn||!email.trim()} onClick={()=>sendLink(true)}>비밀번호 재설정</button></p>
     {message&&<p role="alert" style={styles.meta}>{message}</p>}
   </main>;
 
@@ -182,7 +230,7 @@ export function AdminPage() {
   return <main style={styles.page}>
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
       <h1>문의·신고</h1>
-      <button style={styles.weak} onClick={logout}>로그아웃</button>
+      <div style={{display:'flex',gap:8,alignItems:'center'}}><button style={styles.weak} onClick={()=>{setPassword('');setPasswordAgain('');setMessage('');setRecovery(true);try{sessionStorage.setItem(RECOVERY_KEY,'1');}catch{}}}>비밀번호 변경</button><button style={styles.weak} onClick={logout}>로그아웃</button></div>
     </div>
     {data?.stats && <section style={{ ...styles.card, background: stats.overdue ? '#fff5f5' : '#f9fafb' }}>
       <p style={{ margin: 0, fontWeight: 700 }}>미처리 신고 {stats.openReports ?? 0} · 미처리 문의 {stats.openInquiries ?? 0} · <span style={{ color: stats.overdue ? '#de3412' : undefined }}>24시간 초과 {stats.overdue ?? 0}</span> · 제한 중 {stats.banned ?? 0}</p>

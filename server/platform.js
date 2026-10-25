@@ -1,3 +1,4 @@
+import {adminSessionExpiresAt} from '../src/admin-session.js';
 import {emailReady as notificationEmailReady, sendNotificationEmail} from './notification-email.js';
 import https from 'node:https';
 import { createHash, createHmac, createDecipheriv, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -107,7 +108,7 @@ export async function authenticate(req) {
 }
 export async function admin(req) {
  const token=(req.headers.authorization||'').replace(/^Bearer /,'');
- if(!token) throw new AppError('관리자 로그인이 필요해요.',401);
+ if(!token||adminSessionExpiresAt(token)<=Date.now()) throw new AppError('로그인한 지 30분이 지났어요. 다시 로그인해 주세요.',401);
  const key=process.env.SUPABASE_SERVICE_ROLE_KEY;
  const r=await fetch(`${sbUrl()}/auth/v1/user`,{headers:{apikey:key,Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(10000)});
  const user=await r.json();
