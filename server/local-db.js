@@ -60,7 +60,7 @@ async function seed(db) {
       : 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wAAAAD/wAALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEAMQAAAB/wA=';
     const login = await db.query('select hb_login($1) as id', [guest.key]);
     const id = login.rows[0].id;
-    await db.query("insert into hb_photo_checks(token_hash,member_id,photo_digest) values(encode(sha256(convert_to('local-seed:'||$1::text,'UTF8')),'hex'),$1,encode(sha256(convert_to($2,'UTF8')),'hex')) on conflict do nothing",[id,photo]);
+    await db.query("insert into hb_photo_checks(token_hash,member_id,photo_digest) values(encode(sha256(convert_to('local-seed:'||$1::text,'UTF8')),'hex'),$1::uuid,encode(sha256(convert_to($2,'UTF8')),'hex')) on conflict do nothing",[id,photo]);
     await db.query('select hb_action($1,$2,$3::jsonb)', [id, 'profile', JSON.stringify({
       nickname: guest.nick, gender: guest.gender, photo, photoProof: `local-seed:${id}`, faceConsent: true,
     })]);
