@@ -73,7 +73,9 @@ function faceIsWellFramed(face, width, height) {
   const centerX = (box.left + box.width / 2) / width;
   const centerY = (box.top + box.height / 2) / height;
   const size = Math.min(box.width / width, box.height / height);
-  return centerX > 0.2 && centerX < 0.8 && centerY > 0.2 && centerY < 0.8 && size > 0.18 && size < 0.82;
+  const features = (face.landmarks || []).slice(0, 4);
+  return features.length === 4 && features.every(point => Array.isArray(point) && point.slice(0, 2).length === 2 && point.slice(0, 2).every(Number.isFinite) && point[0] >= 1 && point[0] < width - 1 && point[1] >= 1 && point[1] < height - 1)
+    && centerX > 0.1 && centerX < 0.9 && centerY > 0.1 && centerY < 0.9 && size > 0.18 && size < 1.15;
 }
 function faceProbability(face) {
   const raw = face?.probability;
@@ -271,7 +273,7 @@ function App() {
       verificationAttempt.current++; verificationController.current?.abort(); captureLock.current=false; setPhotoProof(null); setDraftVerified(false); setVerificationGuide({stage:'ready',progress:0});
       if (verificationState==='checking') setVerificationState('ready');
       setVerificationMessage('동의 해제 시 다시 촬영해야 해요.');
-    } else if (verificationState==='verified' && !photoProof) { setVerificationState('ready'); setVerificationGuide({stage:'ready',progress:0}); setVerificationMessage('준비되면 촬영 시작을 눌러 주세요.'); }
+    } else if (verificationState==='verified' && !photoProof) { setVerificationState('ready'); setVerificationGuide({stage:'ready',progress:0}); setVerificationMessage('준비되면 촬영을 시작해 주세요.'); }
   }
   const [photoCheck, setPhotoCheck] = useState('idle');
   const [devSubscription, setDevSubscription] = useState(null);
@@ -704,9 +706,9 @@ function App() {
       cancelAnimationFrame(cameraDraw.current);
       cameraDraw.current = requestAnimationFrame(paintPreview);
       loadFaceModel().then(() => {
-        if (!cancelled) { setVerificationState('ready'); setVerificationGuide({stage:'ready',progress:0}); setVerificationMessage('준비되면 촬영 시작을 눌러 주세요.'); }
+        if (!cancelled) { setVerificationState('ready'); setVerificationGuide({stage:'ready',progress:0}); setVerificationMessage('준비되면 촬영을 시작해 주세요.'); }
       }).catch(() => {
-        if (!cancelled) { setVerificationState('unavailable'); setVerificationMessage('얼굴 확인을 준비하지 못했어요. 다시 시도해 주세요.'); }
+        if (!cancelled) { setVerificationState('unavailable'); setVerificationMessage('준비하지 못했어요. 다시 열어 주세요.'); }
       });
     };
     const startCamera = () => navigator.mediaDevices.getUserMedia({
@@ -1334,21 +1336,21 @@ function App() {
           onProgress:(message,guide)=>{if(current()){setVerificationMessage(message);setVerificationGuide(guide);}}});
         if (!current()) return null;
         setVerificationGuide({stage:'compare',progress:0});setVerificationStartedAt(Date.now());
-        setVerificationMessage('촬영했어요. 사진과 얼굴을 확인하고 있어요.');
+        setVerificationMessage('등록 사진과 비교하고 있어요.');
         return run('photo-verify',{photo,frames,challengeId:challenge.id,consent:true},{},{signal:controller.signal});
       });
       if (!current()) return;
-      if (!result?.proof) throw new Error('얼굴을 확인하지 못했어요. 다시 촬영해 주세요.');
+      if (!result?.proof) throw new Error('잘 안 보여요. 밝은 곳에서 찍어 주세요.');
       setPhotoProof(result.proof);setDraftVerified(true);setVerificationGuide({stage:'done',progress:100});setVerificationState('verified');setVerificationMessage('얼굴을 확인했어요.');
     } catch (error) {
-      if (current()) {setVerificationGuide({stage:'error',progress:0});setVerificationState('ready');setVerificationMessage(error.message||'얼굴 검사에 실패했어요. 다시 시도해 주세요.');}
+      if (current()) {setVerificationGuide({stage:'error',progress:0});setVerificationState('ready');setVerificationMessage(error.message||'검사를 마치지 못했어요. 다시 해주세요.');}
     } finally { frames.fill(null);if(captureLock.current===attempt)captureLock.current=false;if(verificationController.current===controller)verificationController.current=null; }
   }
 
   function cancelVerification() {
     verificationAttempt.current++;verificationController.current?.abort();captureLock.current=false;
     setVerificationState('ready');setVerificationGuide({stage:'ready',progress:0});
-    setVerificationMessage('중단했어요. 준비되면 다시 촬영해 주세요.');
+    setVerificationMessage('중단했어요. 다시 촬영해 주세요.');
   }
 
   if (screen === 'onboarding') return <><div className="ait-gnb-fill" aria-hidden="true"/><main className="app onboarding-screen">

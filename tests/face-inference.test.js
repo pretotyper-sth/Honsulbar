@@ -19,8 +19,8 @@ function sample(person,size=220,cover=null,variation={}){
 }
 test('bundled models accept the same sample with scale change, reject another sample and half-face occlusion',async()=>{
  const profile=sample(0,220),first=sample(0,190),last=sample(0,240);
- const result=await verifyPhoto(profile,[first,last],'near');assert.equal(result.model,'human-3.3.6-face-v3');assert.equal(result.photoDigest.length,64);
- await assert.rejects(verifyPhoto(sample(1),[first,last],'near'),/사진과 얼굴/);
- for(const variation of [{mirror:true},{light:true},{mirror:true,light:true}])assert.equal((await verifyPhoto(sample(0,220,null,variation),[first,last],'near')).model,'human-3.3.6-face-v3');
+ const result=await verifyPhoto(profile,[first,last],'near');assert.equal(result.model,'human-3.3.6-face-v4');assert.equal(result.photoDigest.length,64);
+ await assert.rejects(verifyPhoto(sample(1),[first,last],'near'),/등록 사진과 달라/);
+ for(const variation of [{mirror:true},{light:true},{mirror:true,light:true}])assert.equal((await verifyPhoto(sample(0,220,null,variation),[first,last],'near')).model,'human-3.3.6-face-v4');
  for(const cover of [[0,0,0],[190,145,110]])await assert.rejects(verifyPhoto(profile,[sample(0,190,cover),sample(0,240,cover)],'near'),/얼굴|가린|눈·코·입|고개를/);
 });

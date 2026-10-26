@@ -17,7 +17,7 @@ tf.io.registerLoadRouter(url=>typeof url==='string'&&url.startsWith(new URL('./f
  const bytes=Buffer.concat(buffers);
  return {...model,weightSpecs:model.weightsManifest.flatMap(group=>group.weights),weightData:bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength)};
 }}:null);
-const human=new humanModule.Human({backend:'wasm',wasmPath:fileURLToPath(new URL('./vendor/',import.meta.url)),cacheSensitivity:0,skipAllowed:false,modelBasePath:new URL('./face-models/',import.meta.url).href,filter:{enabled:false,return:false},face:{detector:{rotation:true,maxDetected:3,minConfidence:0.75,skipFrames:0,skipTime:0,return:false},mesh:{enabled:true},iris:{enabled:false},description:{enabled:true,skipFrames:0,skipTime:0},emotion:{enabled:false},antispoof:{enabled:false},liveness:{enabled:true,skipFrames:0,skipTime:0}},hand:{enabled:true,maxDetected:2,minConfidence:.35,landmarks:true,skipFrames:0,skipTime:0},body:{enabled:false},object:{enabled:false},gesture:{enabled:false},segmentation:{enabled:false}});
+const human=new humanModule.Human({backend:'wasm',wasmPath:fileURLToPath(new URL('./vendor/',import.meta.url)),cacheSensitivity:0,skipAllowed:false,modelBasePath:new URL('./face-models/',import.meta.url).href,filter:{enabled:false,return:false},face:{detector:{rotation:true,maxDetected:3,minConfidence:0.75,skipFrames:0,skipTime:0,return:false},mesh:{enabled:true},iris:{enabled:false},description:{enabled:true,crop:.08,skipFrames:0,skipTime:0},emotion:{enabled:false},antispoof:{enabled:false},liveness:{enabled:true,skipFrames:0,skipTime:0}},hand:{enabled:true,maxDetected:2,minConfidence:.35,landmarks:true,skipFrames:0,skipTime:0},body:{enabled:false},object:{enabled:false},gesture:{enabled:false},segmentation:{enabled:false}});
 const ready=human.load();
 export function decodePhoto(value){
  if(typeof value!=='string'||value.length>400000||!/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(value))throw new AppError('사진을 다시 촬영해 주세요.');
@@ -55,16 +55,15 @@ export async function verifyImages(profile,frames,motion){
   for(const value of [profile,...frames])images.push(decodePhoto(value));
   for(const [index,image] of images.entries()){
    try{results.push(await analyzeFace(image,index>0));}
-   catch(error){if(error instanceof AppError)throw new AppError(`${index===0?'등록 사진':'촬영 사진'}: ${error.message}`);throw error;}
+   catch(error){if(error instanceof AppError)throw new AppError(`${index===0?'등록 사진':'촬영본'}: ${error.message}`);throw error;}
   }
   let alternateProfile=null;
   const mirrored=mirrorImage(images[0]);images.push(mirrored);
-  try{alternateProfile=await analyzeFace(mirrored,false);}
+  try{alternateProfile=await analyzeFace(mirrored,false);results.push(alternateProfile);}
   catch(error){if(!(error instanceof AppError))throw error;}
-  const error=comparisonError(results,(a,b)=>human.match.similarity(a,b),motion,alternateProfile);
-  if(alternateProfile)results.push(alternateProfile);
+  const error=comparisonError(results.slice(0,3),(a,b)=>human.match.similarity(a,b),motion,alternateProfile);
   if(error)throw new AppError(error);
-  return {model:'human-3.3.6-face-v3',photoDigest:hash(profile)};
+  return {model:'human-3.3.6-face-v4',photoDigest:hash(profile)};
  }finally{
   for(const image of images)image.data.fill(0);
   for(const result of results)result.embedding.fill(0);
@@ -74,7 +73,7 @@ if(parentPort){
  ready.then(()=>parentPort.postMessage({ready:true})).catch(()=>parentPort.postMessage({initError:true}));
  parentPort.on('message',async job=>{
   try{parentPort.postMessage({id:job.id,result:await verifyImages(job.photo,job.frames,job.motion)});}
-  catch(error){parentPort.postMessage({id:job.id,error:error instanceof AppError?error.message:'얼굴 검사에 실패했어요. 다시 시도해 주세요.'});}
+  catch(error){parentPort.postMessage({id:job.id,error:error instanceof AppError?error.message:'검사를 마치지 못했어요. 다시 해주세요.'});}
   finally{job.photo=null;job.frames?.fill(null);}
  });
 }

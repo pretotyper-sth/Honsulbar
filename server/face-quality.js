@@ -10,17 +10,15 @@ function patch(image,cx,cy,w,h){
  return {mean:sum/n,std:Math.sqrt(Math.max(0,sq/n-(sum/n)**2)),edge:edge/n,n};
 }
 export function faceQualityError(result,image,{capture=false}={}){
- if(!Array.isArray(result?.face)||result.face.length===0)return '얼굴을 찾지 못했어요. 밝은 곳에서 촬영해 주세요.';
- if(result.face.length!==1)return '여러 얼굴이 보여요. 혼자 촬영해 주세요.';
+ if(!Array.isArray(result?.face)||result.face.length===0)return '얼굴을 찾지 못했어요.';
+ if(result.face.length!==1)return '혼자 화면에 맞춰 주세요.';
  const face=result.face[0],box=face.box;
- if(!box||box.length!==4||!box.every(Number.isFinite)||box[2]<=0||box[3]<=0)return '얼굴 전체가 보이게 촬영해 주세요.';
- if(!(face.boxScore>=FACE_RULES.boxScore&&face.faceScore>=FACE_RULES.meshScore)||!Array.isArray(face.mesh)||face.mesh.length<468)return '눈·코·입이 모두 보이게 촬영해 주세요.';
+ if(!box||box.length!==4||!box.every(Number.isFinite)||box[2]<=0||box[3]<=0)return '얼굴 위치를 맞춰 다시 찍어 주세요.';
+ if(!(face.boxScore>=FACE_RULES.boxScore&&face.faceScore>=FACE_RULES.meshScore)||!Array.isArray(face.mesh)||face.mesh.length<468)return '눈·코·입이 보이게 해주세요.';
  const [x,y,w,h]=box;
  if(Math.min(w/image.width,h/image.height)<FACE_RULES.minSize||Math.min(w,h)<64)return '얼굴을 조금 더 가까이 보여 주세요.';
- const outline=[10,152,234,454].map(i=>face.mesh[i]);
- if(!outline.every(finitePoint)||outline.some(p=>p[0]<2||p[1]<2||p[0]>=image.width-2||p[1]>=image.height-2))return '얼굴 전체를 화면 안에 맞춰 주세요.';
  const points=[33,133,362,263,1,61,291,13].map(i=>face.mesh[i]);
- if(!points.every(finitePoint)||points.some(p=>p[0]<1||p[1]<1||p[0]>=image.width-1||p[1]>=image.height-1))return '눈·코·입이 모두 보이게 촬영해 주세요.';
+ if(!points.every(finitePoint)||points.some(p=>p[0]<1||p[1]<1||p[0]>=image.width-1||p[1]>=image.height-1))return '눈·코·입이 보이게 해주세요.';
  const angle=face.rotation?.angle;
  if(!angle||!Number.isFinite(angle.yaw)||!Number.isFinite(angle.pitch)||Math.abs(angle.yaw)>FACE_RULES.maxYaw||Math.abs(angle.pitch)>FACE_RULES.maxPitch)return '고개를 바로 하고 화면을 봐 주세요.';
  for(const hand of result.hand||[]){
@@ -31,23 +29,30 @@ export function faceQualityError(result,image,{capture=false}={}){
  const regions=[[points[0],points[1]],[points[2],points[3]],[points[5],points[6]]];
  for(const [a,b] of regions){
   const stats=patch(image,(a[0]+b[0])/2,(a[1]+b[1])/2,Math.max(12,Math.abs(b[0]-a[0])*1.15),h*.13);
-  if(stats.n<24||!Number.isFinite(stats.std)||stats.mean<22||stats.mean>240||stats.std<9||stats.edge<2.2)return '가린 곳 없이 밝고 선명하게 촬영해 주세요.';
+  if(stats.n<24||!Number.isFinite(stats.std))return '눈·입이 보이게 맞춰 주세요.';
+  if(stats.mean<22)return '어두워요. 조명을 밝혀 주세요.';
+  if(stats.mean>240)return '너무 밝아요. 빛을 피해 주세요.';
+  if(stats.std<9||stats.edge<2.2)return '눈·입을 가리지 말고 찍어 주세요.';
  }
- if(capture&&(!Number.isFinite(face.live)||face.live<FACE_RULES.live))return '실제 얼굴을 카메라로 다시 촬영해 주세요.';
- if(!Array.isArray(face.embedding)||face.embedding.length!==1024||!face.embedding.every(Number.isFinite)||!face.embedding.some(v=>v!==0))return '얼굴을 확인하지 못했어요. 다시 촬영해 주세요.';
+ if(capture&&(!Number.isFinite(face.live)||face.live<FACE_RULES.live))return '실제 얼굴을 다시 찍어 주세요.';
+ if(!Array.isArray(face.embedding)||face.embedding.length!==1024||!face.embedding.every(Number.isFinite)||!face.embedding.some(v=>v!==0))return '밝은 곳에서 얼굴을 보여 주세요.';
  return null;
 }
 export function comparisonError(results,similarity,motion,alternateProfile=null){
  if(results.length!==3||!['near','far'].includes(motion))return '얼굴 확인을 다시 시작해 주세요.';
  const [photo,first,last]=results;
  const continuous=similarity(first.embedding,last.embedding);
- if(!Number.isFinite(continuous)||continuous<FACE_RULES.liveSimilarity)return '촬영 중 얼굴을 확인하기 어려웠어요. 정면을 보고 다시 촬영해 주세요.';
+ if(!Number.isFinite(continuous))return '잘 안 보여요. 밝은 곳에서 찍어 주세요.';
+ if(continuous<FACE_RULES.liveSimilarity)return '촬영본이 달라요. 정면으로 찍어 주세요.';
  // Profile photos vary in light, retouching and mirror orientation; live frames must stay consistent.
+ let invalidScores=false;
  const matched=[photo,alternateProfile].filter(Boolean).some(reference=>{
   const scores=[first,last].map(frame=>similarity(reference.embedding,frame.embedding));
+  if(scores.some(score=>!Number.isFinite(score)))invalidScores=true;
   return scores.every(score=>Number.isFinite(score)&&score>=FACE_RULES.profileSimilarity)&&(scores[0]+scores[1])/2>=FACE_RULES.profileMean;
  });
- if(!matched)return '사진과 얼굴을 확인하기 어려워요. 밝은 곳에서 정면으로 다시 촬영해 주세요.';
+ if(!matched&&invalidScores)return '잘 안 보여요. 밝은 곳에서 찍어 주세요.';
+ if(!matched)return '등록 사진과 달라요. 사진을 바꿔 주세요.';
  const ratio=last.scale/first.scale;
  if(!Number.isFinite(ratio)||(motion==='near'?ratio<1.12||ratio>1.9:ratio>.89||ratio<.53))return '안내에 따라 휴대폰을 움직여 주세요.';
  return null;

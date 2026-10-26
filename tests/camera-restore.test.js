@@ -32,7 +32,7 @@ test('capture requires sustained requested movement and clears the canvas',async
  assert.equal(result.length,2);assert.notEqual(result[0],result[1]);assert.equal(cleared.length,1);
 });
 test('no face, wrong movement, cancellation and camera disconnect do not produce evidence',async()=>{
- const absent=captureEnv(Array(60).fill(0));await assert.rejects(captureFacePair(absent.options),/얼굴 전체/);
+ const absent=captureEnv(Array(60).fill(0));await assert.rejects(captureFacePair(absent.options),/얼굴을 화면/);
  const wrong=captureEnv(Array(60).fill(200));await assert.rejects(captureFacePair(wrong.options),/가까이/);
  const cancelled=captureEnv([200]);cancelled.options.wait=async()=>cancelled.cancel();await assert.rejects(captureFacePair(cancelled.options),/취소/);
  const disconnected=captureEnv([200]);disconnected.options.video.readyState=0;await assert.rejects(captureFacePair(disconnected.options),/카메라/);
@@ -80,4 +80,12 @@ test('photo requests abort on cancellation and timeout, including while reading 
  await assert.rejects(cancelled,/중단/);assert.equal(requestSignal.aborted,true);
  const timedOut=env.request({action:'photo-challenge'});await new Promise(resolve=>setImmediate(resolve));expire();
  await assert.rejects(timedOut,/지연/);assert.equal(cleared,2);
+});
+
+test('framing allows clipped outlines but requires visible eye, nose and mouth landmarks',()=>{
+ const env={};vm.createContext(env);vm.runInContext(helpers,env);
+ const close={...face,topLeft:[-20,-30],bottomRight:[480,500]};
+ assert.equal(env.faceIsWellFramed(close,480,480),true);
+ assert.equal(env.faceIsWellFramed({...close,landmarks:[[-2,100],...face.landmarks.slice(1)]},480,480),false);
+ assert.equal(env.faceIsWellFramed({...close,landmarks:[]},480,480),false);
 });

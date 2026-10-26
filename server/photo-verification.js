@@ -33,7 +33,7 @@ export function warmPhotoVerifier(){
   if(message.error)item.reject(new AppError(message.error));else item.resolve(message.result);
   current.unref();
  });
- current.on('error',()=>{if(worker===current)reset('얼굴 검사에 실패했어요. 다시 시도해 주세요.');});
+ current.on('error',()=>{if(worker===current)reset('검사를 마치지 못했어요. 다시 해주세요.');});
  current.on('exit',()=>{if(worker===current)reset('얼굴 검사 연결이 끊겼어요. 다시 시도해 주세요.');});
  return loading;
 }
