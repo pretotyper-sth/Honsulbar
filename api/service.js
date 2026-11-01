@@ -1,5 +1,6 @@
 import {voiceEvidenceReady,VOICE_CONSENT_VERSION,validateVoiceEvidence,encryptEvidence,decryptEvidence} from '../server/voice-evidence.js';
 import {emailReady,sendNotificationEmail} from '../server/notification-email.js';
+import {verifySocialIdentity} from '../server/social-auth.js';
 import {randomUUID} from 'node:crypto';
 import {verifyPhoto,warmPhotoVerifier} from '../server/photo-verification.js';
 import {AppError,authenticate,admin,database,rpc,toss,decryptField,isAdult,newToken,hash,dispatchOutbox,sbUrl,signPhoto,photoMatches,skuPoints,findProduct,rewardedAdGroupId,subscriptionSku,isSubscriptionSku,parseTossTime,pushAvailableTemplate,pushReplyTemplate,isProduction,identityKey} from '../server/platform.js';
@@ -30,7 +31,7 @@ async function startSession(res,memberId){
 export default async function handler(req,res) {
  res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');
  const origin=req.headers.origin;
- const allowed=origins.has(origin)||(process.env.VERCEL_ENV!=='production'&&/^http:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+):\d+$/.test(origin||''));
+ const allowed=origins.has(origin)||(process.env.HB_ANDROID_AUTH_ENABLED==='1'&&origin==='https://localhost')||(process.env.VERCEL_ENV!=='production'&&/^http:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+):\d+$/.test(origin||''));
  if(origin&&allowed){res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin');res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization');res.setHeader('Access-Control-Allow-Methods','GET, POST, OPTIONS');}
  if(req.method==='OPTIONS')return res.status(204).end();
  if(!['GET','POST'].includes(req.method))return res.status(405).end();
@@ -58,6 +59,12 @@ export default async function handler(req,res) {
    const [member]=await database(`hb_members?id=eq.${memberId}&select=banned_until`);
    if(member?.banned_until&&new Date(member.banned_until)>new Date())throw new AppError('이용이 제한된 계정이에요.',403);
    await database('toss_login_links?on_conflict=user_key',{method:'POST',headers:{Prefer:'resolution=merge-duplicates'},body:{user_key:String(info.userKey),is_connected:true,disconnected_at:null}}).catch(()=>{});
+   return await startSession(res,memberId);
+  }
+  if(action==='social-login'){
+   if(process.env.HB_ANDROID_AUTH_ENABLED!=='1')throw new AppError('로그인 설정을 준비 중이에요.',503);
+   const identity=await verifySocialIdentity(body.accessToken,body.provider);
+   const memberId=await rpc('hb_social_login',{p_provider:identity.provider,p_subject_hash:identity.subjectHash});
    return await startSession(res,memberId);
   }
   if(action==='dev-login'){
@@ -143,6 +150,15 @@ export default async function handler(req,res) {
    throw new AppError('지원하지 않는 관리자 요청이에요.');
   }
   const member=await authenticate(req);
+  if(action==='link-social'){
+   if(process.env.HB_ANDROID_AUTH_ENABLED!=='1')throw new AppError('로그인 설정을 준비 중이에요.',503);
+   const [session]=await database(`hb_sessions?token_hash=eq.${hash(req.headers.authorization.slice(7))}&select=expires_at`);
+   if(!session||new Date(session.expires_at).getTime()<Date.now()+7*24*3600000-10*60000)throw new AppError('계정을 연결하려면 다시 로그인해 주세요.',401);
+   const identity=await verifySocialIdentity(body.accessToken,body.provider);
+   await rpc('hb_link_social_identity',{p_member:member,p_provider:identity.provider,p_subject_hash:identity.subjectHash});
+   return res.json({ok:true});
+  }
+
   if(action==='voice-consent-revoke'){
    await rpc('hb_revoke_voice_consent',{p_member:member});
    return res.json({result:{revoked:true},state:withPhotos(await rpc('hb_snapshot',{p_member:member}),member)});
@@ -185,7 +201,7 @@ export default async function handler(req,res) {
    const [m]=await database(`hb_members?id=eq.${member}&select=toss_key,sub_access,sub_auto_renew,sub_expires_at`);
    const live=!!m.sub_access&&(!m.sub_expires_at||new Date(m.sub_expires_at)>new Date());
    if(live&&m.sub_auto_renew!==false)throw new AppError('정기 구독을 먼저 해지해 주세요.');
-   if(!m.toss_key.startsWith('9')||process.env.HB_DEV_LOGIN!=='1')await toss('/api-partner/v1/apps-in-toss/user/oauth2/access/remove-by-user-key',{userKey:Number(m.toss_key)}).catch(()=>{});
+   if(/^\d+$/.test(m.toss_key)&&(!m.toss_key.startsWith('9')||process.env.HB_DEV_LOGIN!=='1'))await toss('/api-partner/v1/apps-in-toss/user/oauth2/access/remove-by-user-key',{userKey:Number(m.toss_key)}).catch(()=>{});
    await rpc('apply_toss_login_disconnect',{p_user_key:m.toss_key,p_action:'withdraw'});return res.json({ok:true});
   }
   if(action==='waitlist-off'){
