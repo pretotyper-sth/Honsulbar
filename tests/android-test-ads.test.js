@@ -1,0 +1,49 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { RewardAdPluginEvents as Events } from '@capacitor-community/admob';
+import { showAndroidTestReward, TEST_REWARD_AD_ID } from '../src/android-test-ads.js';
+
+function fakeSdk(show, prepare = async () => {}) {
+  const callbacks = new Map(), removed = [];
+  const sdk = {
+    initialize: async options => assert.equal(options.initializeForTesting, true),
+    addListener: async (event, fn) => { callbacks.set(event, fn); return { remove: async () => removed.push(event) }; },
+    prepareRewardVideoAd: async options => {
+      assert.deepEqual(options, { adId: TEST_REWARD_AD_ID, isTesting: true, npa: true });
+      await prepare();
+    },
+    showRewardVideoAd: async () => show(callbacks),
+  };
+  return { sdk, removed };
+}
+
+test('only rewarded then dismissed test ads complete; duplicate events do not duplicate completion', async () => {
+  const env = fakeSdk(events => {
+    events.get(Events.Rewarded)();
+    events.get(Events.Rewarded)();
+    events.get(Events.Dismissed)();
+    events.get(Events.Dismissed)();
+  });
+  await showAndroidTestReward({ enabled: true, sdk: env.sdk });
+  assert.equal(env.removed.length, 3);
+});
+
+test('early close, load/show failure and timeout never grant rewards and clean up listeners', async () => {
+  const cases = [
+    fakeSdk(events => events.get(Events.Dismissed)()),
+    fakeSdk(events => events.get(Events.FailedToShow)()),
+    fakeSdk(() => { throw Error('show failed'); }),
+    fakeSdk(() => {}, async () => { throw Error('load failed'); }),
+    fakeSdk(() => new Promise(() => {})),
+  ];
+  for (const env of cases) {
+    await assert.rejects(showAndroidTestReward({ enabled: true, sdk: env.sdk, timeoutMs: 20 }));
+    assert.equal(env.removed.length, 3);
+  }
+});
+
+test('native ads are unavailable unless the Android test path is explicitly enabled', async () => {
+  const env = fakeSdk(() => { throw Error('must not show'); });
+  await assert.rejects(showAndroidTestReward({ enabled: false, sdk: env.sdk }), /로컬 테스트/);
+  assert.equal(env.removed.length, 0);
+});

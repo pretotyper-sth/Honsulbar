@@ -1,5 +1,7 @@
 # 혼술바 Android 단독 빌드 체크리스트
 
+> 최신 담당자별 현황과 운영 전환 기준: [AOS_DEPLOYMENT_STATUS.md](./AOS_DEPLOYMENT_STATUS.md). 아래의 날짜별 진행 기록은 과거 상태를 포함합니다.
+
 작성·확인: 2026-11-01 / 소스: 현재 Honsulbar-AOS 프로젝트
 
 목표: 기존 React 화면·흐름·기능을 공유하고 토스가 제공하던 시스템 연동만 Android용으로 교체한다.

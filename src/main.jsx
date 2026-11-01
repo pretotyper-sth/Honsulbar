@@ -14,6 +14,7 @@ import { Glass } from './Glass';
 import { SEATS as positions, POINT_PACKS, SUBSCRIPTIONS, adjacent, audioGain } from './social';
 import { AdminPage } from './admin';
 import './style.css';
+import { nativeTestAds, showAndroidTestReward } from './android-test-ads';
 
 const IAP_PACK_SKU = {
   1000: 'ait.0000078228.10e9c057.abb16a92b7.0232936136',
@@ -907,7 +908,11 @@ function App() {
     };
     const stop = message => { if (finished) return; finished = true; setAdInProgress(false); setToast(message); };
     const adGroupId = config?.adGroupId;
-    if (adGroupId && loadFullScreenAd.isSupported?.() && showFullScreenAd.isSupported?.()) {
+    if (nativeTestAds && config?.devLogin) {
+      setToast('테스트 광고를 불러오고 있어요.');
+      try { await showAndroidTestReward(); await finish(); }
+      catch { stop('광고를 완료하지 못했어요. 다시 시도해 주세요.'); }
+    } else if (adGroupId && loadFullScreenAd.isSupported?.() && showFullScreenAd.isSupported?.()) {
       setToast('광고를 불러오고 있어요.');
       let rewarded = false;
       loadFullScreenAd({
@@ -926,7 +931,7 @@ function App() {
         },
         onError: () => stop('광고를 불러오지 못했어요.'),
       });
-    } else if (config?.devLogin) {
+    } else if (import.meta.env.VITE_ANDROID_TEST && config?.devLogin) {
       setToast('테스트라 6초 뒤 출석 포인트가 들어와요.');
       setTimeout(finish, 6000);
     } else stop('광고를 준비하고 있어요.');
@@ -1063,7 +1068,7 @@ function App() {
   function requestSubscriptionChange() { open(subscription ? 'subscription-cancel-guide' : 'subscription-confirm'); }
   function startSubscription() {
     if (server?.safetyPaused) { setToast('안전 점검 중에는 새 결제를 진행할 수 없어요.'); return; }
-    const localPreview = !insideToss() && (config?.devLogin || /^(localhost|127\.0\.0\.1)$/.test(location.hostname));
+    const localPreview = import.meta.env.VITE_ANDROID_TEST && !insideToss() && (config?.devLogin || /^(localhost|127\.0\.0\.1)$/.test(location.hostname));
     if (localPreview) {
       setDevSubscription({ expiresAt: new Date(Date.now() + 30 * 86400000).toISOString(), cancelAt: null });
       setSheet('shop');
@@ -1458,7 +1463,7 @@ function App() {
       {sheet==='shop'&&<><h2 id="sheet-title">내 포인트</h2><div className="point-balance"><Coins size={24}/><strong>{wallet.balance.toLocaleString()}<small> P</small></strong></div>
         <h3 className="section-title">포인트 모으기</h3>
         <div className="shop-list">
-          <div className="shop-row"><span><strong>매일 출석</strong><small>{import.meta.env.VITE_ANDROID_TEST?'모의 보상 · 하루 한 번 1,000P':'광고 보고 하루 한 번 1,000P'}</small></span><Button size="small" variant="weak" disabled={wallet.attendanceDate===today || adInProgress} onClick={attendance}>{wallet.attendanceDate===today?'완료':adInProgress?'진행 중…':import.meta.env.VITE_ANDROID_TEST?'테스트 보상':'광고 보기'}</Button></div>
+          <div className="shop-row"><span><strong>매일 출석</strong><small>{nativeTestAds?'테스트 광고 · 하루 한 번 1,000P':import.meta.env.VITE_ANDROID_TEST?'모의 보상 · 하루 한 번 1,000P':'광고 보고 하루 한 번 1,000P'}</small></span><Button size="small" variant="weak" disabled={wallet.attendanceDate===today || adInProgress} onClick={attendance}>{wallet.attendanceDate===today?'완료':adInProgress?'진행 중…':nativeTestAds?'테스트 광고':import.meta.env.VITE_ANDROID_TEST?'테스트 보상':'광고 보기'}</Button></div>
           <div className="shop-row"><span><strong>자리 양보</strong><small>요청을 수락하고 자리를 바꾸면</small></span><b>+500P</b></div>
         </div>
         <h3 className="section-title">포인트 충전</h3><p className="shop-note">많이 충전할수록 보너스를 받아요.</p><div className="point-packs">{POINT_PACKS.map(pack=><button key={pack.points} onClick={()=>{setShopPack(pack);open('charge');}}><span>{pack.points.toLocaleString()} P {pack.bonus>0&&<em>{pack.label}</em>}</span><strong>{pack.won.toLocaleString()}원 <ArrowRight size={15}/></strong></button>)}</div>

@@ -32,3 +32,11 @@ Google 로그인과 Toss 로그인은 서로 다른 사용자 식별자를 사�
 ## 검증 결과
 
 2026-11-01: 자동 테스트 84/84, 웹 빌드·네이티브 빌드·APK 서명 검증 성공. `android/app/build/outputs/apk/debug/app-debug.apk`를 AOSP Android 15 에뮬레이터에 설치하고 시작 화면 실행을 확인했다. 실제 인증·결제·푸시·기기 간 음성 완료를 의미하지 않는다.
+
+## 실제 SDK/API 연동 및 배포 준비
+
+최신 담당자별 목록과 성공 판정은 [AOS 배포 현황](docs/AOS_DEPLOYMENT_STATUS.md)을 참고하세요.
+
+기본 `bash scripts/android-local.sh apk`는 로컬 전용 모의 기능을 유지합니다. Android에서는 Google의 데모 보상형 광고 SDK를 사용하며, PC 미리보기만 기존 모의 보상을 사용합니다. 광고 실패를 모의 성공으로 대체하지 않습니다.
+
+실연동 웹 빌드는 `HB_ANDROID_MODE=integration`과 `HB_ANDROID_API_URL`, `HB_AUTH_PUBLIC_URL`, `HB_AUTH_PUBLIC_KEY`를 명시해 같은 빌드 명령으로 만듭니다. API/Auth는 HTTPS 원본 주소, Auth 키는 공개 anon/publishable 키만 사용합니다. 이 모드에서는 개발 로그인·사진 통과·모의 충전·구독·타이머 보상을 끕니다. 실제 HTTPS API 검증 환경과 Play Billing/AdMob/FCM/성인 확인 구현이 아직 필요하며, 모드를 바꾸는 것만으로 해당 기능이 완성되지는 않습니다. 정식 출시 빌드는 필요한 연동 완료 전까지 차단합니다.

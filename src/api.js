@@ -107,7 +107,7 @@ export async function login(config, provider) {
     }
     if (!authorizationCode) throw new ApiError('로그인 정보를 받아오지 못했어요. 다시 시도해 주세요.', 400);
     result = await request({ action: 'login', authorizationCode, referrer: referrer || 'DEFAULT' });
-  } else if (config?.devLogin || webPreviewToken()) {
+  } else if (import.meta.env.VITE_ANDROID_TEST && (config?.devLogin || webPreviewToken())) {
     let key = null;
     try { key = localStorage.getItem(DEV_KEY); } catch {}
     if (!key) { key = `9${Math.floor(Math.random() * 1e8)}`; try { localStorage.setItem(DEV_KEY, key); } catch {} }
