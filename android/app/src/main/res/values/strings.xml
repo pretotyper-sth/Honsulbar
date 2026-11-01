@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">혼술바 테스트</string>
+    <string name="title_activity_main">혼술바 테스트</string>
+    <string name="package_name">com.honsulbar.localtest</string>
+    <string name="custom_url_scheme">com.honsulbar.localtest</string>
+</resources>

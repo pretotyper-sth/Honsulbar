@@ -1,0 +1,41 @@
+{
+  "name": "honsulbar-aos",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/android-test-server.js",
+    "dev:web": "vite --host 0.0.0.0",
+    "dev:api": "node scripts/dev-api.js",
+    "build": "vite build --config vite.android.config.js",
+    "test": "node --test tests/*.test.js",
+    "preview": "vite preview --host 0.0.0.0",
+    "prepare:face-models": "node scripts/prepare-face-models.js",
+    "android:web": "vite build --config vite.android.config.js",
+    "android:sync": "npm run android:web && cap sync android",
+    "android:server": "node scripts/android-test-server.js",
+    "android:apk": "npm run android:sync && cd android && ./gradlew assembleDebug",
+    "android:open": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.6.0",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/browser": "8.0.5",
+    "@capacitor/cli": "8.6.0",
+    "@capacitor/core": "8.6.0",
+    "@emotion/react": "^11.14.0",
+    "@tensorflow-models/blazeface": "^0.1.0",
+    "@tensorflow/tfjs": "^4.22.0",
+    "@tensorflow/tfjs-backend-wasm": "^4.22.0",
+    "jpeg-js": "^0.4.4",
+    "long": "5.3.2",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@vladmandic/human": "3.3.6",
+    "vite": "^6.4.1"
+  }
+}
