@@ -16,12 +16,12 @@ test('verified social identity creates a real SQL member/session, preserves iden
   const saved={...process.env},fetcher=globalThis.fetch;
   const path=mkdtempSync(join(tmpdir(),'hb-auth-integration-'));
   try {
-    Object.assign(process.env,{NODE_ENV:'development',VERCEL_ENV:'development',HB_LOCAL_DB:'1',HB_DEV_LOGIN:'0',HB_ANDROID_TEST:'0',HB_LOCAL_SEED_GUESTS:'0',HB_LOCAL_SAFETY_CHECKS:'1',HB_LOCAL_DB_PATH:path,HB_ANDROID_AUTH_ENABLED:'1',SUPABASE_URL:'https://auth.example.test',SUPABASE_PUBLISHABLE_KEY:'public',SUPABASE_SERVICE_ROLE_KEY:'local-photo-signing-only',HB_IDENTITY_HASH_KEY:'x'.repeat(32)});
+    Object.assign(process.env,{NODE_ENV:'development',VERCEL_ENV:'development',HB_LOCAL_DB:'1',HB_DEV_LOGIN:'0',HB_ANDROID_TEST:'0',HB_LOCAL_SEED_GUESTS:'0',HB_LOCAL_SAFETY_CHECKS:'1',HB_LOCAL_DB_PATH:path,HB_ANDROID_AUTH_ENABLED:'1',HB_AUTH_CLEANUP_ENABLED:'1',SUPABASE_URL:'https://auth.example.test',SUPABASE_PUBLISHABLE_KEY:'public',SUPABASE_SERVICE_ROLE_KEY:'local-photo-signing-only',HB_IDENTITY_HASH_KEY:'x'.repeat(32)});
     globalThis.fetch=async(url,options)=>{
       assert.match(options.headers.Authorization,/^Bearer /);
       if(url==='https://openidconnect.googleapis.com/v1/userinfo')return {ok:true,json:async()=>({sub:'verified-google-subject'})};
       assert.equal(url,'https://auth.example.test/auth/v1/user');
-      return {ok:true,json:async()=>({id:'verified-auth-user',app_metadata:{provider:'google'},identities:[{provider:'google',identity_data:{sub:'verified-google-subject'}}]})};
+      return {ok:true,json:async()=>({id:'00000000-0000-4000-8000-000000000001',app_metadata:{provider:'google'},identities:[{provider:'google',identity_data:{sub:'verified-google-subject'}}]})};
     };
     const request={action:'social-login',provider:'google',accessToken:'fixture-token-'.repeat(4),providerToken:'provider-proof'.repeat(3),email:'client-cannot-choose-identity@example.test'};
     const first=await invoke(request);
@@ -53,6 +53,7 @@ test('verified social identity creates a real SQL member/session, preserves iden
     assert.equal((await invoke({action:'state'},again.data.token)).code,401);
     assert.deepEqual(await database(`hb_members?id=eq.${id}`),[]);
     assert.deepEqual(await database(`hb_push_devices?member_id=eq.${id}`),[]);
+    assert.equal((await database('hb_auth_cleanup'))[0].status,'pending');
     assert.equal((await database(`hb_members?id=eq.${control}`)).length,1);
     const rejoin=await invoke(request);
     assert.equal(rejoin.code,200);

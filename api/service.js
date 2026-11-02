@@ -1,7 +1,7 @@
 import {ageTestReady,startAgeTest,completeAgeTest,ageTestHealth} from '../server/age-verification.js';
 import {voiceEvidenceReady,VOICE_CONSENT_VERSION,validateVoiceEvidence,encryptEvidence,decryptEvidence} from '../server/voice-evidence.js';
 import {emailReady,sendNotificationEmail} from '../server/notification-email.js';
-import {verifySocialIdentity} from '../server/social-auth.js';
+import {verifySocialIdentity,socialAuthMember} from '../server/social-auth.js';
 import {playBillingConfiguration,processPlayPurchase,processPlaySubscription} from '../server/play-billing.js';
 import {androidPushReady,registerAndroidPush,unregisterAndroidPush} from '../server/android-push.js';
 import {startAndroidAd,finishAndroidAd} from '../server/android-ads.js';
@@ -79,8 +79,8 @@ export default async function handler(req,res) {
    if(body.accountTransferCode!==undefined){
     if(process.env.HB_ACCOUNT_TRANSFER_ENABLED!=='1')throw new AppError('계정 연결을 준비 중이에요.',503);
     if(typeof body.accountTransferCode!=='string'||!/^[A-Za-z0-9_-]{22}$/.test(body.accountTransferCode))throw new AppError('연결 코드를 확인해 주세요.',400);
-    memberId=await rpc('hb_claim_account_transfer',{p_code_hash:hash(body.accountTransferCode),p_provider:identity.provider,p_subject_hash:identity.subjectHash,p_toss_key:null});
-   }else memberId=await rpc('hb_social_login',{p_provider:identity.provider,p_subject_hash:identity.subjectHash});
+    memberId=await socialAuthMember(identity,'claim',null,hash(body.accountTransferCode));
+   }else memberId=await socialAuthMember(identity,'login');
    return await startSession(res,memberId,'android');
   }
   if(action==='dev-login'){
@@ -208,7 +208,7 @@ export default async function handler(req,res) {
    const [session]=await database(`hb_sessions?token_hash=eq.${hash(req.headers.authorization.slice(7))}&select=expires_at`);
    if(!session||new Date(session.expires_at).getTime()<Date.now()+7*24*3600000-10*60000)throw new AppError('계정을 연결하려면 다시 로그인해 주세요.',401);
    const identity=await verifySocialIdentity(body.accessToken,body.provider,body.providerToken);
-   await rpc('hb_link_social_identity',{p_member:member,p_provider:identity.provider,p_subject_hash:identity.subjectHash});
+   await socialAuthMember(identity,'link',member);
    return res.json({ok:true});
   }
 

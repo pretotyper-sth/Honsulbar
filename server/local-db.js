@@ -30,6 +30,7 @@ const MIGRATIONS = [
   '20261102_android_ads.sql',
   '20261102_account_transfer.sql',
   '20261102_play_refund_review.sql',
+  '20261102_auth_cleanup.sql',
 ];
 const TABLES = new Set([
   'hb_voice_evidence', 'hb_voice_consents',
@@ -38,7 +39,7 @@ const TABLES = new Set([
   'toss_login_links', 'hb_orders', 'hb_ad_claims', 'hb_events',
   'hb_photo_checks', 'hb_photo_challenges', 'hb_restrictions', 'hb_photo_access',
   'hb_push_devices',
-  'hb_android_ad_claims', 'hb_account_transfers',
+  'hb_android_ad_claims', 'hb_account_transfers', 'hb_auth_cleanup',
 ]);
 const GUESTS = [
   { key: '91880001', nick: '느긋한 토끼', gender: 'male', drink: 'highball', file: '1.jpg' },
