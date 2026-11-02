@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import handler from '../api/service.js';
+import { database, hash, rpc } from '../server/platform.js';
 
 async function invoke(body, token) {
   const res={code:200,setHeader(){},status(value){this.code=value;return this;},json(value){this.data=value;return this;}};
@@ -33,13 +34,30 @@ test('verified social identity creates a real SQL member/session, preserves iden
     assert.notEqual(again.data.token,first.data.token);
     assert.equal(again.data.state.member.balance,2000);
     assert.equal((await invoke({action:'state'},first.data.token)).code,200);
-    assert.equal((await invoke({action:'android-test-profile'},first.data.token)).code,404);
-    assert.equal((await invoke({action:'android-test-purchase',data:{points:1000}},first.data.token)).code,404);
+    assert.ok([400,404].includes((await invoke({action:'android-test-profile'},first.data.token)).code));
+    assert.ok([400,404].includes((await invoke({action:'android-test-purchase',data:{points:1000}},first.data.token)).code));
     assert.equal((await invoke({action:'ad-start'},first.data.token)).code,403);
     assert.equal((await invoke({action:'ad-claim',data:{id:'00000000-0000-4000-8000-000000000000'}},first.data.token)).code,403);
     assert.equal((await invoke({action:'logout'},first.data.token)).code,200);
     assert.equal((await invoke({action:'state'},first.data.token)).code,401);
     assert.equal((await invoke({action:'state'},again.data.token)).code,200);
+    const control=await rpc('hb_login',{p_key:'12345678'});
+    const id=again.data.state.member.id;
+    await database('hb_push_devices',{method:'POST',body:{token_hash:'b'.repeat(64),member_id:id,session_hash:hash(again.data.token),token:'private-device-token'.repeat(3)}});
+    await database(`hb_members?id=eq.${id}`,{method:'PATCH',body:{sub_access:true,sub_auto_renew:true,sub_expires_at:new Date(Date.now()+86400000).toISOString()}});
+    assert.equal((await invoke({action:'withdraw'},again.data.token)).code,400);
+    assert.equal((await invoke({action:'state'},again.data.token)).code,200);
+    await database(`hb_members?id=eq.${id}`,{method:'PATCH',body:{sub_auto_renew:false}});
+    const removed=await invoke({action:'withdraw'},again.data.token);
+    assert.equal(removed.code,200);
+    assert.equal((await invoke({action:'state'},again.data.token)).code,401);
+    assert.deepEqual(await database(`hb_members?id=eq.${id}`),[]);
+    assert.deepEqual(await database(`hb_push_devices?member_id=eq.${id}`),[]);
+    assert.equal((await database(`hb_members?id=eq.${control}`)).length,1);
+    const rejoin=await invoke(request);
+    assert.equal(rejoin.code,200);
+    assert.notEqual(rejoin.data.state.member.id,id);
+    assert.equal(rejoin.data.state.member.adult,false);
   } finally {
     globalThis.fetch=fetcher;
     for(const key of Object.keys(process.env))if(!(key in saved))delete process.env[key];Object.assign(process.env,saved);

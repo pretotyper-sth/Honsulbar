@@ -232,7 +232,12 @@ export default async function handler(req,res) {
    const live=!!m.sub_access&&(!m.sub_expires_at||new Date(m.sub_expires_at)>new Date());
    if(live&&m.sub_auto_renew!==false)throw new AppError('정기 구독을 먼저 해지해 주세요.');
    if(/^\d+$/.test(m.toss_key)&&(!m.toss_key.startsWith('9')||process.env.HB_DEV_LOGIN!=='1'))await toss('/api-partner/v1/apps-in-toss/user/oauth2/access/remove-by-user-key',{userKey:Number(m.toss_key)}).catch(()=>{});
-   await rpc('apply_toss_login_disconnect',{p_user_key:m.toss_key,p_action:'withdraw'});return res.json({ok:true});
+   if (/^social:(google|kakao):[a-f0-9]{64}$/.test(m.toss_key)) {
+    await database(`hb_members?id=eq.${member}`,{method:'DELETE'});
+   } else {
+    await rpc('apply_toss_login_disconnect',{p_user_key:m.toss_key,p_action:'withdraw'});
+   }
+   return res.json({ok:true});
   }
   if(action==='waitlist-off'){
    const region=typeof body.data?.region==='string'?body.data.region:'';
