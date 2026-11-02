@@ -24,7 +24,7 @@ export function playBillingConfiguration(member, env = process.env) {
 }
 
 let client;
-async function googleRequest(path, method = 'GET') {
+export async function googleRequest(path, method = 'GET') {
   try {
     if (!client) {
       const credentials = JSON.parse(process.env.HB_PLAY_SERVICE_ACCOUNT_JSON || '{}');
