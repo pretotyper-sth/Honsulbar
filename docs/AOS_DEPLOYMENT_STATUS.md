@@ -214,3 +214,10 @@
 
 - 기존 GitHub 유지보수 workflow 최근 예약 실행 성공 확인. 예약 작업의 실제 실행 시점은 GitHub 지연에 따라 달라지므로 5분 이내 삭제 완료를 약속하지 않음. 운영 배포 Ready 확인 후 기존 유지보수 수동 실행 검증 진행.
 - AOS 개인정보 처리 문서에 Auth 소유 관계·보존·삭제 재시도 설명을 로컬 반영. Vercel 재인증 완료 후 문서 배포 진행.
+
+### AOS 인증 정리 활성화 검증 완료
+
+- 사용자 영구 삭제 활성화 승인 후 HB_AUTH_CLEANUP_ENABLED=1 Production 저장, 사용자 Vercel 재인증 후 운영 배포 7JuapT8fpJKQWAgGEqjpK84qUGPP Ready 확인.
+- 기존 무료 유지보수 #55 수동 실행 성공(12초): https://github.com/pretotyper-sth/Honsulbar/actions/runs/41418418964 . 대기 계정 0건으로 실제 회원 삭제 없이 실행 연결 확인.
+- AOS 개인정보 처리 문서와 공통 호스트 /legal/android/privacy.html 갱신. 앱인토스 원래 정책·전용 콜백은 변경하지 않음.
+- 실제 이용자의 탈퇴 후 외부 Auth 삭제 왕복은 아직 미검증. 공급자 자체 동의 철회는 별도.
