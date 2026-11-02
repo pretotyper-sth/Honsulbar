@@ -1,7 +1,16 @@
 import { GoogleAuth } from 'google-auth-library';
+import { createPrivateKey } from 'node:crypto';
 import { AppError, database, hash } from './platform.js';
 
-export const androidPushReady = (env = process.env) => env.HB_FCM_ENABLED === '1' && !!env.HB_FCM_PROJECT_ID && !!env.HB_FCM_SERVICE_ACCOUNT_JSON;
+export function androidPushReady(env = process.env) {
+  if (env.HB_FCM_ENABLED !== '1' || !env.HB_FCM_PROJECT_ID) return false;
+  try {
+    const credentials = JSON.parse(env.HB_FCM_SERVICE_ACCOUNT_JSON || '{}');
+    return credentials.type === 'service_account' && credentials.project_id === env.HB_FCM_PROJECT_ID &&
+      typeof credentials.client_email === 'string' && credentials.client_email.endsWith(`@${env.HB_FCM_PROJECT_ID}.iam.gserviceaccount.com`) &&
+      createPrivateKey(credentials.private_key).asymmetricKeyType === 'rsa';
+  } catch { return false; }
+}
 export async function registerAndroidPush(member, token, { db = database, sessionHash } = {}) {
   if (typeof token !== 'string' || !/^[A-Za-z0-9_:\-]{32,4096}$/.test(token)) throw new AppError('알림 기기를 확인해 주세요.', 400);
   if (!/^[a-f0-9]{64}$/.test(sessionHash || '')) throw new AppError('다시 로그인해 주세요.', 401);
