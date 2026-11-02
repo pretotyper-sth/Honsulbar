@@ -73,13 +73,13 @@
 
 - 공통 HTTPS API에 Android 인증 활성화 승인 후 저장·배포. 공개 준비 응답에서 apiReady=true, androidAuthReady=true, devLogin=false 확인.
 - 정식 패키지 후보 com.honsulbar.app으로 변경. Supabase 복귀 주소 등록 완료(기존 4개 주소 유지).
-- Firebase 기존 Honsulbar Android 프로젝트의 Spark 무료 요금제 확인. Android 앱 등록·공개 설정 다운로드·네이티브 빌드 연결 완료. FCM 서버 발송 자격증명과 활성화는 아직 미완료.
+- Firebase 기존 Honsulbar Android 프로젝트의 Spark 무료 요금제 확인. Android 앱 등록·공개 설정 다운로드·네이티브 빌드 연결 완료. FCM 서버 키 저장·발송 활성화·재배포 및 설정 유효성 확인 완료. 실제 기기 수신은 미검증.
 - 실제 Play Billing SDK 및 서버 구매/구독 검증 연결. 완료 상태·상품·수량·계정 소유권·무료 테스트 결제 여부를 검사하고 원장 지급 후 consume/acknowledge. 앱 시작/복귀 시 미처리 구매 복구. 취소한 구독은 남은 기간 유지, 보류·정지·만료는 접근 제한. 실제 주문 및 환불 알림은 미검증.
 - FCM 토큰 등록/해제·Android 권한·채널·알림 클릭·기존 outbox 분기 구현. 로그아웃 세션 삭제 및 회원 탈퇴 시 DB 외래키로 기기 토큰 삭제. 만료 세션·무효 토큰에 발송하지 않는 자동 검사 추가.
 - OAuth 종료 후 앱 재시작 시 PKCE 복구, 2분 만료, 재사용 방지·계정 연결 세션 일치 검사. Supabase의 이메일 자동 identity 연결과 서비스 회원 병합을 구분하기 위해 실제 공급자 토큰도 확인. 카카오는 사진/이메일 재수집 없이 token-info의 ID·앱 ID·만료만 검증.
 - AOS 원격 미리보기 실패 원인(dist 대신 dist-android 출력)을 수정. 별도 cron은 추가하지 않음.
 - 실연동 빌드 명령: npm run android:integration. 실제 API 준비 확인 실패 시 모의 APK로 대체하지 않음. 생성 파일은 상위 release-files/honsulbar-android-integration.apk.
-- 아직 사용자에게 통합 QA를 요청한 단계가 아님. 성인 확인·운영 광고 콘솔 설정·공급자 탈퇴 정리·실제 구매/푸시 자격증명·서명 AAB 등 남은 항목은 계속 진행.
+- 아직 사용자에게 통합 QA를 요청한 단계가 아님. 성인 확인·운영 광고 콘솔 설정·공급자 탈퇴 정리·실제 구매 자격증명·기기 푸시 수신 등 남은 항목은 계속 진행.
 
 ### 광고 보상 서버 검증
 
@@ -98,6 +98,9 @@
 ### FCM 콘솔 연결 상태
 
 - 전용 서비스 계정 honsulbar-fcm-sender 생성, Firebase Cloud Messaging API 관리자 역할만 부여 완료.
-- 사용자가 JSON 키 생성 및 Vercel Production의 HB_FCM_SERVICE_ACCOUNT_JSON 값을 직접 입력·저장하도록 두 화면 준비. 새 인증정보 입력·저장은 브라우저 작업 규칙상 사용자 단계.
-- 비공개 키 저장 이후 서버 프로젝트 ID·활성화 설정, 재배포, 앱 푸시 빌드 플래그 활성화 및 실제 기기 도착 검증 필요. 현재 성공으로 간주하지 않음.
+- 사용자 JSON 키 저장 완료를 Vercel Production 목록에서 확인. 비공개 키는 읽거나 표시하지 않음.
+- HB_FCM_ENABLED=1 및 HB_FCM_PROJECT_ID 설정·자동 배포 완료. 실제 공통 API에서 androidPushReady=true, androidAuthReady=true, devLogin=false 확인. 준비 상태는 JSON·프로젝트·RSA 키 형식을 검사하며 Google 발송 성공을 의미하지 않음.
+- Firebase Cloud Messaging V1 API 사용 설정 및 Spark 무료 요금제 확인. 앱 푸시 플래그를 활성화해 APK/AAB 재생성·서명 검사 완료.
+- 실제 기기 수신·클릭 이동·권한 거절·로그아웃 후 미발송은 통합 QA에서 검증할 항목. 이 연결 단계에서 사용자 추가 키 입력은 필요 없음.
+- 관련 자동 검사 9개 통과(푸시 권한/등록/삭제/비공개 데이터 차단/설정 검사 포함).
 - 본인인증 무료 실동작은 아직 공급자 확정 전. PortOne 공식 KCP 안내는 본인인증 테스트 연동정보 미제공을 명시하므로 결제 테스트 채널과 혼동하지 않음: https://help.portone.io/content/kcp_channel
