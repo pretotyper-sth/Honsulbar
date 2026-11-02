@@ -172,3 +172,9 @@
 - 구독 환불 알림도 최신 상태 조회. 최초 구매 등록 전 도착/Google·DB 장애는 503으로 전달해 Pub/Sub 재시도 유지. 테스트 알림은 지급 없이 확인. 포인트 환불 알림은 성공으로 오인 처리하지 않음.
 - HB_PLAY_NOTIFICATIONS_ENABLED / HB_PLAY_NOTIFICATION_AUDIENCE / HB_PLAY_NOTIFICATION_EMAIL 설정 및 Play 알림 콘솔 연결 필요. 결제 계정·Pub/Sub 리소스는 생성하지 않음. 비용 없는 연결 가능 여부 확인 전 개설하지 않음.
 - 공식 근거: https://developer.android.com/google/play/billing/rtdn-reference 및 https://docs.cloud.google.com/pubsub/docs/authenticate-push-subscriptions
+
+### 작업 범위 확인
+
+- 이미 완성된 앱인토스 기능은 AOS 전환의 기준으로 유지. 앱인토스 전용 콜백 변경·재검증은 전환 작업 범위에서 제외.
+- 2026-11-02 추가했던 Toss IAP 콜백 인증 강제 변경을 원복. 해당 설정을 사용자 추가 작업으로 요구하지 않음.
+- Google Play 알림 경로만 Android 대체 기능으로 유지. 공통 서버 배포는 필요하나 Toss 전용 동작 변경과 구분함.
