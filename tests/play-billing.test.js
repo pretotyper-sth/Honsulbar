@@ -80,3 +80,26 @@ test('subscription SDK selects the configured base plan and disables auto-acknow
   assert.equal(validated.productId,'honsulbar_monthly');
   await assert.rejects(purchasePlaySubscription({...config,checkoutAllowed:false},async()=>{},{sdk,enabled:true}),/安全|안전/);
 });
+
+test('one rejected receipt does not starve remaining points or subscription recovery and failures remain retryable',async()=>{
+ const {recoverPlayBilling}=await import('../src/play-billing.js');
+ const seen=[];const sdk={configure:async()=>{},getPurchases:async({productType})=>({purchases:productType==='inapp'?[{productIdentifier:input.productId,purchaseState:'1',purchaseToken:'failed-token'},{productIdentifier:input.productId,purchaseState:'1',purchaseToken:'valid-token'}]:[{productIdentifier:config.subscription.productId,purchaseState:'1',purchaseToken:'subscription-token'}]})};
+ const points=async body=>{seen.push(body.purchaseToken);if(body.purchaseToken==='failed-token')throw Error('transient failure');};
+ const sub=async body=>seen.push(body.purchaseToken);
+ for(let i=0;i<2;i++)await assert.rejects(recoverPlayBilling(config,points,sub,{sdk,enabled:true}),AggregateError);
+ assert.deepEqual(seen,['failed-token','valid-token','subscription-token','failed-token','valid-token','subscription-token']);
+});
+test('store query failure for point purchases still allows subscription recovery',async()=>{
+ const {recoverPlayBilling}=await import('../src/play-billing.js');let checked=false;
+ const sdk={configure:async()=>{},getPurchases:async({productType})=>{if(productType==='inapp')throw Error('store query unavailable');return {purchases:[{productIdentifier:config.subscription.productId,purchaseState:'1',purchaseToken:'subscription-token'}]};}};
+ await assert.rejects(recoverPlayBilling(config,()=>assert.fail('no points'),async()=>{checked=true;},{sdk,enabled:true}),AggregateError);
+ assert.equal(checked,true);
+});
+test('successful recovery resolves after checking both product types, including empty purchase lists',async()=>{
+ const {recoverPlayBilling}=await import('../src/play-billing.js');
+ for(const empty of [true,false]){
+  const seen=[];const sdk={configure:async()=>{},getPurchases:async({productType})=>({purchases:empty?[]:[{productIdentifier:productType==='inapp'?input.productId:config.subscription.productId,purchaseState:'1',purchaseToken:'valid-token'}]})};
+  await recoverPlayBilling(config,async()=>seen.push('points'),async()=>seen.push('subscription'),{sdk,enabled:true});
+  assert.deepEqual(seen,empty?[]:['points','subscription']);
+ }
+});

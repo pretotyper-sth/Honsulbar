@@ -23,11 +23,14 @@ export async function recoverPlayPurchases(config, verify, { sdk = NativePurchas
   if (!enabled || !config?.enabled || !config.accountId) return;
   await sdk.configure({ autoFinishTransactions: false });
   const { purchases } = await sdk.getPurchases({ productType: PURCHASE_TYPE.INAPP, appAccountToken: config.accountId });
+  const errors=[];
   for (const purchase of purchases) {
     if (String(purchase.purchaseState) === '1' && purchase.purchaseToken && Object.hasOwn(config.products, purchase.productIdentifier)) {
-      await verify({ productId: purchase.productIdentifier, purchaseToken: purchase.purchaseToken });
+      try {await verify({ productId: purchase.productIdentifier, purchaseToken: purchase.purchaseToken });}
+      catch(error){errors.push(error);}
     }
   }
+  if(errors.length)throw new AggregateError(errors,'일부 구매를 확인하지 못했어요. 앱을 다시 열면 재시도해요.');
 }
 
 export async function purchasePlaySubscription(config, verify, { sdk = NativePurchases, enabled = nativePlayBilling } = {}) {
@@ -48,11 +51,22 @@ export async function recoverPlaySubscription(config, verify, { sdk = NativePurc
   if (!enabled || !config?.enabled || !config.accountId) return;
   await sdk.configure({ autoFinishTransactions: false });
   const { purchases } = await sdk.getPurchases({ productType: PURCHASE_TYPE.SUBS, appAccountToken: config.accountId });
+  const errors=[];
   for (const purchase of purchases) {
     if (String(purchase.purchaseState) === '1' && purchase.purchaseToken && purchase.productIdentifier === config.subscription.productId) {
-      await verify({ productId: purchase.productIdentifier, purchaseToken: purchase.purchaseToken });
+      try {await verify({ productId: purchase.productIdentifier, purchaseToken: purchase.purchaseToken });}
+      catch(error){errors.push(error);}
     }
   }
+  if(errors.length)throw new AggregateError(errors,'일부 구독을 확인하지 못했어요. 앱을 다시 열면 재시도해요.');
+}
+
+export async function recoverPlayBilling(config,verifyPoints,verifySubscription,options){
+  const errors=[];
+  for(const [recover,verify] of [[recoverPlayPurchases,verifyPoints],[recoverPlaySubscription,verifySubscription]]){
+    try{await recover(config,verify,options);}catch(error){errors.push(error);}
+  }
+  if(errors.length)throw new AggregateError(errors,'일부 구매를 확인하지 못했어요. 앱을 다시 열면 재시도해요.');
 }
 
 export const managePlaySubscriptions = () => NativePurchases.manageSubscriptions();

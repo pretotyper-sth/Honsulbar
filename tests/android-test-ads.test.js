@@ -47,3 +47,14 @@ test('native ads are unavailable unless the Android test path is explicitly enab
   await assert.rejects(showAndroidTestReward({ enabled: false, sdk: env.sdk }), /Android 앱/);
   assert.equal(env.removed.length, 0);
 });
+
+test('Android privacy settings expose the SDK form only when required, without loading ads or rewarding',async()=>{
+ const {openAndroidAdPrivacy}=await import('../src/android-test-ads.js');
+ for(const status of ['REQUIRED','NOT_REQUIRED']){
+  let forms=0;const sdk={requestConsentInfo:async()=>({privacyOptionsRequirementStatus:status}),showPrivacyOptionsForm:async()=>{forms++;},initialize:()=>assert.fail('no ads'),prepareRewardVideoAd:()=>assert.fail('no ads')};
+  assert.equal(await openAndroidAdPrivacy({enabled:true,sdk}),status==='REQUIRED');assert.equal(forms,status==='REQUIRED'?1:0);
+ }
+ await assert.rejects(openAndroidAdPrivacy({enabled:true,sdk:{requestConsentInfo:async()=>({privacyOptionsRequirementStatus:'UNKNOWN'})}}),/확인하지/);
+ await assert.rejects(openAndroidAdPrivacy({enabled:false,sdk:{requestConsentInfo:()=>assert.fail('no SDK')}}),/Android/);
+ await assert.rejects(openAndroidAdPrivacy({enabled:true,sdk:{requestConsentInfo:async()=>{throw Error('network');}}}),/network/);
+});

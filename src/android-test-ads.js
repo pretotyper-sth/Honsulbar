@@ -49,3 +49,12 @@ export async function showAndroidReward(ad, { enabled = Capacitor.getPlatform() 
     await Promise.allSettled(listeners.map(listener => listener.remove()));
   }
 }
+
+export async function openAndroidAdPrivacy({enabled=Capacitor.getPlatform()==='android',sdk=AdMob}={}){
+  if(!enabled)throw new Error('Android 앱에서 이용해 주세요.');
+  const consent=await sdk.requestConsentInfo();
+  if(consent.privacyOptionsRequirementStatus==='NOT_REQUIRED')return false;
+  if(consent.privacyOptionsRequirementStatus!=='REQUIRED')throw new Error('광고 동의 상태를 확인하지 못했어요.');
+  await sdk.showPrivacyOptionsForm();
+  return true;
+}
