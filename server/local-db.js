@@ -102,12 +102,14 @@ async function start() {
     await db.query('select hb_sync_safety_time()');
     console.log('local db: 운영 공백에 따른 안전 점검을 로컬에서만 해제했어요.');
   }
+  if (process.env.HB_LOCAL_SEED_GUESTS !== '0') {
   await seed(db);
   const members=await db.query("select id from hb_members where toss_key ~ '^9[0-9]{1,8}$'");
   for(const member of members.rows)await grantLocalTestPoints(db,member.id);
   setInterval(() => {
     db.query(`update hb_visits set heartbeat_at=now() where member_id in (select id from hb_members where toss_key like '9188%')`).catch(() => {});
-  }, 25000);
+  }, 25000).unref();
+  }
   return db;
 }
 
