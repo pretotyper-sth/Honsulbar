@@ -1,4 +1,4 @@
-import {ageTestReady,startAgeTest,completeAgeTest} from '../server/age-verification.js';
+import {ageTestReady,startAgeTest,completeAgeTest,ageTestHealth} from '../server/age-verification.js';
 import {playBillingConfiguration,processPlayPurchase,processPlaySubscription} from '../server/play-billing.js';
 import {androidPushReady,registerAndroidPush,unregisterAndroidPush} from '../server/android-push.js';
 import {voiceEvidenceReady,VOICE_CONSENT_VERSION,validateVoiceEvidence,encryptEvidence,decryptEvidence} from '../server/voice-evidence.js';
@@ -40,6 +40,7 @@ export default async function handler(req,res) {
  if(req.method==='OPTIONS')return res.status(204).end();
  if(!['GET','POST'].includes(req.method))return res.status(405).end();
  try{
+  if(req.method==='GET'&&req.query?.ageTestHealth==='1')return res.json(await ageTestHealth());
   if(req.method==='GET'&&req.query?.photo)return await sendPhoto(req,res);
   let body=req.body||{};if(typeof body==='string')body=JSON.parse(body);
   if(JSON.stringify(body).length>1500000)throw new AppError('요청이 너무 커요.',413);
