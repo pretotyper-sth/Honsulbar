@@ -13,6 +13,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
   const credential = process.env.TOSS_IAP_BASIC_AUTH;
+  if (!credential) return res.status(503).json({ error: 'callback_auth_not_configured' });
   if (credential) {
     const received = req.headers.authorization || '';
     const encoded = `Basic ${Buffer.from(credential, 'utf8').toString('base64')}`;
