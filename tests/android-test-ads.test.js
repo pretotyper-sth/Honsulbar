@@ -44,6 +44,6 @@ test('early close, load/show failure and timeout never grant rewards and clean u
 
 test('native ads are unavailable unless the Android test path is explicitly enabled', async () => {
   const env = fakeSdk(() => { throw Error('must not show'); });
-  await assert.rejects(showAndroidTestReward({ enabled: false, sdk: env.sdk }), /로컬 테스트/);
+  await assert.rejects(showAndroidTestReward({ enabled: false, sdk: env.sdk }), /Android 앱/);
   assert.equal(env.removed.length, 0);
 });

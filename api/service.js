@@ -3,6 +3,7 @@ import {emailReady,sendNotificationEmail} from '../server/notification-email.js'
 import {verifySocialIdentity} from '../server/social-auth.js';
 import {playBillingConfiguration,processPlayPurchase,processPlaySubscription} from '../server/play-billing.js';
 import {androidPushReady,registerAndroidPush,unregisterAndroidPush} from '../server/android-push.js';
+import {startAndroidAd,finishAndroidAd} from '../server/android-ads.js';
 import {randomUUID} from 'node:crypto';
 import {androidTestEnabled,androidTestProduct} from '../server/android-test.js';
 import {verifyPhoto,warmPhotoVerifier} from '../server/photo-verification.js';
@@ -27,8 +28,8 @@ async function sendPhoto(req,res){
  res.setHeader('Content-Type',match[1]);res.setHeader('Cache-Control','private, no-store');res.setHeader('Referrer-Policy','no-referrer');
  return res.status(200).send(Buffer.from(match[2],'base64'));
 }
-async function startSession(res,memberId){
- const session=newToken();await database('hb_sessions',{method:'POST',body:{token_hash:hash(session),member_id:memberId}});
+async function startSession(res,memberId,platform='toss'){
+ const session=newToken();await database('hb_sessions',{method:'POST',body:{token_hash:hash(session),member_id:memberId,platform}});
  return res.json({token:session,state:withPhotos(await rpc('hb_snapshot',{p_member:memberId}),memberId)});
 }
 export default async function handler(req,res) {
@@ -68,7 +69,7 @@ export default async function handler(req,res) {
    if(process.env.HB_ANDROID_AUTH_ENABLED!=='1')throw new AppError('로그인 설정을 준비 중이에요.',503);
    const identity=await verifySocialIdentity(body.accessToken,body.provider,body.providerToken);
    const memberId=await rpc('hb_social_login',{p_provider:identity.provider,p_subject_hash:identity.subjectHash});
-   return await startSession(res,memberId);
+   return await startSession(res,memberId,'android');
   }
   if(action==='dev-login'){
    const preview=typeof body.preview==='string'?body.preview:'';
@@ -153,6 +154,15 @@ export default async function handler(req,res) {
    throw new AppError('지원하지 않는 관리자 요청이에요.');
   }
   const member=await authenticate(req);
+  if(['ad-start','ad-claim'].includes(action)){
+   const [session]=await database(`hb_sessions?token_hash=eq.${hash(req.headers.authorization.slice(7))}&select=platform`);
+   if(session?.platform==='android')throw new AppError('Android 광고 시청 경로를 이용해 주세요.',403);
+  }
+  if(action==='android-ad-start')return res.json({result:await startAndroidAd(member)});
+  if(action==='android-ad-finish'){
+   const result=await finishAndroidAd(member,body.data?.id);
+   return res.json({result,state:withPhotos(await rpc('hb_snapshot',{p_member:member}),member)});
+  }
   if(action==='android-push-config')return res.json({result:{enabled:androidPushReady()}});
   if(action==='android-push-register'){
    if(!androidPushReady())throw new AppError('알림 설정을 준비 중이에요.',503);

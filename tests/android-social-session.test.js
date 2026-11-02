@@ -35,6 +35,8 @@ test('verified social identity creates a real SQL member/session, preserves iden
     assert.equal((await invoke({action:'state'},first.data.token)).code,200);
     assert.equal((await invoke({action:'android-test-profile'},first.data.token)).code,404);
     assert.equal((await invoke({action:'android-test-purchase',data:{points:1000}},first.data.token)).code,404);
+    assert.equal((await invoke({action:'ad-start'},first.data.token)).code,403);
+    assert.equal((await invoke({action:'ad-claim',data:{id:'00000000-0000-4000-8000-000000000000'}},first.data.token)).code,403);
     assert.equal((await invoke({action:'logout'},first.data.token)).code,200);
     assert.equal((await invoke({action:'state'},first.data.token)).code,401);
     assert.equal((await invoke({action:'state'},again.data.token)).code,200);

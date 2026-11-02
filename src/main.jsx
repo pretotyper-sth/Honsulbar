@@ -14,7 +14,7 @@ import { Glass } from './Glass';
 import { SEATS as positions, POINT_PACKS, SUBSCRIPTIONS, adjacent, audioGain } from './social';
 import { AdminPage } from './admin';
 import './style.css';
-import { nativeTestAds, showAndroidTestReward } from './android-test-ads';
+import { nativeTestAds, showAndroidTestReward, showAndroidReward } from './android-test-ads';
 import { nativePlayBilling, purchasePlayPoints, recoverPlayPurchases, purchasePlaySubscription, recoverPlaySubscription, managePlaySubscriptions } from './play-billing';
 import { App as NativeApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
@@ -961,6 +961,23 @@ function App() {
   async function attendance() {
     if (wallet.attendanceDate === today || adInProgress) return;
     setAdInProgress(true);
+    if (Capacitor.getPlatform() === 'android' && !import.meta.env.VITE_ANDROID_TEST) {
+      try {
+        const claim = await run('android-ad-start');
+        setToast('광고를 불러오고 있어요.');
+        await showAndroidReward(claim);
+        let reward;
+        for (let attempt=0;attempt<5;attempt++) {
+          reward = await run('android-ad-finish',{id:claim.id});
+          if (reward.verified) break;
+          await new Promise(resolve=>setTimeout(resolve,1000));
+        }
+        setSheet('shop');
+        setToast(reward?.verified ? '출석 포인트 1,000P를 받았어요.' : '광고 보상을 확인 중이에요. 잠시 후 잔액에 반영돼요.');
+      } catch { setToast('광고를 완료하지 못했어요. 다시 시도해 주세요.'); }
+      finally { setAdInProgress(false); }
+      return;
+    }
     let claim;
     try { claim = await run('ad-start'); } catch (e) { setAdInProgress(false); setToast(e.message); return; }
     let finished = false;
