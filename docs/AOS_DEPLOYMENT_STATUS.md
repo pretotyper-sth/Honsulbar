@@ -23,6 +23,8 @@
 - 최종 자동 검사 AOS 147개·공통 서버 108개 통과. APK·업로드 키 서명 AAB 재생성. APK v2 서명 검증, AAB jarsigner 검증 및 jar 구조 검사 통과. jarsigner의 자체 서명/타임스탬프 없음 및 JarInputStream 엔트리 순서 관련 경고는 남아 있으며 Play 수락 검증과 구분. Play 업로드는 아직 하지 않음. 최종 APK/AAB는 release-files의 기존 이름으로 저장.
 - 삭제·공급자 연결 해제 및 아동 안전 안내를 PC/360px 브라우저에서 확인. 모바일 문서 너비 360px, 가로 넘침 없음. 기기 권한·음성·결제·광고 연동 QA 성공으로 간주하지 않음.
 - 운영 DB 마이그레이션·회원 삭제·잔액 변경은 이번 후속에서 실행하지 않음. 기존 회원 보존을 위해 필요 없는 운영 데이터 작업을 추가하지 않음.
+- 구현 푸시 완료: AOS 77c9fcd / 공통 서버 main 03b9c58. 운영 배포 7ntPNr7pMkBZu5HHQ8Q8XAA151Ga Ready 확인. 공개 API 200, apiReady/androidAuthReady/androidPushReady/accountTransferReady/ageTestReady=true, devLogin=false. 공개 Android 커뮤니티·삭제 안내의 갱신 내용 확인. 환불 polling 기본 OFF 유지.
+- 최종 후보 파일 SHA256: APK 6c28174d8f465d30ed1a83a20d9b4b36cfff3ae659a6711fbde6bbbe00db6972 / AAB e06356b0a91e55f1579dfa4037064a72f2f86180deb9a286901a4b7c6c479401. 빌드 구분과 해시는 release-files/ANDROID_BUILD_INFO.txt에 함께 저장. 전체 콘솔 연결이 끝나기 전 통합 QA 완료나 최종 배포 준비 완료로 표시하지 않음.
 
 ### 에이전트가 이어서 처리할 작업
 
