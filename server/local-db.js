@@ -24,9 +24,12 @@ const MIGRATIONS = [
   '20261016_face_verification.sql',
   '20261024_voice_evidence.sql',
   '20261025_scoped_safety_cleanup.sql',
+  '20261101_multi_platform_identity.sql',
+  '20261102_android_push.sql',
+  '20261102_android_ads.sql',
 ];
 const TABLES = new Set([
-  'hb_voice_evidence', 'hb_voice_consents',
+  'hb_voice_evidence', 'hb_voice_consents', 'hb_push_devices', 'hb_android_ad_claims',
   'hb_members', 'hb_sessions', 'hb_tickets', 'hb_outbox', 'hb_visits', 'hb_rooms',
   'hb_ledger', 'hb_notifications', 'hb_waitlist', 'hb_requests', 'hb_focus',
   'toss_login_links', 'hb_orders', 'hb_ad_claims', 'hb_events',
