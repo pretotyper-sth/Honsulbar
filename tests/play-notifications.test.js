@@ -24,3 +24,9 @@ test('test push cannot grant credit; malformed, wrong-app and unsupported refund
  assert.deepEqual(await processPlayNotification(envelope({testNotification:{}}),options),{test:true});
  for(const body of [{},'{bad',envelope({packageName:'other'}),envelope({voidedPurchaseNotification:{purchaseToken:token}})])await assert.rejects(processPlayNotification(body,options));
 });
+test('point refunds queue the hashed purchase for review without granting or deducting points',async()=>{
+ const calls=[];
+ assert.deepEqual(await processPlayNotification(envelope({voidedPurchaseNotification:{productType:2,purchaseToken:token}}),{env,run:async(name,args)=>{calls.push(name);assert.equal(name,'hb_review_play_refund');assert.match(args.p_order,/^play:[a-f0-9]{64}$/);assert.ok(!args.p_order.includes(token));},subscription:()=>assert.fail('not a subscription')}),{reviewRequired:true});
+ assert.equal(calls.length,1);
+ await assert.rejects(processPlayNotification(envelope({voidedPurchaseNotification:{productType:2,purchaseToken:token}}),{env,run:async()=>{throw Error('database unavailable');}}),/database unavailable/);
+});
