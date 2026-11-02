@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { AppError, sbUrl } from './platform.js';
+import { AppError, sbUrl, rpc } from './platform.js';
 
 export async function verifySocialIdentity(accessToken, provider, providerToken) {
   if (!['google', 'kakao'].includes(provider) || typeof accessToken !== 'string' || accessToken.length < 20 || accessToken.length > 8192 || typeof providerToken !== 'string' || providerToken.length < 20 || providerToken.length > 8192) throw new AppError('로그인 정보를 확인해 주세요.', 400);
@@ -27,5 +27,12 @@ export async function verifySocialIdentity(accessToken, provider, providerToken)
   } catch { throw new AppError('로그인 서버에 연결하지 못했어요.', 503); }
   if (!proof || String(provider === 'google' ? proof.sub : proof.id) !== subject) throw new AppError('로그인 수단을 다시 확인해 주세요.', 401);
   if (provider === 'kakao' && (String(proof.app_id) !== '1632702' || !(proof.expires_in > 0))) throw new AppError('로그인 앱을 확인해 주세요.', 401);
-  return { provider, subjectHash: createHmac('sha256', secret).update(`social:${provider}:${subject}`).digest('hex') };
+  return { authUserId:user.id, provider, subjectHash: createHmac('sha256', secret).update(`social:${provider}:${subject}`).digest('hex') };
+}
+
+export async function socialAuthMember(identity,mode,member=null,codeHash=null,{env=process.env,run=rpc}={}){
+ if(env.HB_AUTH_CLEANUP_ENABLED==='1')return run('hb_social_auth',{p_auth_user:identity.authUserId,p_provider:identity.provider,p_subject_hash:identity.subjectHash,p_mode:mode,p_member:member,p_code_hash:codeHash});
+ if(mode==='login')return run('hb_social_login',{p_provider:identity.provider,p_subject_hash:identity.subjectHash});
+ if(mode==='claim')return run('hb_claim_account_transfer',{p_code_hash:codeHash,p_provider:identity.provider,p_subject_hash:identity.subjectHash,p_toss_key:null});
+ await run('hb_link_social_identity',{p_member:member,p_provider:identity.provider,p_subject_hash:identity.subjectHash});return member;
 }
