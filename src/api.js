@@ -60,6 +60,7 @@ function setToken(value) {
 export const clearSession = () => { setToken(null); pendingAgeTest(''); };
 
 async function request(body, method = 'POST', {signal} = {}) {
+  const requestToken = token;
   const photoRequest=body?.action?.startsWith('photo-');
   const controller=photoRequest?new AbortController():null;
   const cancel=()=>controller?.abort();
@@ -70,13 +71,15 @@ async function request(body, method = 'POST', {signal} = {}) {
     const response = await fetch(`${API_BASE}/api/service`, {
       method,
       signal:controller?.signal || signal,
-      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      headers: { 'Content-Type': 'application/json', ...(requestToken ? { Authorization: `Bearer ${requestToken}` } : {}) },
       body: method === 'POST' ? JSON.stringify(body) : undefined,
     });
     const data = await response.json().catch(error => {
       if(controller?.signal.aborted)throw error;
       return {};
     });
+    // A response from the previous account must never clear or replace the current session.
+    if (token !== requestToken) throw new ApiError('로그인 상태가 바뀌었어요. 다시 시도해 주세요.', 409);
     if (response.status === 401 && body?.action !== 'login') setToken(null);
     if (!response.ok) throw new ApiError(data.error || '요청을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.', response.status);
     return data;
@@ -91,9 +94,11 @@ export const getConfig = () => request(null, 'GET');
 export const call = (action, data, extra = {}, options = {}) => request({ action, data, ...extra }, 'POST', options);
 
 export async function login(config, provider, accountTransferCode) {
+  const startingToken = token;
   let result;
   if (provider) {
     const proof = await socialLogin(provider,import.meta.env,{purpose:accountTransferCode?'transfer':'login',accountTransferCode});
+    if (token !== startingToken) throw new ApiError('로그인 상태가 바뀌었어요. 다시 시도해 주세요.', 409);
     result = await request({action:'social-login',provider,...proof,...(accountTransferCode?{accountTransferCode}:{})});
   } else if (insideToss()) {
     let authorizationCode, referrer;
@@ -119,8 +124,9 @@ export async function login(config, provider, accountTransferCode) {
 }
 
 export async function logout() {
+  const startingToken = token;
   try { await call('logout'); } catch {}
-  setToken(null);
+  if (token === startingToken) setToken(null);
 }
 
 export async function createSocialAccountTransfer(provider) {
@@ -130,7 +136,10 @@ export async function createSocialAccountTransfer(provider) {
   return (await request({action:'account-transfer-create',provider,...proof})).result;
 }
 export async function linkSocialAccount(provider) {
-  const proof = await socialLogin(provider, import.meta.env, {purpose:'link',sessionTag:await sessionTag(token)});
+  const startingToken = token;
+  if (!startingToken) throw new ApiError('계정을 연결하려면 다시 로그인해 주세요.', 401);
+  const proof = await socialLogin(provider, import.meta.env, {purpose:'link',sessionTag:await sessionTag(startingToken)});
+  if (token !== startingToken) throw new ApiError('로그인 상태가 바뀌었어요. 다시 시도해 주세요.', 409);
   return request({action:'link-social',provider,...proof});
 }
 

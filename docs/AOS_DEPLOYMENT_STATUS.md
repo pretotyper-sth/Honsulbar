@@ -6,6 +6,24 @@
 
 이 목록이 아래 작업 이력보다 우선합니다. 설정 완료와 실제 기기 성공은 구분합니다.
 
+### 이번 연결 확인 — 2026-11-02 후속
+
+- 운영 Google 계정 pretotyper.sth@gmail.com / 개발자 ID 6674720060766433052로 Play Console 진입. 개인 개발자 계정이며 앱 목록은 비어 있음. 인증 재요청 화면 없음.
+- 앱 생성 양식에 혼술바 / com.honsulbar.app / 한국어 / 앱 / 무료 입력 완료. 패키지 사용 가능 확인. 개발자 정책 준수 선언·Play 앱 서명 약관·미국 수출법 동의가 새로 필요하여 사용자 확인 요청 중. 앱 생성 완료·내부 트랙 배포로 보고하지 않음.
+- 앱 생성과 독립적으로 ‘혼술바 내부 QA’ 이메일 목록 생성, 운영 계정 1명을 라이선스 테스터에 적용. ‘변경사항이 저장되었습니다’ 확인. 실제 무료 테스트 주문은 아직 없음. 내부 트랙 참여 목록 지정은 앱 생성 후 별도 진행.
+- AdMob 운영 계정은 신규 가입 전. 대한민국 가입 화면에서 애드센스 약관이 비어 있고 reCAPTCHA 연결 오류가 새로고침 후에도 반복. 사용자 직접 화면 확인 요청. 은행·카드·결제 프로필·새 약관 동의는 수행하지 않음. 운영 앱/광고 단위/SSV 콘솔 연결 미완료.
+- AOS 클라이언트에서 계정 변경 후 이전 요청의 401/성공 응답과 로그아웃 응답을 폐기하고, 로그인·추가 연결 중 세션 변경 시 이전 OAuth 결과 제출을 차단. 실제 코드 재현 검사 추가.
+- Pub/Sub 대안으로 기존 유지보수의 Play Voided Purchases 목록 조회 구현. 기본 OFF(HB_PLAY_REFUND_POLL_ENABLED). Play 검증 계정과 재무 조회 권한 준비 후 활성화 가능. 지난 30일의 일회성 상품만 조회해 기존 지급 주문을 중복 없이 관리자 검토로 등록. 미지급 주문은 건너뛰고 다른 건 실패 후에도 계속 처리. 원문 토큰 저장·로그 출력 없음. 최대 2페이지/2,000건, 초과·부분 실패는 성공으로 응답하지 않음. 월 2,000건 초과 전 영속 커서 필요. 별도 cron·Cloud 결제 계정·Pub/Sub 없음.
+- 이 대안은 포인트 환불 발견 경로이며 구독 갱신·취소 실시간 통지를 대체하지 않음. 구독은 앱 시작/복귀 시 재검증·서버의 만료시각 제한 유지. 앱 미실행 중 갱신 재확인과 환불 포인트 최종 회수 정책/처리는 남아 있음.
+- 외부 삭제 페이지에 Google 연결 관리 링크와 카카오 연결 해제 경로 추가. Supabase Auth 삭제와 공급자 동의 철회가 별개임을 명시. 공급자 자동 철회 구현·실제 철회 성공으로 보고하지 않음. Google 자동 revoke에는 유효한 공급자 access/refresh 토큰, Kakao unlink에는 사용자 토큰 또는 앱 어드민 키가 필요. 현재 장기 보관하지 않는 공급자 토큰을 임의로 수집하거나 관리자 키를 새로 발급하지 않음.
+- AOS 커뮤니티 공개 기준에 CSAE 금지·앱 신고/이메일·운영 담당·관계기관 협조 안내 추가. Play 제출 값·소개·데이터 보안 입력 근거·심사 접근 제한·통합 QA 기록 기준은 docs/PLAY_SUBMISSION.md에 준비. 정책 자기인증·심사 제출 완료 아님.
+- 본인인증 공식 조사: PortOne Free 플랜의 ‘무제한 본인인증 연동’은 PG 운영 인증료 무료 약속이 아님. NICE/KCB 포함 공개 검색에서 일정 회원 수까지 운영 성공 인증 무료라는 확정 조건을 찾지 못함. PG 단독 계약은 필요하며 KG 운영 성공 건당 40원(VAT 별도) 안내 유지.
+- 업종: PortOne 공식 안내는 PASS에 정보제공·미팅/채팅 예외를 명시하므로, 성인 대상 음성 소셜인 혼술바를 성인물 판매로 일괄 분류하지 않음. 안내에 제한 문구가 함께 있어 실제 서비스 설명으로 PG 사전 심사가 필요하며 허용 확정 아님. 상담·계약 신청·대외 메시지는 보내지 않음.
+- 공식 근거: https://help.portone.io/category/service/identity-verification · https://www.portone.io/pricing · https://faq.portone.io/6a1cba84-a99b-4ee1-a5a8-fffea0092399 · https://developers.google.com/android-publisher/voided-purchases · https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.voidedpurchases/list · https://developers.kakao.com/docs/ko/kakaologin/rest-api · https://developers.google.com/identity/protocols/oauth2/javascript-implicit-flow
+- 최종 자동 검사 AOS 147개·공통 서버 108개 통과. APK·업로드 키 서명 AAB 재생성. APK v2 서명 검증, AAB jarsigner 검증 및 jar 구조 검사 통과. jarsigner의 자체 서명/타임스탬프 없음 및 JarInputStream 엔트리 순서 관련 경고는 남아 있으며 Play 수락 검증과 구분. Play 업로드는 아직 하지 않음. 최종 APK/AAB는 release-files의 기존 이름으로 저장.
+- 삭제·공급자 연결 해제 및 아동 안전 안내를 PC/360px 브라우저에서 확인. 모바일 문서 너비 360px, 가로 넘침 없음. 기기 권한·음성·결제·광고 연동 QA 성공으로 간주하지 않음.
+- 운영 DB 마이그레이션·회원 삭제·잔액 변경은 이번 후속에서 실행하지 않음. 기존 회원 보존을 위해 필요 없는 운영 데이터 작업을 추가하지 않음.
+
 ### 에이전트가 이어서 처리할 작업
 
 - [ ] 외부 인증정보 정리: 서비스 회원 탈퇴는 수정·검증 완료. Supabase Auth 계정 삭제·재시도 구현·검증 및 운영 DB 구조 적용 완료. 활성화 승인·운영 플래그 저장 완료. Vercel 재인증·운영 재배포 Ready 확인. 원격 인증 계정의 모든 공급자를 대조해 다른 서비스 회원이 있으면 보존. Google/Kakao 자체 동의 철회는 별도이며 자동 완료로 안내하지 않음.
