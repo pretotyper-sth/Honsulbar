@@ -33,3 +33,21 @@ export async function completeAgeTest(member, id, {env = process.env, now = Date
   // Never persist names, phone numbers, birthdays or CI; a TEST result never changes production adult status.
   return {verified:true,adult:true,test:true,admissionGranted:false};
 }
+
+let cachedHealth;
+export async function ageTestHealth({env=process.env,fetcher=fetch,now=Date.now()}={}) {
+  if (!ageTestReady(env)) return {configured:false,authorized:false};
+  if (cachedHealth?.secret===env.HB_PORTONE_API_SECRET && cachedHealth.expires>now) return cachedHealth.result;
+  const result=(async()=>{
+    try {
+      // A random nonexistent ID checks authorization without reading a customer's record or starting verification.
+      const id=`ha-probe-${randomBytes(16).toString('hex')}`;
+      const response=await fetcher(`https://api.portone.io/identity-verifications/${id}?storeId=${AGE_TEST_STORE}`,{headers:{Authorization:`PortOne ${env.HB_PORTONE_API_SECRET}`},signal:AbortSignal.timeout(10000)});
+      if(response.status!==404){await response.body?.cancel().catch(()=>{});return {configured:true,authorized:false,providerStatus:response.status};}
+      const error=await response.json();
+      return {configured:true,authorized:String(error?.type||'').replace(/[^a-z]/gi,'').toUpperCase()==='IDENTITYVERIFICATIONNOTFOUND',providerStatus:response.status};
+    } catch {return {configured:true,authorized:false,providerStatus:null};}
+  })();
+  cachedHealth={secret:env.HB_PORTONE_API_SECRET,expires:now+60000,result};
+  return result;
+}

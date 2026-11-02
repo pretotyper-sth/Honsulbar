@@ -15,3 +15,12 @@ test('age test rejects another member, expired attempt, live channel, altered ID
  for(const changes of [{status:'READY'},{id:'other'},{channel:{type:'LIVE',key:AGE_TEST_CHANNEL}},{channel:{type:'TEST',key:'other'}},{verifiedCustomer:{birthDate:'2007-11-03'}},{verifiedCustomer:{birthDate:'2007-02-30'}}])await assert.rejects(completeAgeTest('member-a',id,{env,now,fetcher:async()=>({ok:true,json:async()=>({...fixture(id),...changes})})}));
  assert.throws(()=>startAgeTest('member-a',{env:{...env,HB_AGE_TEST_ENABLED:'0'},now}));
 });
+
+test('identity health checks authorization without requesting an existing user record and caches probes',async()=>{
+ const {ageTestHealth}=await import('../server/age-verification.js');let calls=0;
+ const fetcher=async url=>{calls++;assert.match(url,/\/ha-probe-[a-f0-9]{32}\?/);return {status:404,json:async()=>({type:'IDENTITY_VERIFICATION_NOT_FOUND'})};};
+ assert.deepEqual(await ageTestHealth({env,fetcher,now}),{configured:true,authorized:true,providerStatus:404});
+ assert.equal((await ageTestHealth({env,fetcher,now:now+1000})).authorized,true);assert.equal(calls,1);
+ assert.equal((await ageTestHealth({env:{...env,HB_PORTONE_API_SECRET:env.HB_PORTONE_API_SECRET+'bad'},now,fetcher:async()=>({status:401})})).authorized,false);
+ assert.equal((await ageTestHealth({env:{...env,HB_AGE_TEST_ENABLED:'0'},fetcher:()=>assert.fail('disabled')})).configured,false);
+});
