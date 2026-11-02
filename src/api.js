@@ -1,3 +1,4 @@
+import {openAgeTest,pendingAgeTest,clearAgeTest,ageCallbackId} from './age-verification';
 import { socialLogin, resumeSocialLogin } from './social-login';
 import { appLogin, requestNotificationAgreement } from '@apps-in-toss/web-framework';
 
@@ -56,7 +57,7 @@ function setToken(value) {
   token = value;
   try { value ? localStorage.setItem(TOKEN_KEY, value) : localStorage.removeItem(TOKEN_KEY); } catch {}
 }
-export const clearSession = () => setToken(null);
+export const clearSession = () => { setToken(null); pendingAgeTest(''); };
 
 async function request(body, method = 'POST', {signal} = {}) {
   const photoRequest=body?.action?.startsWith('photo-');
@@ -143,4 +144,17 @@ export async function resumeLogin() {
   const result = await request({action:'social-login',provider:pending.provider,accessToken:pending.accessToken,providerToken:pending.providerToken});
   setToken(result.token);
   return {state:result.state,linked:false};
+}
+
+export async function beginAgeVerification(){
+ const {result}=await request({action:"age-test-start"});
+ await openAgeTest(result,await sessionTag(token),API_BASE);
+}
+let ageCompleting;
+export async function finishAgeVerification(url){
+ if(ageCompleting)return ageCompleting;
+ const pending=pendingAgeTest(await sessionTag(token));
+ if(!pending||(url&&ageCallbackId(url)!==pending.id))throw new ApiError("앱에서 인증을 다시 시작해 주세요.",400);
+ ageCompleting=(async()=>{const {result}=await request({action:"age-test-complete",data:{id:pending.id}});if(result?.verified)clearAgeTest(pending.id);return result;})();
+ try{return await ageCompleting;}finally{ageCompleting=null;}
 }

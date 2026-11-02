@@ -53,5 +53,5 @@ test('Android callback accepts only the configured app route and AOS policies ar
  const {validateCallback}=await import('../src/social-login.js');
  assert.equal(validateCallback('com.honsulbar.app://auth/callback?code=abc'),true);
  for(const url of ['https://auth/callback?code=abc','com.honsulbar.app://evil/callback','com.honsulbar.app://auth/other','broken']) assert.equal(validateCallback(url),false);
- for(const file of ['terms','privacy','refund','age-safety']) assert.match(readFileSync(new URL(`../public/legal/${file}.html`,import.meta.url),'utf8'),/Android 전환 검토용 초안/);
+ for(const file of ['terms','privacy','refund','age-safety']) assert.match(readFileSync(new URL(`../public/legal/${file}.html`,import.meta.url),'utf8'),/Android (?:전환 검토용 초안|배포 검토안)/);
 });

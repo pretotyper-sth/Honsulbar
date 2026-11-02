@@ -30,6 +30,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="com.honsulbar.app" android:host="auth" android:path="/callback" />
+                <data android:scheme="com.honsulbar.app" android:host="identity" android:path="/callback" />
             </intent-filter>
         </activity>
 
