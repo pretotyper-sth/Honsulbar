@@ -1,3 +1,4 @@
+import {ageTestReady,startAgeTest,completeAgeTest} from '../server/age-verification.js';
 import {playBillingConfiguration,processPlayPurchase,processPlaySubscription} from '../server/play-billing.js';
 import {androidPushReady,registerAndroidPush,unregisterAndroidPush} from '../server/android-push.js';
 import {voiceEvidenceReady,VOICE_CONSENT_VERSION,validateVoiceEvidence,encryptEvidence,decryptEvidence} from '../server/voice-evidence.js';
@@ -43,7 +44,7 @@ export default async function handler(req,res) {
   let body=req.body||{};if(typeof body==='string')body=JSON.parse(body);
   if(JSON.stringify(body).length>1500000)throw new AppError('요청이 너무 커요.',413);
   const action=req.method==='GET'?'config':body.action;
-  if(action==='config')return res.json({androidPushReady:androidPushReady(),androidAuthReady:process.env.HB_ANDROID_AUTH_ENABLED==='1',voiceEvidenceReady:voiceEvidenceReady(),voiceConsentVersion:VOICE_CONSENT_VERSION,apiReady:!!(sbUrl()&&process.env.SUPABASE_SERVICE_ROLE_KEY),loginReady:!!(process.env.TOSS_CLIENT_CERT_BASE64&&process.env.TOSS_CLIENT_KEY_BASE64&&process.env.TOSS_DECRYPTION_KEY&&process.env.TOSS_AAD),devLogin:!isProduction()&&process.env.HB_DEV_LOGIN==='1',supabaseUrl:sbUrl(),supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_ANON_KEY||'',adGroupId:rewardedAdGroupId(),products:skuPoints(),subscriptionSku:subscriptionSku(),pushAvailableTemplate:pushAvailableTemplate(),pushReplyTemplate:pushReplyTemplate(),iceServers:process.env.WEBRTC_ICE_SERVERS?JSON.parse(process.env.WEBRTC_ICE_SERVERS):[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]});
+  if(action==='config')return res.json({ageTestReady:ageTestReady(),androidPushReady:androidPushReady(),androidAuthReady:process.env.HB_ANDROID_AUTH_ENABLED==='1',voiceEvidenceReady:voiceEvidenceReady(),voiceConsentVersion:VOICE_CONSENT_VERSION,apiReady:!!(sbUrl()&&process.env.SUPABASE_SERVICE_ROLE_KEY),loginReady:!!(process.env.TOSS_CLIENT_CERT_BASE64&&process.env.TOSS_CLIENT_KEY_BASE64&&process.env.TOSS_DECRYPTION_KEY&&process.env.TOSS_AAD),devLogin:!isProduction()&&process.env.HB_DEV_LOGIN==='1',supabaseUrl:sbUrl(),supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_ANON_KEY||'',adGroupId:rewardedAdGroupId(),products:skuPoints(),subscriptionSku:subscriptionSku(),pushAvailableTemplate:pushAvailableTemplate(),pushReplyTemplate:pushReplyTemplate(),iceServers:process.env.WEBRTC_ICE_SERVERS?JSON.parse(process.env.WEBRTC_ICE_SERVERS):[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]});
   if(action==='login'){
    const code=typeof body.authorizationCode==='string'?body.authorizationCode.trim():'';
    const referrer=String(body.referrer||'').trim().toUpperCase();
@@ -153,6 +154,8 @@ export default async function handler(req,res) {
    throw new AppError('지원하지 않는 관리자 요청이에요.');
   }
   const member=await authenticate(req);
+  if(action==='age-test-start')return res.json({result:startAgeTest(member)});
+  if(action==='age-test-complete')return res.json({result:await completeAgeTest(member,body.data?.id)});
   if(['ad-start','ad-claim'].includes(action)){
    const [session]=await database(`hb_sessions?token_hash=eq.${hash(req.headers.authorization.slice(7))}&select=platform`);
    if(session?.platform==='android')throw new AppError('Android 광고 시청 경로를 이용해 주세요.',403);
