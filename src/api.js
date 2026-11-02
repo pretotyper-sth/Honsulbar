@@ -90,11 +90,11 @@ async function request(body, method = 'POST', {signal} = {}) {
 export const getConfig = () => request(null, 'GET');
 export const call = (action, data, extra = {}, options = {}) => request({ action, data, ...extra }, 'POST', options);
 
-export async function login(config, provider) {
+export async function login(config, provider, accountTransferCode) {
   let result;
   if (provider) {
-    const proof = await socialLogin(provider);
-    result = await request({action:'social-login',provider,...proof});
+    const proof = await socialLogin(provider,import.meta.env,{purpose:accountTransferCode?'transfer':'login',accountTransferCode});
+    result = await request({action:'social-login',provider,...proof,...(accountTransferCode?{accountTransferCode}:{})});
   } else if (insideToss()) {
     let authorizationCode, referrer;
     try {
@@ -123,6 +123,12 @@ export async function logout() {
   setToken(null);
 }
 
+export async function createSocialAccountTransfer(provider) {
+  const tag=await sessionTag(token);
+  const proof=await socialLogin(provider,import.meta.env,{purpose:'transfer-source',sessionTag:tag});
+  if(!token||tag!==await sessionTag(token))throw new ApiError('다시 로그인해 주세요.',401);
+  return (await request({action:'account-transfer-create',provider,...proof})).result;
+}
 export async function linkSocialAccount(provider) {
   const proof = await socialLogin(provider, import.meta.env, {purpose:'link',sessionTag:await sessionTag(token)});
   return request({action:'link-social',provider,...proof});
@@ -136,12 +142,17 @@ export async function resumeLogin() {
   if (!import.meta.env.VITE_SOCIAL_LOGIN_ENABLED) return null;
   const pending = await resumeSocialLogin();
   if (!pending) return null;
+  if(pending.purpose==='transfer-source'){
+    if(!token||pending.sessionTag!==await sessionTag(token))throw new ApiError('다시 로그인해 주세요.',401);
+    const {result}=await request({action:'account-transfer-create',provider:pending.provider,accessToken:pending.accessToken,providerToken:pending.providerToken});
+    return {state:(await request({action:'state'})).state,accountTransfer:result};
+  }
   if (pending.purpose === 'link') {
     if (!token || pending.sessionTag !== await sessionTag(token)) throw new ApiError('계정을 연결하려면 다시 로그인해 주세요.', 401);
     await request({action:'link-social',provider:pending.provider,accessToken:pending.accessToken,providerToken:pending.providerToken});
     return {state:(await request({action:'state'})).state,linked:true};
   }
-  const result = await request({action:'social-login',provider:pending.provider,accessToken:pending.accessToken,providerToken:pending.providerToken});
+  const result = await request({action:'social-login',provider:pending.provider,accessToken:pending.accessToken,providerToken:pending.providerToken,...(pending.purpose==='transfer'?{accountTransferCode:pending.accountTransferCode}:{})});
   setToken(result.token);
   return {state:result.state,linked:false};
 }

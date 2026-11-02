@@ -25,21 +25,21 @@ export async function resumeSocialLogin(config = import.meta.env, {app = App, fe
   let pending;
   try { pending = JSON.parse(storage?.getItem(pendingKey) || 'null'); } catch { return null; }
   if (!pending) return null;
-  if (!['google','kakao'].includes(pending.provider) || !/^[A-Za-z0-9_-]{43}$/.test(pending.verifier || '') || !Number.isFinite(pending.createdAt) || now < pending.createdAt || now - pending.createdAt > 120000 || !['login','link'].includes(pending.purpose)) {
+  if (!['google','kakao'].includes(pending.provider) || !/^[A-Za-z0-9_-]{43}$/.test(pending.verifier || '') || !Number.isFinite(pending.createdAt) || now < pending.createdAt || now - pending.createdAt > 120000 || !['login','link','transfer','transfer-source'].includes(pending.purpose) || (pending.purpose==='transfer-source'&&!/^[a-f0-9]{64}$/.test(pending.sessionTag||'')) || (pending.purpose==='transfer'&&!/^[A-Za-z0-9_-]{22}$/.test(pending.accountTransferCode||''))) {
     storage?.removeItem(pendingKey); return null;
   }
   const launch = await app.getLaunchUrl?.().catch(() => null);
   if (!launch?.url || !validateCallback(launch.url)) return null;
   if (!config.VITE_SUPABASE_URL?.startsWith('https://') || !config.VITE_SUPABASE_ANON_KEY) throw new Error('로그인 설정을 준비 중이에요.');
   removePending(storage, pending.verifier);
-  return { provider: pending.provider, purpose: pending.purpose, sessionTag: pending.sessionTag, ...await exchange(launch.url, pending, config, fetcher) };
+  return { provider: pending.provider, purpose: pending.purpose, sessionTag: pending.sessionTag, accountTransferCode:pending.accountTransferCode, ...await exchange(launch.url, pending, config, fetcher) };
 }
-export async function socialLogin(provider, config = import.meta.env, {browser = Browser, app = App, fetcher = fetch, storage = localStore(), purpose = 'login', sessionTag} = {}) {
+export async function socialLogin(provider, config = import.meta.env, {browser = Browser, app = App, fetcher = fetch, storage = localStore(), purpose = 'login', sessionTag, accountTransferCode} = {}) {
   const base = config.VITE_SUPABASE_URL;
   const key = config.VITE_SUPABASE_ANON_KEY;
   if (!['google','kakao'].includes(provider) || !base?.startsWith('https://') || !key) throw new Error('로그인 설정을 준비 중이에요.');
   const verifier = encode(crypto.getRandomValues(new Uint8Array(32)));
-  const pending = {verifier, provider, createdAt:Date.now(), purpose, sessionTag};
+  const pending = {verifier, provider, createdAt:Date.now(), purpose, sessionTag, accountTransferCode};
   try { storage?.setItem(pendingKey, JSON.stringify(pending)); } catch {}
   const challenge = encode(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
   let handle, closeHandle, timer;

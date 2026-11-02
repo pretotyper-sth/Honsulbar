@@ -1,0 +1,43 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {PGlite} from '@electric-sql/pglite';import {readFileSync} from 'node:fs';
+test('one-time platform links preserve the Toss member and reject account merging, replay, expiry and revoked source sessions',async()=>{
+ const db=new PGlite();try{
+  await db.exec('create role anon;create role authenticated;create role service_role;');
+  for(const file of ['20260924_toss_login_disconnect.sql','20260924_service_backend.sql','20260924_admin_ops.sql','20260926_rejoin_visit.sql','20261012_safety_automation.sql','20261016_face_verification.sql','20261101_multi_platform_identity.sql','20261102_android_ads.sql','20261102_account_transfer.sql'])await db.exec(readFileSync(new URL('../supabase/migrations/'+file,import.meta.url),'utf8'));
+  const owner=(await db.query("select hb_login('123456') id")).rows[0].id;
+  const other=(await db.query("select hb_social_login('google',$1) id",['e'.repeat(64)])).rows[0].id;
+  await db.query("update hb_members set balance=5200,nickname='원래 회원' where id=$1",[owner]);
+  await db.query("insert into hb_sessions(token_hash,member_id,platform) values($1,$2,'toss')",['a'.repeat(64),owner]);
+  const issue=code=>db.query('select hb_new_account_transfer($1,$2,$3)',[owner,'a'.repeat(64),code.repeat(64)]);
+  const claim=(code,subject='d')=>db.query("select hb_claim_account_transfer($1,'google',$2) id",[code.repeat(64),subject.repeat(64)]);
+  await issue('b');
+  await assert.rejects(claim('b','e'),/이미 다른 계정/);
+  assert.equal((await claim('b')).rows[0].id,owner);
+  const after=(await db.query('select nickname,balance,adult from hb_members where id=$1',[owner])).rows[0];
+  assert.deepEqual(after,{nickname:'원래 회원',balance:5200,adult:true});
+  assert.equal((await db.query('select count(*)::int n from hb_members')).rows[0].n,2);
+  assert.equal((await db.query('select balance from hb_members where id=$1',[other])).rows[0].balance,2000);
+  await db.query('select hb_retention()');
+  assert.equal((await db.query('select count(*)::int n from hb_account_transfers')).rows[0].n,0);
+  await assert.rejects(claim('b'),/만료/);
+  assert.equal((await db.query("select hb_social_login('google',$1) id",['d'.repeat(64)])).rows[0].id,owner);
+  await issue('c');await db.exec("update hb_account_transfers set expires_at=now()-interval '1 second'");await assert.rejects(claim('c','f'),/만료/);
+  await issue('f');await db.query('delete from hb_sessions where token_hash=$1',['a'.repeat(64)]);await assert.rejects(claim('f','f'),/만료/);
+  await db.query("insert into hb_sessions(token_hash,member_id,platform,expires_at) values($1,$2,'toss',now()+interval '2 days')",['a'.repeat(64),owner]);await assert.rejects(issue('c'),/다시 확인/);
+  const android=(await db.query("select hb_social_login('kakao',$1) id",['9'.repeat(64)])).rows[0].id;
+  await db.query("update hb_members set balance=7300,nickname='Android 회원' where id=$1",[android]);
+  await db.query("insert into hb_sessions(token_hash,member_id,platform) values($1,$2,'android')",['8'.repeat(64),android]);
+  const androidIssue=()=>db.query("select hb_new_account_transfer($1,$2,$3,'kakao',$4)",[android,'8'.repeat(64),'7'.repeat(64),'9'.repeat(64)]);
+  await assert.rejects(db.query("select hb_new_account_transfer($1,$2,$3,'google',$4)",[android,'8'.repeat(64),'7'.repeat(64),'e'.repeat(64)]));
+  await androidIssue();
+  await assert.rejects(db.query("select hb_claim_account_transfer($1,'toss',$2,'123456')",['7'.repeat(64),'6'.repeat(64)]),/다른 계정/);
+  assert.equal((await db.query("select hb_claim_account_transfer($1,'toss',$2,'654321') id",['7'.repeat(64),'5'.repeat(64)])).rows[0].id,android);
+  assert.deepEqual((await db.query('select nickname,balance,adult,toss_key from hb_members where id=$1',[android])).rows[0],{nickname:'Android 회원',balance:7300,adult:true,toss_key:'654321'});
+  assert.equal((await db.query("select hb_login('654321') id")).rows[0].id,android);
+  assert.equal((await db.query("select hb_social_login('kakao',$1) id",['9'.repeat(64)])).rows[0].id,android);
+  await assert.rejects(db.query("select hb_claim_account_transfer($1,'toss',$2,'654321')",['7'.repeat(64),'5'.repeat(64)]),/만료/);
+  await db.exec('set role anon');await assert.rejects(db.query('select * from hb_account_transfers'),/permission denied/);await assert.rejects(claim('c'),/permission denied/);await db.exec('reset role');
+  await db.query("select hb_restrict($1,now()+interval '1 day',true,'test restriction',true)",[owner]);
+  await db.query('delete from hb_members where id=$1',[owner]);
+  await assert.rejects(db.query("select hb_social_login('google',$1)",['d'.repeat(64)]),/이용이 제한/);
+ }finally{await db.close();}
+});

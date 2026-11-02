@@ -64,3 +64,17 @@ test('expired pending login cannot exchange; unrelated or credential-bearing cal
   assert.equal(await resumeSocialLogin(config,{app:{getLaunchUrl:async()=>({url:'https://evil.test?code=bad'})},now,storage,fetcher:()=>assert.fail('unrelated callback')}),null);
   assert.ok(storage.getItem());
 });
+
+test('cold-start transfer preserves the one-time link code and rejects a missing code before exchange',async()=>{
+ const now=Date.now(),pending={provider:'google',verifier:'a'.repeat(43),createdAt:now,purpose:'transfer',accountTransferCode:'a'.repeat(22)};
+ const app={getLaunchUrl:async()=>({url:'com.honsulbar.app://auth/callback?code=transfer-proof'})};
+ const result=await resumeSocialLogin(config,{app,now,storage:pendingStore(pending),fetcher:async()=>({ok:true,json:async()=>({access_token:'verified',provider_token:'provider-proof'})})});assert.equal(result.accountTransferCode,pending.accountTransferCode);assert.equal(result.purpose,'transfer');
+ assert.equal(await resumeSocialLogin(config,{app,now,storage:pendingStore({...pending,accountTransferCode:''}),fetcher:()=>assert.fail('missing link code')}),null);
+});
+test('cold-start code issuance retains the authenticated session binding and rejects an absent binding',async()=>{
+ const now=Date.now(),pending={provider:'google',verifier:'a'.repeat(43),createdAt:now,purpose:'transfer-source',sessionTag:'b'.repeat(64)};
+ const app={getLaunchUrl:async()=>({url:'com.honsulbar.app://auth/callback?code=source-proof'})};
+ const result=await resumeSocialLogin(config,{app,now,storage:pendingStore(pending),fetcher:async()=>({ok:true,json:async()=>({access_token:'verified',provider_token:'provider-proof'})})});
+ assert.equal(result.purpose,'transfer-source');assert.equal(result.sessionTag,pending.sessionTag);
+ assert.equal(await resumeSocialLogin(config,{app,now,storage:pendingStore({...pending,sessionTag:''}),fetcher:()=>assert.fail('missing source session')}),null);
+});

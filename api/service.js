@@ -5,7 +5,7 @@ import {verifySocialIdentity} from '../server/social-auth.js';
 import {playBillingConfiguration,processPlayPurchase,processPlaySubscription} from '../server/play-billing.js';
 import {androidPushReady,registerAndroidPush,unregisterAndroidPush} from '../server/android-push.js';
 import {startAndroidAd,finishAndroidAd} from '../server/android-ads.js';
-import {randomUUID} from 'node:crypto';
+import {randomUUID,randomBytes} from 'node:crypto';
 import {androidTestEnabled,androidTestProduct} from '../server/android-test.js';
 import {verifyPhoto,warmPhotoVerifier} from '../server/photo-verification.js';
 import {AppError,authenticate,admin,database,rpc,toss,decryptField,isAdult,newToken,hash,dispatchOutbox,sbUrl,signPhoto,photoMatches,skuPoints,findProduct,rewardedAdGroupId,subscriptionSku,isSubscriptionSku,parseTossTime,pushAvailableTemplate,pushReplyTemplate,isProduction,identityKey} from '../server/platform.js';
@@ -46,7 +46,7 @@ export default async function handler(req,res) {
   let body=req.body||{};if(typeof body==='string')body=JSON.parse(body);
   if(JSON.stringify(body).length>1500000)throw new AppError('요청이 너무 커요.',413);
   const action=req.method==='GET'?'config':body.action;
-  if(action==='config')return res.json({ageTestReady:ageTestReady(),androidPushReady:androidPushReady(),androidAuthReady:process.env.HB_ANDROID_AUTH_ENABLED==='1',voiceEvidenceReady:voiceEvidenceReady(),voiceConsentVersion:VOICE_CONSENT_VERSION,apiReady:!!(sbUrl()&&process.env.SUPABASE_SERVICE_ROLE_KEY),loginReady:!!(process.env.TOSS_CLIENT_CERT_BASE64&&process.env.TOSS_CLIENT_KEY_BASE64&&process.env.TOSS_DECRYPTION_KEY&&process.env.TOSS_AAD),devLogin:!isProduction()&&process.env.HB_DEV_LOGIN==='1',supabaseUrl:sbUrl(),supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_ANON_KEY||'',adGroupId:rewardedAdGroupId(),products:skuPoints(),subscriptionSku:subscriptionSku(),pushAvailableTemplate:pushAvailableTemplate(),pushReplyTemplate:pushReplyTemplate(),iceServers:process.env.WEBRTC_ICE_SERVERS?JSON.parse(process.env.WEBRTC_ICE_SERVERS):[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]});
+  if(action==='config')return res.json({accountTransferReady:process.env.HB_ACCOUNT_TRANSFER_ENABLED==='1',ageTestReady:ageTestReady(),androidPushReady:androidPushReady(),androidAuthReady:process.env.HB_ANDROID_AUTH_ENABLED==='1',voiceEvidenceReady:voiceEvidenceReady(),voiceConsentVersion:VOICE_CONSENT_VERSION,apiReady:!!(sbUrl()&&process.env.SUPABASE_SERVICE_ROLE_KEY),loginReady:!!(process.env.TOSS_CLIENT_CERT_BASE64&&process.env.TOSS_CLIENT_KEY_BASE64&&process.env.TOSS_DECRYPTION_KEY&&process.env.TOSS_AAD),devLogin:!isProduction()&&process.env.HB_DEV_LOGIN==='1',supabaseUrl:sbUrl(),supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_ANON_KEY||'',adGroupId:rewardedAdGroupId(),products:skuPoints(),subscriptionSku:subscriptionSku(),pushAvailableTemplate:pushAvailableTemplate(),pushReplyTemplate:pushReplyTemplate(),iceServers:process.env.WEBRTC_ICE_SERVERS?JSON.parse(process.env.WEBRTC_ICE_SERVERS):[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]});
   if(action==='login'){
    const code=typeof body.authorizationCode==='string'?body.authorizationCode.trim():'';
    const referrer=String(body.referrer||'').trim().toUpperCase();
@@ -60,7 +60,12 @@ export default async function handler(req,res) {
    const identity=identityKey(String(info.userKey));
    const [restriction]=await database(`hb_restrictions?identity_key=eq.${identity}&blocked_until=gt.${encodeURIComponent(new Date().toISOString())}&delete_after=gt.${encodeURIComponent(new Date().toISOString())}&select=identity_key&limit=1`);
    if(restriction)throw new AppError('이용이 제한된 계정이에요.',403);
-   const memberId=await rpc('hb_login',{p_key:String(info.userKey)});
+   let memberId;
+   if(body.accountTransferCode!==undefined){
+    if(process.env.HB_ACCOUNT_TRANSFER_ENABLED!=='1')throw new AppError('계정 연결을 준비 중이에요.',503);
+    if(typeof body.accountTransferCode!=='string'||!/^[A-Za-z0-9_-]{22}$/.test(body.accountTransferCode))throw new AppError('연결 코드를 확인해 주세요.',400);
+    memberId=await rpc('hb_claim_account_transfer',{p_code_hash:hash(body.accountTransferCode),p_provider:'toss',p_subject_hash:identity,p_toss_key:String(info.userKey)});
+   }else memberId=await rpc('hb_login',{p_key:String(info.userKey)});
    await database(`hb_members?id=eq.${memberId}`,{method:'PATCH',body:{identity_key:identity}});
    const [member]=await database(`hb_members?id=eq.${memberId}&select=banned_until`);
    if(member?.banned_until&&new Date(member.banned_until)>new Date())throw new AppError('이용이 제한된 계정이에요.',403);
@@ -70,7 +75,12 @@ export default async function handler(req,res) {
   if(action==='social-login'){
    if(process.env.HB_ANDROID_AUTH_ENABLED!=='1')throw new AppError('로그인 설정을 준비 중이에요.',503);
    const identity=await verifySocialIdentity(body.accessToken,body.provider,body.providerToken);
-   const memberId=await rpc('hb_social_login',{p_provider:identity.provider,p_subject_hash:identity.subjectHash});
+   let memberId;
+   if(body.accountTransferCode!==undefined){
+    if(process.env.HB_ACCOUNT_TRANSFER_ENABLED!=='1')throw new AppError('계정 연결을 준비 중이에요.',503);
+    if(typeof body.accountTransferCode!=='string'||!/^[A-Za-z0-9_-]{22}$/.test(body.accountTransferCode))throw new AppError('연결 코드를 확인해 주세요.',400);
+    memberId=await rpc('hb_claim_account_transfer',{p_code_hash:hash(body.accountTransferCode),p_provider:identity.provider,p_subject_hash:identity.subjectHash,p_toss_key:null});
+   }else memberId=await rpc('hb_social_login',{p_provider:identity.provider,p_subject_hash:identity.subjectHash});
    return await startSession(res,memberId,'android');
   }
   if(action==='dev-login'){
@@ -156,6 +166,15 @@ export default async function handler(req,res) {
    throw new AppError('지원하지 않는 관리자 요청이에요.');
   }
   const member=await authenticate(req);
+  if(action==='account-transfer-create'){
+   if(process.env.HB_ACCOUNT_TRANSFER_ENABLED!=='1')throw new AppError('계정 연결을 준비 중이에요.',503);
+   const sessionHash=hash(req.headers.authorization.slice(7));
+   const [sourceSession]=await database(`hb_sessions?token_hash=eq.${sessionHash}&select=platform`);
+   const proof=sourceSession?.platform==='android'?await verifySocialIdentity(body.accessToken,body.provider,body.providerToken):null;
+   const code=randomBytes(16).toString('base64url');
+   const expires=await rpc('hb_new_account_transfer',{p_member:member,p_session:sessionHash,p_code_hash:hash(code),p_provider:proof?.provider||null,p_subject_hash:proof?.subjectHash||null});
+   return res.json({result:{code,expires}});
+  }
   if(action==='age-test-start')return res.json({result:startAgeTest(member)});
   if(action==='age-test-complete')return res.json({result:await completeAgeTest(member,body.data?.id)});
   if(['ad-start','ad-claim'].includes(action)){
