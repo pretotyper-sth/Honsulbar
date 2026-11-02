@@ -1,3 +1,5 @@
+import {playBillingConfiguration,processPlayPurchase,processPlaySubscription} from '../server/play-billing.js';
+import {androidPushReady,registerAndroidPush,unregisterAndroidPush} from '../server/android-push.js';
 import {voiceEvidenceReady,VOICE_CONSENT_VERSION,validateVoiceEvidence,encryptEvidence,decryptEvidence} from '../server/voice-evidence.js';
 import {emailReady,sendNotificationEmail} from '../server/notification-email.js';
 import {verifySocialIdentity} from '../server/social-auth.js';
@@ -40,7 +42,7 @@ export default async function handler(req,res) {
   let body=req.body||{};if(typeof body==='string')body=JSON.parse(body);
   if(JSON.stringify(body).length>1500000)throw new AppError('요청이 너무 커요.',413);
   const action=req.method==='GET'?'config':body.action;
-  if(action==='config')return res.json({voiceEvidenceReady:voiceEvidenceReady(),voiceConsentVersion:VOICE_CONSENT_VERSION,apiReady:!!(sbUrl()&&process.env.SUPABASE_SERVICE_ROLE_KEY),loginReady:!!(process.env.TOSS_CLIENT_CERT_BASE64&&process.env.TOSS_CLIENT_KEY_BASE64&&process.env.TOSS_DECRYPTION_KEY&&process.env.TOSS_AAD),devLogin:!isProduction()&&process.env.HB_DEV_LOGIN==='1',supabaseUrl:sbUrl(),supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_ANON_KEY||'',adGroupId:rewardedAdGroupId(),products:skuPoints(),subscriptionSku:subscriptionSku(),pushAvailableTemplate:pushAvailableTemplate(),pushReplyTemplate:pushReplyTemplate(),iceServers:process.env.WEBRTC_ICE_SERVERS?JSON.parse(process.env.WEBRTC_ICE_SERVERS):[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]});
+  if(action==='config')return res.json({androidAuthReady:process.env.HB_ANDROID_AUTH_ENABLED==='1',voiceEvidenceReady:voiceEvidenceReady(),voiceConsentVersion:VOICE_CONSENT_VERSION,apiReady:!!(sbUrl()&&process.env.SUPABASE_SERVICE_ROLE_KEY),loginReady:!!(process.env.TOSS_CLIENT_CERT_BASE64&&process.env.TOSS_CLIENT_KEY_BASE64&&process.env.TOSS_DECRYPTION_KEY&&process.env.TOSS_AAD),devLogin:!isProduction()&&process.env.HB_DEV_LOGIN==='1',supabaseUrl:sbUrl(),supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_ANON_KEY||'',adGroupId:rewardedAdGroupId(),products:skuPoints(),subscriptionSku:subscriptionSku(),pushAvailableTemplate:pushAvailableTemplate(),pushReplyTemplate:pushReplyTemplate(),iceServers:process.env.WEBRTC_ICE_SERVERS?JSON.parse(process.env.WEBRTC_ICE_SERVERS):[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]});
   if(action==='login'){
    const code=typeof body.authorizationCode==='string'?body.authorizationCode.trim():'';
    const referrer=String(body.referrer||'').trim().toUpperCase();
@@ -63,7 +65,7 @@ export default async function handler(req,res) {
   }
   if(action==='social-login'){
    if(process.env.HB_ANDROID_AUTH_ENABLED!=='1')throw new AppError('로그인 설정을 준비 중이에요.',503);
-   const identity=await verifySocialIdentity(body.accessToken,body.provider);
+   const identity=await verifySocialIdentity(body.accessToken,body.provider,body.providerToken);
    const memberId=await rpc('hb_social_login',{p_provider:identity.provider,p_subject_hash:identity.subjectHash});
    return await startSession(res,memberId);
   }
@@ -150,11 +152,29 @@ export default async function handler(req,res) {
    throw new AppError('지원하지 않는 관리자 요청이에요.');
   }
   const member=await authenticate(req);
+  if(action==='android-push-config')return res.json({result:{enabled:androidPushReady()}});
+  if(action==='android-push-register'){
+   if(!androidPushReady())throw new AppError('알림 설정을 준비 중이에요.',503);
+   await registerAndroidPush(member,body.data?.token,{sessionHash:hash(req.headers.authorization.slice(7))});return res.json({ok:true});
+  }
+  if(action==='android-push-unregister'){
+   await unregisterAndroidPush(member,body.data?.token);return res.json({ok:true});
+  }
+  if(action==='play-billing-config')return res.json({result:{...playBillingConfiguration(member),checkoutAllowed:!await rpc('hb_safety_paused')}});
+  if(action==='play-purchase'){
+   const result=await processPlayPurchase(member,body.data);
+   return res.json({result,state:withPhotos(await rpc('hb_snapshot',{p_member:member}),member)});
+  }
+  if(action==='play-subscription'){
+   const result=await processPlaySubscription(member,body.data);
+   return res.json({result,state:withPhotos(await rpc('hb_snapshot',{p_member:member}),member)});
+  }
+
   if(action==='link-social'){
    if(process.env.HB_ANDROID_AUTH_ENABLED!=='1')throw new AppError('로그인 설정을 준비 중이에요.',503);
    const [session]=await database(`hb_sessions?token_hash=eq.${hash(req.headers.authorization.slice(7))}&select=expires_at`);
    if(!session||new Date(session.expires_at).getTime()<Date.now()+7*24*3600000-10*60000)throw new AppError('계정을 연결하려면 다시 로그인해 주세요.',401);
-   const identity=await verifySocialIdentity(body.accessToken,body.provider);
+   const identity=await verifySocialIdentity(body.accessToken,body.provider,body.providerToken);
    await rpc('hb_link_social_identity',{p_member:member,p_provider:identity.provider,p_subject_hash:identity.subjectHash});
    return res.json({ok:true});
   }

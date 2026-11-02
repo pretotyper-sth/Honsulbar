@@ -1,8 +1,8 @@
 import { createHmac } from 'node:crypto';
 import { AppError, sbUrl } from './platform.js';
 
-export async function verifySocialIdentity(accessToken, provider) {
-  if (!['google', 'kakao'].includes(provider) || typeof accessToken !== 'string' || accessToken.length < 20 || accessToken.length > 8192) throw new AppError('로그인 정보를 확인해 주세요.', 400);
+export async function verifySocialIdentity(accessToken, provider, providerToken) {
+  if (!['google', 'kakao'].includes(provider) || typeof accessToken !== 'string' || accessToken.length < 20 || accessToken.length > 8192 || typeof providerToken !== 'string' || providerToken.length < 20 || providerToken.length > 8192) throw new AppError('로그인 정보를 확인해 주세요.', 400);
   const url = sbUrl();
   const key = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
   const secret = process.env.HB_IDENTITY_HASH_KEY;
@@ -14,8 +14,18 @@ export async function verifySocialIdentity(accessToken, provider) {
   const user = await response.json().catch(() => null);
   if (!response.ok || !user?.id || user.is_anonymous) throw new AppError('다시 로그인해 주세요.', 401);
   const identity = user.identities?.find(item => item.provider === provider && item.identity_data?.sub);
-  if (!identity || user.app_metadata?.provider !== provider) throw new AppError('로그인 수단을 확인해 주세요.', 401);
+  if (!identity) throw new AppError('로그인 수단을 확인해 주세요.', 401);
   const subject = String(identity.identity_data.sub);
   if (!subject || subject.length > 512) throw new AppError('로그인 정보를 확인해 주세요.', 401);
+  // Auth can auto-link equal verified emails. A fresh provider token proves which identity signed in.
+  let proof;
+  try {
+    const endpoint = provider === 'google' ? 'https://openidconnect.googleapis.com/v1/userinfo' : 'https://kapi.kakao.com/v1/user/access_token_info';
+    const result = await fetch(endpoint, { headers: { Authorization: `Bearer ${providerToken}` }, signal: AbortSignal.timeout(10000) });
+    // Preserve Kakao's 64-bit ID as a string; token-info avoids fetching profile/email again.
+    proof = result.ok ? (provider === 'kakao' ? JSON.parse((await result.text()).replace(/("id"\s*:\s*)(\d+)/, '$1"$2"')) : await result.json()) : null;
+  } catch { throw new AppError('로그인 서버에 연결하지 못했어요.', 503); }
+  if (!proof || String(provider === 'google' ? proof.sub : proof.id) !== subject) throw new AppError('로그인 수단을 다시 확인해 주세요.', 401);
+  if (provider === 'kakao' && (String(proof.app_id) !== '1632702' || !(proof.expires_in > 0))) throw new AppError('로그인 앱을 확인해 주세요.', 401);
   return { provider, subjectHash: createHmac('sha256', secret).update(`social:${provider}:${subject}`).digest('hex') };
 }

@@ -182,7 +182,7 @@ export async function dispatchOutbox() {
  for(const job of jobs||[]) {
   const emailReady=notificationEmailReady();
   const template=job.data.kind==='available'?pushAvailableTemplate():pushReplyTemplate();
-  if((job.kind==='email'&&!emailReady)||(job.kind==='push'&&(!template||!process.env.TOSS_CLIENT_CERT_BASE64))) {
+  if(job.kind==='email'&&!emailReady) {
    await database(`hb_outbox?id=eq.${job.id}`,{method:'PATCH',body:{attempts:job.attempts-1,locked_until:null,next_attempt_at:new Date(Date.now()+3600000).toISOString(),last_error:'configuration_required'}}); continue;
   }
   try{
@@ -190,7 +190,16 @@ export async function dispatchOutbox() {
     await sendNotificationEmail(job);
    }else{
     const [m]=await database(`hb_members?id=eq.${job.data.memberId}&select=toss_key`);
-    if(m)await toss('/api-partner/v1/apps-in-toss/messenger/send-message',{templateSetCode:template,context:{}},{'x-toss-user-key':m.toss_key});
+    if(m){
+     const {sendAndroidPush}=await import('./android-push.js');
+     const android=await sendAndroidPush(job);
+     const tossAccount=/^\d+$/.test(m.toss_key||'');
+     const tossReady=!!(template&&process.env.TOSS_CLIENT_CERT_BASE64);
+     if(tossAccount&&tossReady)await toss('/api-partner/v1/apps-in-toss/messenger/send-message',{templateSetCode:template,context:{}},{'x-toss-user-key':m.toss_key});
+     if((tossAccount&&!tossReady&&!android.delivered)||(!tossAccount&&!android.available)){
+      await database(`hb_outbox?id=eq.${job.id}`,{method:'PATCH',body:{attempts:job.attempts-1,locked_until:null,next_attempt_at:new Date(Date.now()+3600000).toISOString(),last_error:'configuration_required'}});continue;
+     }
+    }
    }
    await database(`hb_outbox?id=eq.${job.id}`,{method:'PATCH',body:{sent_at:new Date().toISOString(),locked_until:null,last_error:null}});
   }catch{

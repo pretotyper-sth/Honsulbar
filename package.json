@@ -24,6 +24,7 @@
     "@tensorflow/tfjs-backend-wasm": "^4.22.0",
     "@toss/tds-mobile": "^2.5.1",
     "@toss/tds-mobile-ait": "^2.5.1",
+    "google-auth-library": "10.9.1",
     "jpeg-js": "^0.4.4",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
