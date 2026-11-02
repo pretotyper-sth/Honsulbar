@@ -21,3 +21,4 @@ dist-android/
 *.jks
 *.keystore
 android/app/google-services.json
+.android-signing.properties

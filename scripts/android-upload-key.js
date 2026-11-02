@@ -1,0 +1,18 @@
+import { existsSync, mkdirSync, writeFileSync, chmodSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+const root=fileURLToPath(new URL('../',import.meta.url));
+const privateDir=fileURLToPath(new URL('../../private-backups/android-signing/',import.meta.url));
+const store=privateDir+'honsulbar-upload.jks', properties=root+'.android-signing.properties';
+if(existsSync(store)||existsSync(properties))throw new Error('기존 업로드 서명이 있습니다. 덮어쓰지 않습니다.');
+mkdirSync(privateDir,{recursive:true,mode:0o700});chmodSync(privateDir,0o700);
+const password=randomBytes(36).toString('base64url');
+const java=root+'.android-tools/jdk-21.0.13+9/Contents/Home/bin/keytool';
+execFileSync(java,['-genkeypair','-keystore',store,'-alias','honsulbar-upload','-keyalg','RSA','-keysize','3072','-validity','10000','-dname','CN=Honsulbar Upload, O=Sangji Company, C=KR','-storepass:env','HB_KEY_PASSWORD','-keypass:env','HB_KEY_PASSWORD'],{env:{...process.env,HB_KEY_PASSWORD:password},stdio:'pipe'});
+chmodSync(store,0o600);
+const content=`storeFile=${store}\nstorePassword=${password}\nkeyAlias=honsulbar-upload\nkeyPassword=${password}\n`;
+writeFileSync(properties,content,{mode:0o600});
+writeFileSync(privateDir+'upload-signing.properties',content,{mode:0o600});
+execFileSync(java,['-exportcert','-rfc','-keystore',store,'-alias','honsulbar-upload','-storepass:env','HB_KEY_PASSWORD','-file',privateDir+'upload-certificate.pem'],{env:{...process.env,HB_KEY_PASSWORD:password},stdio:'pipe'});
+console.log('업로드 서명과 복구 자료를 비공개 로컬 폴더에 저장했습니다. 비밀번호는 출력하지 않습니다.');

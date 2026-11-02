@@ -16,7 +16,8 @@
     "android:server": "node scripts/android-test-server.js",
     "android:apk": "npm run android:sync && cd android && ./gradlew assembleDebug",
     "android:open": "cap open android",
-    "android:integration": "node scripts/android-integration-build.js"
+    "android:integration": "node scripts/android-integration-build.js",
+    "android:aab": "node scripts/android-integration-build.js --aab"
   },
   "dependencies": {
     "@capacitor-community/admob": "8.2.1",

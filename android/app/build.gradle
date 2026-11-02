@@ -1,5 +1,9 @@
 apply plugin: 'com.android.application'
 
+def uploadProperties = new Properties()
+def uploadFile = rootProject.file('../.android-signing.properties')
+if (uploadFile.exists()) uploadFile.withInputStream { uploadProperties.load(it) }
+
 android {
     namespace = "com.honsulbar.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -9,6 +13,7 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+        manifestPlaceholders = [honsulbarAdmobAppId: System.getenv('HB_ADMOB_APP_ID') ?: 'ca-app-pub-3940256099942544~3347511713']
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -18,16 +23,28 @@ android {
     }
     buildTypes {
         release {
+            if (uploadFile.exists()) {
+                signingConfig signingConfigs.create('upload') {
+                    storeFile file(uploadProperties['storeFile'])
+                    storePassword uploadProperties['storePassword']
+                    keyAlias uploadProperties['keyAlias']
+                    keyPassword uploadProperties['keyPassword']
+                }
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
 }
 
-// This project currently contains local test credentials and simulated purchases only.
+// Release artifacts must come from the HTTPS integration builder with a private upload key.
 gradle.taskGraph.whenReady { graph ->
     if (graph.allTasks.any { it.name.toLowerCase().contains('release') }) {
-        throw new GradleException('Local test app only: release is disabled until native integrations are implemented.')
+        def configFile = file('src/main/assets/capacitor.config.json')
+        def config = configFile.exists() ? new groovy.json.JsonSlurper().parse(configFile) : [:]
+        if (System.getenv('HB_ANDROID_MODE') != 'integration' || !uploadFile.exists() || config.android?.allowMixedContent != false || config.server?.androidScheme != 'https') {
+            throw new GradleException('Release requires signed HTTPS integration build; local test release is forbidden.')
+        }
     }
 }
 

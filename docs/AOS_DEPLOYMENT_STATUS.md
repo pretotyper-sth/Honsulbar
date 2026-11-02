@@ -86,3 +86,11 @@
 - Google ECDSA 서명·원본 쿼리·키 회전·24시간 만료 검증. Android 세션은 기존 Toss 광고 보상 경로로 우회할 수 없음.
 - 운영 광고는 서버 통지 확인 후 지급. 거래 번호·일별 중복 지급 차단. 데모 광고는 허용 회원만 테스트 보상하며 운영 검증과 구분.
 - 공통 DB 적용 후 기존 11명 회원 기준 해시 유지 확인. 전체 자동 검사 AOS 117개, 공통 서버 89개 통과. 실제 기기 광고 시청 성공을 의미하지 않음.
+
+### Play 업로드 준비
+
+- com.honsulbar.app 서명 AAB 생성·서명 검증 완료: 상위 release-files/honsulbar-android-internal.aab. 실제 업로드·Play 심사 통과와 구분.
+- 비공개 업로드 키/복구 설정은 private-backups/android-signing에만 저장. Git 및 앱에 비밀번호 포함하지 않음. 잃어버리지 않도록 별도 안전한 백업 필요.
+- 내부 테스트 AAB는 Google 샘플 AdMob 앱 ID 사용. 운영 광고 전 실제 HB_ADMOB_APP_ID로 재빌드 필요. 운영 광고 단위는 서버에서 별도 설정.
+- 실연동 APK/AAB는 HTTP 혼합 콘텐츠 금지. 로컬 모의 빌드의 release 생성 차단을 실제 Gradle 실행으로 확인.
+- 빌드: node scripts/android-integration-build.js --aab. 키 최초 생성: node scripts/android-upload-key.js (기존 키 덮어쓰기 차단).
