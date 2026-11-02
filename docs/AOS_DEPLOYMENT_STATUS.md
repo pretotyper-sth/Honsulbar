@@ -94,3 +94,10 @@
 - 내부 테스트 AAB는 Google 샘플 AdMob 앱 ID 사용. 운영 광고 전 실제 HB_ADMOB_APP_ID로 재빌드 필요. 운영 광고 단위는 서버에서 별도 설정.
 - 실연동 APK/AAB는 HTTP 혼합 콘텐츠 금지. 로컬 모의 빌드의 release 생성 차단을 실제 Gradle 실행으로 확인.
 - 빌드: node scripts/android-integration-build.js --aab. 키 최초 생성: node scripts/android-upload-key.js (기존 키 덮어쓰기 차단).
+
+### FCM 콘솔 연결 상태
+
+- 전용 서비스 계정 honsulbar-fcm-sender 생성, Firebase Cloud Messaging API 관리자 역할만 부여 완료.
+- 사용자가 JSON 키 생성 및 Vercel Production의 HB_FCM_SERVICE_ACCOUNT_JSON 값을 직접 입력·저장하도록 두 화면 준비. 새 인증정보 입력·저장은 브라우저 작업 규칙상 사용자 단계.
+- 비공개 키 저장 이후 서버 프로젝트 ID·활성화 설정, 재배포, 앱 푸시 빌드 플래그 활성화 및 실제 기기 도착 검증 필요. 현재 성공으로 간주하지 않음.
+- 본인인증 무료 실동작은 아직 공급자 확정 전. PortOne 공식 KCP 안내는 본인인증 테스트 연동정보 미제공을 명시하므로 결제 테스트 채널과 혼동하지 않음: https://help.portone.io/content/kcp_channel
