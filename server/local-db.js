@@ -27,9 +27,10 @@ const MIGRATIONS = [
   '20261101_multi_platform_identity.sql',
   '20261102_android_push.sql',
   '20261102_android_ads.sql',
+  '20261102_account_transfer.sql',
 ];
 const TABLES = new Set([
-  'hb_voice_evidence', 'hb_voice_consents', 'hb_push_devices', 'hb_android_ad_claims',
+  'hb_voice_evidence', 'hb_voice_consents', 'hb_push_devices', 'hb_android_ad_claims', 'hb_account_transfers',
   'hb_members', 'hb_sessions', 'hb_tickets', 'hb_outbox', 'hb_visits', 'hb_rooms',
   'hb_ledger', 'hb_notifications', 'hb_waitlist', 'hb_requests', 'hb_focus',
   'toss_login_links', 'hb_orders', 'hb_ad_claims', 'hb_events',
@@ -172,7 +173,7 @@ export async function rest(path, { method = 'GET', body } = {}) {
     const q = path.indexOf('?');
     const table = q < 0 ? path : path.slice(0, q);
     const search = q < 0 ? '' : path.slice(q + 1);
-    if (table.startsWith('rpc/')) return callRpc(db, table.slice(4), body);
+    if (table.startsWith('rpc/')) return await callRpc(db, table.slice(4), body);
     if (!TABLES.has(table)) throw new LocalDbError('지원하지 않는 요청이에요.', 400);
     const parsed = parseFilters(search);
     const where = parsed.filters.length ? ` where ${parsed.filters.join(' and ')}` : '';
@@ -206,7 +207,7 @@ export async function rest(path, { method = 'GET', body } = {}) {
   } catch (error) {
     if (error instanceof LocalDbError) throw error;
     const message = String(error?.message || '');
-    if (/P0001|raise exception|ERROR:/i.test(message)) {
+    if (error.code === 'P0001' || /P0001|raise exception|ERROR:/i.test(message)) {
       const text = message.replace(/^[\s\S]*ERROR:\s*/i, '').split('\n')[0].trim();
       throw new LocalDbError(text || '요청을 저장하지 못했어요.', 400);
     }

@@ -88,7 +88,7 @@ async function request(body, method = 'POST', {signal} = {}) {
 export const getConfig = () => request(null, 'GET');
 export const call = (action, data, extra = {}, options = {}) => request({ action, data, ...extra }, 'POST', options);
 
-export async function login(config) {
+export async function login(config, accountTransferCode) {
   let result;
   if (insideToss()) {
     let authorizationCode, referrer;
@@ -102,7 +102,7 @@ export async function login(config) {
       throw new ApiError('로그인을 완료하지 못했어요. 다시 시도해 주세요.', 400);
     }
     if (!authorizationCode) throw new ApiError('로그인 정보를 받아오지 못했어요. 다시 시도해 주세요.', 400);
-    result = await request({ action: 'login', authorizationCode, referrer: referrer || 'DEFAULT' });
+    result = await request({ action: 'login', authorizationCode, referrer: referrer || 'DEFAULT',...(accountTransferCode?{accountTransferCode}:{}) });
   } else if (config?.devLogin || webPreviewToken()) {
     let key = null;
     try { key = localStorage.getItem(DEV_KEY); } catch {}
