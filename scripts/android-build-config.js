@@ -30,6 +30,7 @@ export function androidBuildConfig(env = process.env) {
     define: {
       'import.meta.env.VITE_API_BASE': JSON.stringify(api),
       'import.meta.env.VITE_ANDROID_TEST': JSON.stringify(!integration),
+      'import.meta.env.VITE_ANDROID_PUSH_ENABLED': JSON.stringify(integration && env.HB_ANDROID_PUSH_ENABLED === '1'),
       'import.meta.env.VITE_SOCIAL_LOGIN_ENABLED': JSON.stringify(social),
       'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(auth),
       'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(key),

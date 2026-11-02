@@ -20,3 +20,4 @@ dist-android/
 
 *.jks
 *.keystore
+android/app/google-services.json

@@ -1,4 +1,4 @@
-import { socialLogin } from './social-login';
+import { socialLogin, resumeSocialLogin } from './social-login';
 import { appLogin, requestNotificationAgreement } from '@apps-in-toss/web-framework';
 
 const TOKEN_KEY = 'honsulbar:session:v1';
@@ -92,8 +92,8 @@ export const call = (action, data, extra = {}, options = {}) => request({ action
 export async function login(config, provider) {
   let result;
   if (provider) {
-    const accessToken = await socialLogin(provider);
-    result = await request({action:'social-login',provider,accessToken});
+    const proof = await socialLogin(provider);
+    result = await request({action:'social-login',provider,...proof});
   } else if (insideToss()) {
     let authorizationCode, referrer;
     try {
@@ -123,6 +123,24 @@ export async function logout() {
 }
 
 export async function linkSocialAccount(provider) {
-  const accessToken = await socialLogin(provider);
-  return request({action:'link-social',provider,accessToken});
+  const proof = await socialLogin(provider, import.meta.env, {purpose:'link',sessionTag:await sessionTag(token)});
+  return request({action:'link-social',provider,...proof});
+}
+
+async function sessionTag(value) {
+  if (!value) return '';
+  return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)))].map(byte=>byte.toString(16).padStart(2,'0')).join('');
+}
+export async function resumeLogin() {
+  if (!import.meta.env.VITE_SOCIAL_LOGIN_ENABLED) return null;
+  const pending = await resumeSocialLogin();
+  if (!pending) return null;
+  if (pending.purpose === 'link') {
+    if (!token || pending.sessionTag !== await sessionTag(token)) throw new ApiError('계정을 연결하려면 다시 로그인해 주세요.', 401);
+    await request({action:'link-social',provider:pending.provider,accessToken:pending.accessToken,providerToken:pending.providerToken});
+    return {state:(await request({action:'state'})).state,linked:true};
+  }
+  const result = await request({action:'social-login',provider:pending.provider,accessToken:pending.accessToken,providerToken:pending.providerToken});
+  setToken(result.token);
+  return {state:result.state,linked:false};
 }

@@ -26,6 +26,7 @@ const MIGRATIONS = [
   '20261024_voice_evidence.sql',
   '20261025_scoped_safety_cleanup.sql',
   '20261101_multi_platform_identity.sql',
+  '20261102_android_push.sql',
 ];
 const TABLES = new Set([
   'hb_voice_evidence', 'hb_voice_consents',
@@ -33,6 +34,7 @@ const TABLES = new Set([
   'hb_ledger', 'hb_notifications', 'hb_waitlist', 'hb_requests', 'hb_focus',
   'toss_login_links', 'hb_orders', 'hb_ad_claims', 'hb_events',
   'hb_photo_checks', 'hb_photo_challenges', 'hb_restrictions', 'hb_photo_access',
+  'hb_push_devices',
 ]);
 const GUESTS = [
   { key: '91880001', nick: '느긋한 토끼', gender: 'male', drink: 'highball', file: '1.jpg' },
@@ -101,12 +103,14 @@ async function start() {
     await db.query('select hb_sync_safety_time()');
     console.log('local db: 운영 공백에 따른 안전 점검을 로컬에서만 해제했어요.');
   }
-  await seed(db);
-  const members=await db.query("select id from hb_members where toss_key ~ '^9[0-9]{1,8}$'");
-  for(const member of members.rows)await grantLocalTestPoints(db,member.id);
-  setInterval(() => {
-    db.query(`update hb_visits set heartbeat_at=now() where member_id in (select id from hb_members where toss_key like '9188%')`).catch(() => {});
-  }, 25000).unref();
+  if (process.env.HB_LOCAL_SEED_GUESTS !== '0') {
+    await seed(db);
+    const members=await db.query("select id from hb_members where toss_key ~ '^9[0-9]{1,8}$'");
+    for(const member of members.rows)await grantLocalTestPoints(db,member.id);
+    setInterval(() => {
+      db.query(`update hb_visits set heartbeat_at=now() where member_id in (select id from hb_members where toss_key like '9188%')`).catch(() => {});
+    }, 25000).unref();
+  }
   return db;
 }
 

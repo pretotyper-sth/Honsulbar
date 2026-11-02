@@ -1,7 +1,12 @@
 {
-  "appId": "com.honsulbar.localtest",
-  "appName": "혼술바 테스트",
+  "appId": "com.honsulbar.app",
+  "appName": "혼술바",
   "webDir": "dist-android",
-  "server": { "hostname": "localhost", "androidScheme": "https" },
-  "android": { "allowMixedContent": true }
+  "server": {
+    "hostname": "localhost",
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true
+  }
 }

@@ -1,4 +1,4 @@
-package com.honsulbar.localtest;
+package com.honsulbar.app;
 
 import com.getcapacitor.BridgeActivity;
 

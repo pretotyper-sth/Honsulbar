@@ -8,15 +8,26 @@ test('Auth server identity required; supplied email and client subject never ide
  const saved={...process.env},original=globalThis.fetch;
  try {
   Object.assign(process.env,{SUPABASE_URL:'https://auth.example.test',SUPABASE_PUBLISHABLE_KEY:'public',HB_IDENTITY_HASH_KEY:'x'.repeat(32)});
-  globalThis.fetch=async()=>({ok:true,json:async()=>({id:'auth-user',app_metadata:{provider:'google'},identities:[{provider:'google',identity_data:{sub:'verified-id',email:'same@example.test'}}]})});
-  const one=await verifySocialIdentity('a'.repeat(40),'google');
+  globalThis.fetch=async url=>({ok:true,json:async()=>url.includes('/auth/v1/user')?({id:'auth-user',app_metadata:{provider:'google'},identities:[{provider:'google',identity_data:{sub:'verified-id',email:'same@example.test'}}]}):({sub:'verified-id'})});
+  const proof='provider-proof'.repeat(3);
+  const one=await verifySocialIdentity('a'.repeat(40),'google',proof);
   assert.match(one.subjectHash,/^[a-f0-9]{64}$/);
-  assert.equal((await verifySocialIdentity('b'.repeat(40),'google')).subjectHash,one.subjectHash);
-  await assert.rejects(verifySocialIdentity('a'.repeat(40),'kakao'),/로그인 수단/);
+  assert.equal((await verifySocialIdentity('b'.repeat(40),'google',proof)).subjectHash,one.subjectHash);
+  await assert.rejects(verifySocialIdentity('a'.repeat(40),'kakao',proof),/로그인 수단/);
   globalThis.fetch=async()=>({ok:false,json:async()=>({})});
-  await assert.rejects(verifySocialIdentity('a'.repeat(40),'google'),/다시 로그인/);
+  await assert.rejects(verifySocialIdentity('a'.repeat(40),'google',proof),/다시 로그인/);
   await assert.rejects(verifySocialIdentity('short','google'),/로그인 정보/);
  }finally{globalThis.fetch=original;for(const key of Object.keys(process.env))if(!(key in saved))delete process.env[key];Object.assign(process.env,saved);}
+});
+test('a fresh provider proof selects the actual identity even when Auth linked equal emails',async()=>{
+ const saved={...process.env},original=globalThis.fetch;
+ try {
+  Object.assign(process.env,{SUPABASE_URL:'https://auth.example.test',SUPABASE_PUBLISHABLE_KEY:'public',HB_IDENTITY_HASH_KEY:'x'.repeat(32)});
+  let proven='kakao-id';
+  globalThis.fetch=async url=>({ok:true,json:async()=>({id:'same-auth-user',app_metadata:{provider:'google'},identities:[{provider:'google',identity_data:{sub:'google-id'}},{provider:'kakao',identity_data:{sub:'kakao-id'}}]}),text:async()=>JSON.stringify({id:proven,app_id:1632702,expires_in:3600})});
+  assert.equal((await verifySocialIdentity('a'.repeat(40),'kakao','p'.repeat(40))).provider,'kakao');
+  proven='someone-else';await assert.rejects(verifySocialIdentity('a'.repeat(40),'kakao','p'.repeat(40)),/로그인 수단/);
+ } finally {globalThis.fetch=original;for(const key of Object.keys(process.env))if(!(key in saved))delete process.env[key];Object.assign(process.env,saved);}
 });
 test('social identity is stable, separates providers, preserves Toss users and does not grant adult verification',async()=>{
  const db=new PGlite();
@@ -40,7 +51,7 @@ test('social identity is stable, separates providers, preserves Toss users and d
 });
 test('Android callback accepts only the configured app route and AOS policies are marked as drafts',async()=>{
  const {validateCallback}=await import('../src/social-login.js');
- assert.equal(validateCallback('com.honsulbar.localtest://auth/callback?code=abc'),true);
- for(const url of ['https://auth/callback?code=abc','com.honsulbar.localtest://evil/callback','com.honsulbar.localtest://auth/other','broken']) assert.equal(validateCallback(url),false);
+ assert.equal(validateCallback('com.honsulbar.app://auth/callback?code=abc'),true);
+ for(const url of ['https://auth/callback?code=abc','com.honsulbar.app://evil/callback','com.honsulbar.app://auth/other','broken']) assert.equal(validateCallback(url),false);
  for(const file of ['terms','privacy','refund','age-safety']) assert.match(readFileSync(new URL(`../public/legal/${file}.html`,import.meta.url),'utf8'),/Android 전환 검토용 초안/);
 });

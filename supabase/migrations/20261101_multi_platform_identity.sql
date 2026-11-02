@@ -12,8 +12,11 @@ begin
  end if;
  return new;
 end $$;
-drop trigger if exists hb_member_signup_origin on public.hb_members;
-create trigger hb_member_signup_origin before insert on public.hb_members for each row execute function public.hb_record_toss_origin();
+do $$ begin
+ if not exists(select 1 from pg_trigger where tgname='hb_member_signup_origin' and tgrelid='public.hb_members'::regclass) then
+  create trigger hb_member_signup_origin before insert on public.hb_members for each row execute function public.hb_record_toss_origin();
+ end if;
+end $$;
 create table if not exists public.hb_login_identities (
  provider text not null check(provider in ('toss','google','kakao')),
  subject_hash text not null,

@@ -9,12 +9,16 @@ import { useVoice } from './useVoice';
 import { voicePeerIds } from './social';
 import { useMesh } from './useMesh';
 import { VOICE_CONSENT_VERSION } from './voice-evidence';
-import { call, getConfig, login, linkSocialAccount, clearSession, hasSession, assetUrl, insideToss, requestPushAgreement } from './api';
+import { call, getConfig, login, resumeLogin, linkSocialAccount, clearSession, hasSession, assetUrl, insideToss, requestPushAgreement } from './api';
 import { Glass } from './Glass';
 import { SEATS as positions, POINT_PACKS, SUBSCRIPTIONS, adjacent, audioGain } from './social';
 import { AdminPage } from './admin';
 import './style.css';
 import { nativeTestAds, showAndroidTestReward } from './android-test-ads';
+import { nativePlayBilling, purchasePlayPoints, recoverPlayPurchases, purchasePlaySubscription, recoverPlaySubscription, managePlaySubscriptions } from './play-billing';
+import { App as NativeApp } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
+import { nativeAndroidPush, enableAndroidPush, listenAndroidPush } from './android-push';
 
 const IAP_PACK_SKU = {
   1000: 'ait.0000078228.10e9c057.abb16a92b7.0232936136',
@@ -31,7 +35,7 @@ const FAQ_ITEMS = [
   ['바를 나가면 남은 시간이 어떻게 되나요?', '바를 나가도 같은 호점의 이용시간은 계속 흘러요. 자리가 있으면 남은 시간으로 다시 들어갈 수 있고, 다른 호점은 새로 입장해야 해요.'],
   ['입장 전에 손님 사진을 볼 수 있나요?', '미리보기 상품을 구매하면 현재 호점에 있는 손님들의 사진을 확인할 수 있어요. 미리보기는 입장이나 자리 예약을 포함하지 않아요.'],
   ['목소리가 불편한 손님은 어떻게 신고하나요?', '손님 프로필에서 신고를 선택하고 사유와 내용을 접수해 주세요. 신고한 손님의 목소리는 바로 들리지 않고, 서로 상대가 있는 바에는 입장할 수 없어요.'],
-  ['정기 구독은 어떻게 해지하나요?', 'Google Play 정기 결제에서 해지할 수 있어요. 현재 테스트에서는 실제 구독 결제를 제공하지 않아요.'],
+  ['정기 구독은 어떻게 해지하나요?', 'Google Play 정기 결제에서 해지할 수 있어요. 해지 후에도 남은 이용 기간까지 이용할 수 있어요.'],
   ['빈자리 알림은 어떻게 끄나요?', '설정 알림에서 빈자리 알림 스위치를 끄면 신청한 호점 알림이 해제돼요. 기기 알림은 Android 설정에서 바꿀 수 있어요. 현재 테스트에서는 푸시가 발송되지 않아요.'],
   ['회원탈퇴는 어떻게 하나요?', '정기 구독이 유지 중이면 탈퇴할 수 없어요. Google Play 정기 결제에서 구독을 먼저 해지한 뒤 설정에서 탈퇴해 주세요.'],
 ];
@@ -373,6 +377,16 @@ function App() {
     setError('');
     setSheetState(() => sheetStack.current.pop() ?? null);
   }
+  useEffect(() => {
+    if (Capacitor.getPlatform() !== 'android') return;
+    let disposed = false, listener;
+    NativeApp.addListener('backButton', () => {
+      if (sheet) closeSheet();
+      else if (screen === 'bar') open('leave');
+      else NativeApp.exitApp();
+    }).then(handle => { if (disposed) handle.remove(); else listener = handle; });
+    return () => { disposed = true; listener?.remove(); };
+  }, [sheet, screen, busy]);
 
   const member = server?.member || null;
   const me = member?.id;
@@ -497,6 +511,45 @@ function App() {
     if (response.state) stateHandler.current(response.state, fresh);
     return response.result;
   }
+  useEffect(() => {
+    if (!nativePlayBilling || !me) return;
+    let cancelled = false, recovering = false, listener;
+    const recover = async () => {
+      if (cancelled || recovering) return;
+      recovering = true;
+      try {
+        const { result } = await call('play-billing-config');
+        if (cancelled) return;
+        await recoverPlayPurchases(result, async data => {
+          if (cancelled) throw new Error('로그인 상태가 바뀌었어요.');
+          return call('play-purchase', data);
+        });
+        if (!cancelled) await recoverPlaySubscription(result, async data => {
+          if (cancelled) throw new Error('로그인 상태가 바뀌었어요.');
+          return call('play-subscription', data);
+        });
+        if (!cancelled && result?.enabled) await run('state');
+      } catch (error) { if (!cancelled) setToast(error.message); }
+      finally { recovering = false; }
+    };
+    recover();
+    NativeApp.addListener('appStateChange', event => { if (event.isActive) recover(); }).then(handle => { if (cancelled) handle.remove(); else listener = handle; });
+    return () => { cancelled = true; listener?.remove(); };
+  }, [me]);
+  useEffect(() => {
+    if (!nativeAndroidPush || !me) return;
+    let cancelled = false, cleanup, resume;
+    const refresh = async () => {
+      try { await run('state'); } catch (error) { if (!cancelled) setToast(error.message); }
+    };
+    listenAndroidPush(opened => { if (!cancelled) { refresh(); if (opened) open('notifications'); } }).then(fn => { if (cancelled) fn(); else cleanup = fn; });
+    NativeApp.addListener('appStateChange', async event => {
+      if (!event.isActive || cancelled || !pushAgreed) return;
+      // Re-register on resume so rotated tokens are written to the current member.
+      try { await enableAndroidPush(call, {requestPermission:false}); } catch {}
+    }).then(handle => { if (cancelled) handle.remove(); else resume = handle; });
+    return () => { cancelled = true; cleanup?.(); resume?.remove(); };
+  }, [me, pushAgreed]);
   function fail(e) {
     if (e?.status === 401) { clearSession(); setServer(null); previousState.current = null; setScreen('onboarding'); setSheet(null); }
     setToast(e?.message || '요청을 완료하지 못했어요.');
@@ -521,14 +574,19 @@ function App() {
     if (!insideToss() || typeof NavigationBar?.setOptions !== 'function') return;
     NavigationBar.setOptions({ transparentBackground: true, backgroundColor: sheet ? null : '#ffffff' }).catch(() => {});
   }, [sheet]);
-  useEffect(() => { getConfig().then(setConfig).catch(() => setConfig({})); }, []);
+  useEffect(() => {
+    (async () => {
+      setConfig(await getConfig().catch(() => ({})));
+      try {
+        const resumed = await resumeLogin();
+        if (resumed?.state) { stateHandler.current(resumed.state, true); if (resumed.linked) setToast('로그인 계정을 연결했어요.'); }
+        else if (hasSession()) { await run('state'); await restorePendingOrders(); }
+      } catch (error) { fail(error); setScreen('onboarding'); }
+    })();
+  }, []);
   useEffect(() => {
     if(screen==='bar' && config?.voiceEvidenceReady && !voiceAgreed) { setPendingEntry(null);setSheetState('voice-consent'); }
   },[screen,config?.voiceEvidenceReady,voiceAgreed]);
-  useEffect(() => {
-    if (screen !== 'loading') return;
-    run('state').then(() => restorePendingOrders()).catch(e => { if (e.status === 401) fail(e); else { setToast(e.message); setScreen('onboarding'); } });
-  }, []);
   useEffect(() => {
     if (!['lobby', 'bar'].includes(screen)) return undefined;
     let stopped = false; let timer;
@@ -837,6 +895,7 @@ function App() {
     setStorageFlag(WAITLIST_ALERT_KEY, on);
   }
   function askPushAgreement() {
+    if (nativePlayBilling) return enableAndroidPush(call).catch(() => 'skipped');
     return new Promise(resolve => {
       if (!insideToss()) { resolve('agreed'); return; }
       let settled = false;
@@ -856,6 +915,11 @@ function App() {
     });
   }
   async function ensureWaitlistConsent() {
+    if (nativePlayBilling) {
+      const consent = await askPushAgreement();
+      if (consent === 'agreed') rememberPushAgreed();
+      return consent;
+    }
     if (pushAgreed) return 'agreed';
     const consent = await askPushAgreement();
     if (consent === 'agreed') rememberPushAgreed();
@@ -872,7 +936,7 @@ function App() {
     }
     const consent = await ensureWaitlistConsent();
     if (consent === 'rejected') { setToast('알림에 동의해야 빈자리를 알려드려요.'); return; }
-    if (consent === 'skipped' && !pushAgreed) { setToast('알림에 동의해야 빈자리를 알려드려요.'); return; }
+    if (consent !== 'agreed' && (nativePlayBilling || !pushAgreed)) { setToast('알림 연결 후 다시 신청해 주세요.'); return; }
     try {
       await run('waitlist', { region: targetRegion, number: target.number });
       rememberWaitlistAlerts(true);
@@ -890,7 +954,7 @@ function App() {
     }
     const consent = await ensureWaitlistConsent();
     if (consent === 'rejected') { setToast('알림에 동의해야 빈자리를 알려드려요.'); return; }
-    if (consent === 'skipped' && !pushAgreed) { setToast('알림에 동의해야 빈자리를 알려드려요.'); return; }
+    if (consent !== 'agreed' && (nativePlayBilling || !pushAgreed)) { setToast('알림 연결 후 다시 신청해 주세요.'); return; }
     rememberWaitlistAlerts(true);
     setToast('빈자리 알림을 켰어요.');
   }
@@ -967,6 +1031,17 @@ function App() {
   }
   async function buyPoints() {
     if (server?.safetyPaused) { setToast('안전 점검 중에는 새 결제를 진행할 수 없어요.'); return; }
+    if (nativePlayBilling) {
+      if (busy) return;
+      setBusy(true);
+      try {
+        const config = await run('play-billing-config');
+        await purchasePlayPoints(config, shopPack.points, data => run('play-purchase', data));
+        setSheet('shop'); setToast('포인트를 충전했어요.');
+      } catch (error) { if (!canceledPurchase(error)) setToast(error.message); }
+      finally { setBusy(false); }
+      return;
+    }
     if (import.meta.env.VITE_ANDROID_TEST && config?.devLogin) {
       if (busy) return;
       setBusy(true);
@@ -1068,6 +1143,19 @@ function App() {
   function requestSubscriptionChange() { open(subscription ? 'subscription-cancel-guide' : 'subscription-confirm'); }
   function startSubscription() {
     if (server?.safetyPaused) { setToast('안전 점검 중에는 새 결제를 진행할 수 없어요.'); return; }
+    if (nativePlayBilling) {
+      if (busy) return;
+      setBusy(true);
+      (async () => {
+        try {
+          const config = await run('play-billing-config');
+          await purchasePlaySubscription(config, data => run('play-subscription', data));
+          setSheet('shop'); setToast('구독을 시작했어요.');
+        } catch (error) { if (!canceledPurchase(error)) setToast(error.message); }
+        finally { setBusy(false); }
+      })();
+      return;
+    }
     const localPreview = import.meta.env.VITE_ANDROID_TEST && !insideToss() && (config?.devLogin || /^(localhost|127\.0\.0\.1)$/.test(location.hostname));
     if (localPreview) {
       setDevSubscription({ expiresAt: new Date(Date.now() + 30 * 86400000).toISOString(), cancelAt: null });
@@ -1099,6 +1187,7 @@ function App() {
   }
   function confirmSubscriptionChange() {
     if (!subscription) { startSubscription(); return; }
+    if (nativePlayBilling) { managePlaySubscriptions().catch(() => setToast('Google Play 정기 결제를 열지 못했어요.')); return; }
     setSheet('shop');
     setToast(subscriptionCancelAt ? 'Google Play 정기 결제에서 확인해 주세요.' : 'Google Play 정기 결제에서 해지할 수 있어요.');
   }

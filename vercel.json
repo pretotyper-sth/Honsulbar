@@ -1,0 +1,5 @@
+{
+  "outputDirectory": "dist-android",
+  "functions": { "api/*.js": { "maxDuration": 60, "includeFiles": "server/**" } },
+  "regions": ["icn1"]
+}
