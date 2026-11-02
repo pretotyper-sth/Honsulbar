@@ -28,6 +28,7 @@ const MIGRATIONS = [
   '20261102_android_push.sql',
   '20261102_android_ads.sql',
   '20261102_account_transfer.sql',
+  '20261102_play_refund_review.sql',
 ];
 const TABLES = new Set([
   'hb_voice_evidence', 'hb_voice_consents', 'hb_push_devices', 'hb_android_ad_claims', 'hb_account_transfers',

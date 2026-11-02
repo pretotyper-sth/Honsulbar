@@ -1,5 +1,5 @@
 import {OAuth2Client} from 'google-auth-library';
-import {AppError,database,hash} from './platform.js';
+import {AppError,database,hash,rpc} from './platform.js';
 import {processPlaySubscription} from './play-billing.js';
 const verifier=new OAuth2Client();
 export async function verifyPlayNotification(header,env=process.env,verify=options=>verifier.verifyIdToken(options)){
@@ -11,7 +11,7 @@ export async function verifyPlayNotification(header,env=process.env,verify=optio
   if(!p||p.email!==env.HB_PLAY_NOTIFICATION_EMAIL||p.email_verified!==true||p.aud!==env.HB_PLAY_NOTIFICATION_AUDIENCE||!['accounts.google.com','https://accounts.google.com'].includes(p.iss))throw Error();
  }catch{throw new AppError('unauthorized',401);}
 }
-export async function processPlayNotification(body,{env=process.env,db=database,subscription=processPlaySubscription}={}){
+export async function processPlayNotification(body,{env=process.env,db=database,subscription=processPlaySubscription,run=rpc}={}){
  if(typeof body==='string'){try{body=JSON.parse(body);}catch{throw new AppError('invalid_body',400);}}
  const message=body?.message;
  if(typeof message?.messageId!=='string'||typeof message.data!=='string'||message.data.length>65536||!/^[A-Za-z0-9+/]+={0,2}$/.test(message.data))throw new AppError('invalid_message',400);
@@ -19,6 +19,13 @@ export async function processPlayNotification(body,{env=process.env,db=database,
  if(!env.HB_PLAY_PACKAGE_NAME||event.packageName!==env.HB_PLAY_PACKAGE_NAME)throw new AppError('wrong_package',403);
  if(event.testNotification)return {test:true};
  // RTDN is a trigger; only Google's latest purchase response determines entitlement.
+ if(event.voidedPurchaseNotification?.productType===2){
+  const token=event.voidedPurchaseNotification.purchaseToken;
+  if(typeof token!=='string'||token.length<16||token.length>8192)throw new AppError('invalid_purchase',400);
+  const order=`play:${hash(`${env.HB_PLAY_PACKAGE_NAME}:${token}`)}`;
+  await run('hb_review_play_refund',{p_order:order});
+  return {reviewRequired:true};
+ }
  const notification=event.subscriptionNotification||(event.voidedPurchaseNotification?.productType===1?event.voidedPurchaseNotification:null);
  if(!notification)throw new AppError('unsupported_notification',503);
  const token=notification.purchaseToken;
