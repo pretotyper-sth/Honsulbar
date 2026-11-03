@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {PGlite} from '@electric-sql/pglite';
 import {createVoiceBuffer,evidencePayload} from '../src/voice-evidence.js';
-import {validateVoiceEvidence,encryptEvidence,decryptEvidence} from '../server/voice-evidence.js';
+import {validateVoiceEvidence,encryptEvidence,decryptEvidence,voiceEvidenceReady} from '../server/voice-evidence.js';
 import handler from '../api/service.js';
 import {voicePeerIds} from '../src/social.js';
 
@@ -26,19 +26,19 @@ test('voice buffer retains the latest 20 seconds, exports a valid WAV, and clear
 });
 
 test('evidence encryption rejects tampering and never stores plaintext',()=>{
- const oldKey=process.env.HB_VOICE_EVIDENCE_KEY,oldEnabled=process.env.HB_VOICE_EVIDENCE_ENABLED;
- process.env.HB_VOICE_EVIDENCE_KEY='ab'.repeat(32);process.env.HB_VOICE_EVIDENCE_ENABLED='1';
+ const oldKey=process.env.HB_VOICE_EVIDENCE_KEY,oldEnabled=process.env.HB_VOICE_EVIDENCE_ENABLED,oldOptIn=process.env.HB_VOICE_EVIDENCE_OPT_IN;
+ process.env.HB_VOICE_EVIDENCE_OPT_IN='1';process.env.HB_VOICE_EVIDENCE_KEY='ab'.repeat(32);process.env.HB_VOICE_EVIDENCE_ENABLED='1';
  try {
   const buffer=createVoiceBuffer();buffer.append(new Float32Array(16000).fill(.2),16000);
   const audio=validateVoiceEvidence(evidencePayload(buffer)),encrypted=encryptEvidence(audio);
   assert.deepEqual(decryptEvidence(encrypted),audio);assert.notEqual(encrypted.ciphertext,audio.toString('base64'));
   assert.throws(()=>decryptEvidence({...encrypted,tag:Buffer.alloc(16).toString('base64')}));
- }finally{if(oldKey===undefined)delete process.env.HB_VOICE_EVIDENCE_KEY;else process.env.HB_VOICE_EVIDENCE_KEY=oldKey;if(oldEnabled===undefined)delete process.env.HB_VOICE_EVIDENCE_ENABLED;else process.env.HB_VOICE_EVIDENCE_ENABLED=oldEnabled;}
+ }finally{if(oldKey===undefined)delete process.env.HB_VOICE_EVIDENCE_KEY;else process.env.HB_VOICE_EVIDENCE_KEY=oldKey;if(oldEnabled===undefined)delete process.env.HB_VOICE_EVIDENCE_ENABLED;else process.env.HB_VOICE_EVIDENCE_ENABLED=oldEnabled;if(oldOptIn===undefined)delete process.env.HB_VOICE_EVIDENCE_OPT_IN;else process.env.HB_VOICE_EVIDENCE_OPT_IN=oldOptIn;}
 });
 
 test('live entry rejects missing consent and ordinary users cannot read administrator evidence',async()=>{
  const previous={...process.env},originalFetch=global.fetch;
- Object.assign(process.env,{HB_VOICE_EVIDENCE_ENABLED:'1',HB_VOICE_EVIDENCE_KEY:'cd'.repeat(32),SUPABASE_URL:'https://test.invalid',SUPABASE_SERVICE_ROLE_KEY:'test-key',VERCEL_ENV:'production'});
+ Object.assign(process.env,{HB_VOICE_EVIDENCE_OPT_IN:'1',HB_VOICE_EVIDENCE_ENABLED:'1',HB_VOICE_EVIDENCE_KEY:'cd'.repeat(32),SUPABASE_URL:'https://test.invalid',SUPABASE_SERVICE_ROLE_KEY:'test-key',VERCEL_ENV:'production'});
  const id='00000000-0000-0000-0000-000000000001';
  global.fetch=async url=>new Response(JSON.stringify(String(url).includes('/auth/v1/user')?{email:'outsider@example.com',email_confirmed_at:'2026-10-24'}:String(url).includes('hb_sessions')?[{member_id:id}]:[]),{status:200});
  const response=()=>({statusCode:200,setHeader(){},status(code){this.statusCode=code;return this;},json(body){this.body=body;return this;}});
@@ -80,4 +80,18 @@ test('database requires both consents and a shared room, stores evidence atomica
   await db.exec('set role anon');
   await assert.rejects(db.query('select * from hb_voice_evidence'),/permission/);
  }finally{await db.close();}
+});
+
+
+test('the current release disables recording and the entry consent gate even with the legacy production flag',async()=>{
+ const previous={...process.env};
+ try{
+  Object.assign(process.env,{HB_VOICE_EVIDENCE_ENABLED:'1',HB_VOICE_EVIDENCE_KEY:'ab'.repeat(32)});
+  delete process.env.HB_VOICE_EVIDENCE_OPT_IN;
+  assert.equal(voiceEvidenceReady(),false);
+  const response={setHeader(){},status(){return this;},json(value){this.body=value;return this;}};
+  await handler({method:'GET',headers:{},query:{}},response);
+  assert.equal(response.body.voiceEvidenceReady,false);
+  assert.throws(()=>encryptEvidence(Buffer.from('audio')),/설정/);
+ }finally{for(const key of Object.keys(process.env))if(!(key in previous))delete process.env[key];Object.assign(process.env,previous);}
 });

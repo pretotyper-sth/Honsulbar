@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'node:
 import { AppError } from './platform.js';
 
 export const VOICE_CONSENT_VERSION = '2026-10-24';
-export function voiceEvidenceReady() { return process.env.HB_VOICE_EVIDENCE_ENABLED === '1' && /^[a-f0-9]{64}$/i.test(process.env.HB_VOICE_EVIDENCE_KEY || ''); }
+export function voiceEvidenceReady() { return process.env.HB_VOICE_EVIDENCE_OPT_IN === '1' && process.env.HB_VOICE_EVIDENCE_ENABLED === '1' && /^[a-f0-9]{64}$/i.test(process.env.HB_VOICE_EVIDENCE_KEY || ''); }
 export function validateVoiceEvidence(value) {
   if (!value || value.consentVersion !== VOICE_CONSENT_VERSION || typeof value.audio !== 'string' || value.audio.length > 854000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value.audio)) throw new AppError('음성 증거 형식을 확인해 주세요.');
   const audio = Buffer.from(value.audio, 'base64');
