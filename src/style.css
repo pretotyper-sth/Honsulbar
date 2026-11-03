@@ -506,3 +506,12 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .exit-backdrop { position:fixed; inset:0; z-index:2000; display:flex; align-items:flex-end; justify-content:center; padding:calc(var(--ait-chrome-top) + 16px) 16px max(20px,env(safe-area-inset-bottom)); background:#0005; }
 .exit-confirm { width:100%; max-width:360px; max-height:calc(100dvh - var(--ait-chrome-top) - 36px); overflow:auto; padding:24px; border-radius:24px; color:#191f28; background:#fff; box-shadow:0 8px 32px #0004; }
 .exit-confirm h2 { margin:0 0 24px; font-size:20px; line-height:1.4; overflow-wrap:anywhere; }
+
+.account-transfer-panel .sheet-description { margin-bottom:24px; line-height:1.7; }
+.account-transfer-panel .profile-field { margin:0; }
+.account-transfer-panel .profile-field input { min-height:48px; line-height:1.5; letter-spacing:.5px; }
+.account-transfer-hint { margin:12px 0 0; color:#6b7684; font-size:13px; line-height:1.6; word-break:keep-all; }
+.account-transfer-panel .actions { gap:12px; margin-top:24px; }
+.account-transfer-footnote { margin:20px 0 0; color:#8b95a1; font-size:12px; line-height:1.6; word-break:keep-all; }
+.account-transfer-entry { margin-top:16px; }
+.account-transfer-entry .profile-field { margin-top:20px; }

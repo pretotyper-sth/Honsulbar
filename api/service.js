@@ -67,7 +67,7 @@ export default async function handler(req,res) {
     if(typeof body.accountTransferCode!=='string'||!/^[A-Za-z0-9_-]{22}$/.test(body.accountTransferCode))throw new AppError('연결 코드를 확인해 주세요.',400);
     memberId=await rpc('hb_claim_account_transfer',{p_code_hash:hash(body.accountTransferCode),p_provider:'toss',p_subject_hash:identity,p_toss_key:String(info.userKey)});
    }else memberId=await rpc('hb_login',{p_key:String(info.userKey)});
-   await database(`hb_members?id=eq.${memberId}`,{method:'PATCH',body:{identity_key:identity}});
+   await database(`hb_members?id=eq.${memberId}`,{method:'PATCH',body:{identity_key:identity,adult:true}});
    const [member]=await database(`hb_members?id=eq.${memberId}&select=banned_until`);
    if(member?.banned_until&&new Date(member.banned_until)>new Date())throw new AppError('이용이 제한된 계정이에요.',403);
    await database('toss_login_links?on_conflict=user_key',{method:'POST',headers:{Prefer:'resolution=merge-duplicates'},body:{user_key:String(info.userKey),is_connected:true,disconnected_at:null}}).catch(()=>{});
@@ -292,6 +292,11 @@ export default async function handler(req,res) {
   if(action==='profile'){
    const data=body.data||{};
    if('photo' in data&&(typeof data.photo!=='string'||!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(data.photo)||data.photo.length>400000))throw new AppError('프로필 사진을 다시 선택해 주세요.');
+  }
+  if (action === 'enter') {
+   const [eligibility] = await database(`hb_members?id=eq.${member}&select=adult,photo_checked`);
+   if (eligibility?.adult !== true) throw new AppError('성인 확인을 갱신하려면 토스 로그인을 다시 진행해 주세요.',403);
+   if (eligibility.photo_checked !== true) throw new AppError('등록한 프로필 사진의 얼굴 확인을 먼저 완료해 주세요.',403);
   }
   const result=await rpc('hb_action',{p_member:member,p_action:action,p_data:body.data||{}});
   if(action==='heartbeat'&&typeof (body.data||{}).mic==='boolean')await rpc('hb_set_mic',{p_member:member,p_mic:!!body.data.mic}).catch(()=>{});
