@@ -1394,8 +1394,8 @@ function App() {
 
   if (screen === 'onboarding') return <>{exitConfirm}<div className="ait-gnb-fill" aria-hidden="true"/><main className="app onboarding-screen">
     <div className="onboarding-scroll">
-      <img className="onboarding-logo" src="/honsulbar-logo.png" alt="혼술바" />
-      <p className="eyebrow">혼술바</p>
+      <img className="onboarding-logo" src="/honsulbar-logo.png" alt="온라인 혼술바" />
+      <p className="eyebrow">온라인 혼술바</p>
       <h1>혼술바의 분위기를<br/>온라인에 담았어요</h1>
       <p className="onboarding-lead">지역별 혼술바에서 내 목소리로 가볍게 대화해요.</p>
       <div className="onboarding-points">

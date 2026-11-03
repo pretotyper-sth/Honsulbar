@@ -20,7 +20,7 @@ export function ExitConfirm({ open, onClose, onConfirm }) {
         else if (!event.shiftKey && document.activeElement === buttons[1]) { event.preventDefault(); buttons[0].focus(); }
       }
     }}>
-      <h2 id="exit-title">혼술바를 종료할까요?</h2>
+      <h2 id="exit-title">온라인 혼술바를 종료할까요?</h2>
       <div className="actions"><button ref={cancel} className="ui-button ui-button-large ui-button-dark ui-button-weak" onClick={onClose}>취소</button><Button onClick={onConfirm}>종료하기</Button></div>
     </section>
   </div>;
