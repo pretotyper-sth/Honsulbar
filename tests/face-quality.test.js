@@ -31,7 +31,7 @@ test('profile decisions require both scores in one orientation, not a different 
  const results=[{embedding:[1],scale:.4},{embedding:[2],scale:.4},{embedding:[3],scale:.5}],flipped={embedding:[4]};
  const score=values=>(a,b)=>values[`${a[0]}:${b[0]}`]??.8;
  assert.equal(comparisonError(results,score({'1:2':.53,'1:3':.60}),'near'),null);
- assert.match(comparisonError(results,score({'1:2':.49,'1:3':.9}),'near'),/등록 사진과 달라/);
+ assert.match(comparisonError(results,score({'1:2':.41,'1:3':.9}),'near'),/등록 사진과 달라/);
  assert.equal(comparisonError(results,score({'1:2':.3,'1:3':.3,'4:2':.6,'4:3':.58}),'near',flipped),null);
  assert.match(comparisonError(results,score({'1:2':.7,'1:3':.3,'4:2':.3,'4:3':.7}),'near',flipped),/등록 사진과 달라/);
  assert.match(comparisonError(results,score({'2:3':.4}),'near',flipped),/촬영본이/);
@@ -74,4 +74,16 @@ test('a false hand box cannot reject a clear face; actual missing detail still f
   const i=(y*image.width+x)*4;image.data[i]=image.data[i+1]=image.data[i+2]=170;
  }
  assert.match(faceQualityError(result,image,{capture:true}),/눈·입을 가리지/);
+});
+
+test('moderate profile variation passes while weak matches still fail',()=>{
+ const frames=[{embedding:[1],scale:.4},{embedding:[2],scale:.4},{embedding:[3],scale:.5}];
+ assert.equal(comparisonError(frames,(a,b)=>a[0]===1?(b[0]===2?.44:.54):.8,'near'),null);
+ assert.match(comparisonError(frames,a=>a[0]===1?.4:.8,'near'),/등록 사진과 달라/);
+});
+test('profile accepts moderate confidence and angle without loosening capture gates',()=>{
+ const {image,result}=fixture();
+ Object.assign(result.face[0],{boxScore:.78,faceScore:.85,box:[70,60,64,100],rotation:{angle:{yaw:.48,pitch:.45}}});
+ assert.equal(faceQualityError(result,image),null);
+ assert.ok(faceQualityError(result,image,{capture:true}));
 });

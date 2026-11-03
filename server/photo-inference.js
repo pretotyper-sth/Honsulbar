@@ -63,7 +63,7 @@ export async function verifyImages(profile,frames,motion){
   catch(error){if(!(error instanceof AppError))throw error;}
   const error=comparisonError(results.slice(0,3),(a,b)=>human.match.similarity(a,b),motion,alternateProfile);
   if(error)throw new AppError(error);
-  return {model:'human-3.3.6-face-v5',photoDigest:hash(profile)};
+  return {model:'human-3.3.6-face-v6',photoDigest:hash(profile)};
  }finally{
   for(const image of images)image.data.fill(0);
   for(const result of results)result.embedding.fill(0);

@@ -89,3 +89,11 @@ test('framing allows clipped outlines but requires visible eye, nose and mouth l
  assert.equal(env.faceIsWellFramed({...close,landmarks:[[-2,100],...face.landmarks.slice(1)]},480,480),false);
  assert.equal(env.faceIsWellFramed({...close,landmarks:[]},480,480),false);
 });
+
+test('profile upload accepts moderate detection confidence while capture retains its threshold',()=>{
+ const env={};vm.createContext(env);vm.runInContext(helpers,env);
+ const candidate={...face,probability:[.78]};
+ assert.equal(env.isLikelyRealFace(candidate,480,480,{profilePhoto:true}),true);
+ assert.equal(env.isLikelyRealFace(candidate,480,480),false);
+ assert.equal(env.isLikelyRealFace({...candidate,probability:[.4]},480,480,{profilePhoto:true}),false);
+});

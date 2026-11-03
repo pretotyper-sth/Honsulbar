@@ -92,11 +92,11 @@ function faceProbability(face) {
   } catch {}
   return NaN;
 }
-function isLikelyRealFace(face, width, height) {
+function isLikelyRealFace(face, width, height, {profilePhoto=false}={}) {
   const box = faceBox(face);
   const probability = faceProbability(face);
-  if (!Number.isFinite(probability) || probability < 0.85) return false;
-  if (box.width / width < 0.18 || box.height / height < 0.22) return false;
+  if (!Number.isFinite(probability) || probability < (profilePhoto ? 0.75 : 0.85)) return false;
+  if (box.width / width < (profilePhoto ? 0.15 : 0.18) || box.height / height < (profilePhoto ? 0.18 : 0.22)) return false;
   if (box.width / box.height < 0.5 || box.width / box.height > 1.5) return false;
   const [rightEye, leftEye, nose, mouth] = face.landmarks || [];
   if (![rightEye, leftEye, nose, mouth].every(point => Array.isArray(point) && point.every(Number.isFinite))) return false;
@@ -585,7 +585,7 @@ function App() {
     if (!faceModelLoading.current) faceModelLoading.current = (async () => {
       await import('@tensorflow/tfjs');
       const blazeface = await import('@tensorflow-models/blazeface');
-      const model = await blazeface.load({scoreThreshold:0.85,maxFaces:3,modelUrl:'/face-screening-v1/model.json'});
+      const model = await blazeface.load({scoreThreshold:0.75,maxFaces:3,modelUrl:'/face-screening-v1/model.json'});
       const warmup = document.createElement('canvas');warmup.width=128;warmup.height=128;
       await model.estimateFaces(warmup,false);
       return model;
@@ -1238,7 +1238,7 @@ function App() {
       faceModelLoading.current = null;
       faces = await detect();
     }
-    return faces?.length === 1 && isLikelyRealFace(faces[0], canvas.width, canvas.height) && !looksLikeIllustration(canvas, faces[0]);
+    return faces?.length === 1 && isLikelyRealFace(faces[0], canvas.width, canvas.height, {profilePhoto:true}) && !looksLikeIllustration(canvas, faces[0]);
   }
   async function choosePhoto(event) {
     const file = event.target.files?.[0]; event.target.value = ''; if (!file) return;

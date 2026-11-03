@@ -1,4 +1,4 @@
-export const FACE_RULES = Object.freeze({boxScore:0.8,meshScore:0.9,profileSimilarity:0.5,profileMean:0.56,liveSimilarity:0.62,live:0.5,minSize:0.2,maxYaw:0.4,maxPitch:0.4});
+export const FACE_RULES = Object.freeze({boxScore:0.8,meshScore:0.9,profileSimilarity:0.42,profileMean:0.48,liveSimilarity:0.62,live:0.5,minSize:0.2,maxYaw:0.4,maxPitch:0.4});
 const finitePoint = p => Array.isArray(p) && p.length>=2 && p.every(Number.isFinite);
 function patch(image,cx,cy,w,h){
  let sum=0,sq=0,edge=0,n=0;
@@ -12,14 +12,15 @@ export function faceQualityError(result,image,{capture=false}={}){
  if(!Array.isArray(result?.face)||result.face.length===0)return '얼굴을 찾지 못했어요.';
  if(result.face.length!==1)return '혼자 화면에 맞춰 주세요.';
  const face=result.face[0],box=face.box;
+ const quality=capture ? FACE_RULES : {...FACE_RULES,boxScore:0.75,meshScore:0.8,minSize:0.16,maxYaw:0.55,maxPitch:0.5};
  if(!box||box.length!==4||!box.every(Number.isFinite)||box[2]<=0||box[3]<=0)return '얼굴 위치를 맞춰 다시 찍어 주세요.';
- if(!(face.boxScore>=FACE_RULES.boxScore&&face.faceScore>=FACE_RULES.meshScore)||!Array.isArray(face.mesh)||face.mesh.length<468)return '눈·코·입이 보이게 해주세요.';
+ if(!(face.boxScore>=quality.boxScore&&face.faceScore>=quality.meshScore)||!Array.isArray(face.mesh)||face.mesh.length<468)return '눈·코·입이 보이게 해주세요.';
  const [x,y,w,h]=box;
- if(Math.min(w/image.width,h/image.height)<FACE_RULES.minSize||Math.min(w,h)<64)return '얼굴을 조금 더 가까이 보여 주세요.';
+ if(Math.min(w/image.width,h/image.height)<quality.minSize||Math.min(w,h)<64)return '얼굴을 조금 더 가까이 보여 주세요.';
  const points=[33,133,362,263,1,61,291,13].map(i=>face.mesh[i]);
  if(!points.every(finitePoint)||points.some(p=>p[0]<1||p[1]<1||p[0]>=image.width-1||p[1]>=image.height-1))return '눈·코·입이 보이게 해주세요.';
  const angle=face.rotation?.angle;
- if(!angle||!Number.isFinite(angle.yaw)||!Number.isFinite(angle.pitch)||Math.abs(angle.yaw)>FACE_RULES.maxYaw||Math.abs(angle.pitch)>FACE_RULES.maxPitch)return '고개를 바로 하고 화면을 봐 주세요.';
+ if(!angle||!Number.isFinite(angle.yaw)||!Number.isFinite(angle.pitch)||Math.abs(angle.yaw)>quality.maxYaw||Math.abs(angle.pitch)>quality.maxPitch)return '고개를 바로 하고 화면을 봐 주세요.';
  // A hand box overlapping the face does not establish that eyes or mouth
  // are actually covered; do not reject solely on that classifier output.
  // Judge visible facial detail below; keep identity, liveness and motion checks.
@@ -29,7 +30,7 @@ export function faceQualityError(result,image,{capture=false}={}){
   if(stats.n<24||!Number.isFinite(stats.std))return '눈·입이 보이게 맞춰 주세요.';
   if(stats.mean<22)return '어두워요. 조명을 밝혀 주세요.';
   if(stats.mean>240)return '너무 밝아요. 빛을 피해 주세요.';
-  if(stats.std<9||stats.edge<2.2)return '눈·입을 가리지 말고 찍어 주세요.';
+  if(stats.std<(capture?9:6)||stats.edge<(capture?2.2:1.5))return '눈·입을 가리지 말고 찍어 주세요.';
  }
  if(capture&&(!Number.isFinite(face.live)||face.live<FACE_RULES.live))return '실제 얼굴을 다시 찍어 주세요.';
  if(!Array.isArray(face.embedding)||face.embedding.length!==1024||!face.embedding.every(Number.isFinite)||!face.embedding.some(v=>v!==0))return '밝은 곳에서 얼굴을 보여 주세요.';
@@ -41,7 +42,8 @@ export function comparisonError(results,similarity,motion,alternateProfile=null)
  const continuous=similarity(first.embedding,last.embedding);
  if(!Number.isFinite(continuous))return '잘 안 보여요. 밝은 곳에서 찍어 주세요.';
  if(continuous<FACE_RULES.liveSimilarity)return '촬영본이 달라요. 정면으로 찍어 주세요.';
- // Profile photos vary in light, retouching and mirror orientation; live frames must stay consistent.
+ // Allow moderate profile variation from makeup, lighting and retouching.
+ // Both live frames must still match the same reference orientation and each other.
  let invalidScores=false;
  const matched=[photo,alternateProfile].filter(Boolean).some(reference=>{
   const scores=[first,last].map(frame=>similarity(reference.embedding,frame.embedding));
