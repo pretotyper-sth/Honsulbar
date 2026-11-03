@@ -166,6 +166,7 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .controls .order-control,.controls .mic-active,.controls button[aria-pressed=true] { background:#e8f3ff; color:#1b64da; }
 
 .app-bottom-sheet { max-width:480px; margin-inline:auto; }
+.app-bottom-sheet.profile-flow-sheet { height:min(82dvh, calc(100dvh - var(--ait-chrome-top) - 24px)); }
 .sheet-cta { padding:18px 24px 16px; font-family:Pretendard,sans-serif; }
 .sheet { position:relative; padding:24px 24px max(160px,calc(128px + env(safe-area-inset-bottom))); font-family:Pretendard,-apple-system,BlinkMacSystemFont,sans-serif; color:#191f28; }
 .sheet.sheet-compact { padding-bottom:24px; }

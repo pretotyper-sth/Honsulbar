@@ -1,0 +1,24 @@
+name: Temporary photo test allowance
+on:
+  workflow_dispatch:
+    inputs:
+      nickname:
+        description: Exact test account nickname (30 minute allowance)
+        required: true
+        type: string
+jobs:
+  allow:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node scripts/open-photo-test-window.js
+        env:
+          TEST_NICKNAME: ${{ inputs.nickname }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
