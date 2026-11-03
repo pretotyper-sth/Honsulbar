@@ -31,9 +31,9 @@ test('profile decisions require both scores in one orientation, not a different 
  const results=[{embedding:[1],scale:.4},{embedding:[2],scale:.4},{embedding:[3],scale:.5}],flipped={embedding:[4]};
  const score=values=>(a,b)=>values[`${a[0]}:${b[0]}`]??.8;
  assert.equal(comparisonError(results,score({'1:2':.53,'1:3':.60}),'near'),null);
- assert.match(comparisonError(results,score({'1:2':.41,'1:3':.9}),'near'),/등록 사진과 달라/);
- assert.equal(comparisonError(results,score({'1:2':.3,'1:3':.3,'4:2':.6,'4:3':.58}),'near',flipped),null);
- assert.match(comparisonError(results,score({'1:2':.7,'1:3':.3,'4:2':.3,'4:3':.7}),'near',flipped),/등록 사진과 달라/);
+ assert.match(comparisonError(results,score({'1:2':.29,'1:3':.9}),'near'),/등록 사진과 달라/);
+ assert.equal(comparisonError(results,score({'1:2':.2,'1:3':.2,'4:2':.6,'4:3':.58}),'near',flipped),null);
+ assert.match(comparisonError(results,score({'1:2':.7,'1:3':.2,'4:2':.2,'4:3':.7}),'near',flipped),/등록 사진과 달라/);
  assert.match(comparisonError(results,score({'2:3':.4}),'near',flipped),/촬영본이/);
 });
 test('mirroring preserves pixels and never changes the source image',()=>{
@@ -79,11 +79,18 @@ test('a false hand box cannot reject a clear face; actual missing detail still f
 test('moderate profile variation passes while weak matches still fail',()=>{
  const frames=[{embedding:[1],scale:.4},{embedding:[2],scale:.4},{embedding:[3],scale:.5}];
  assert.equal(comparisonError(frames,(a,b)=>a[0]===1?(b[0]===2?.44:.54):.8,'near'),null);
- assert.match(comparisonError(frames,a=>a[0]===1?.4:.8,'near'),/등록 사진과 달라/);
+ assert.match(comparisonError(frames,a=>a[0]===1?.28:.8,'near'),/등록 사진과 달라/);
 });
 test('profile accepts moderate confidence and angle without loosening capture gates',()=>{
  const {image,result}=fixture();
  Object.assign(result.face[0],{boxScore:.78,faceScore:.85,box:[70,60,64,100],rotation:{angle:{yaw:.48,pitch:.45}}});
  assert.equal(faceQualityError(result,image),null);
  assert.ok(faceQualityError(result,image,{capture:true}));
+});
+
+test('relaxed profile matching accepts lower scores with consistent live identity, but not zero similarity',()=>{
+ const frames=[{embedding:[1],scale:.4},{embedding:[2],scale:.4},{embedding:[3],scale:.5}];
+ assert.equal(comparisonError(frames,(a,b)=>a[0]===1?(b[0]===2?.35:.47):.8,'near'),null);
+ assert.match(comparisonError(frames,a=>a[0]===1?.1:.8,'near'),/등록 사진과 달라/);
+ assert.match(comparisonError(frames,(a,b)=>a[0]===2?.4:.5,'near'),/촬영본이/);
 });

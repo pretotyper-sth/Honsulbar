@@ -1,4 +1,4 @@
-export const FACE_RULES = Object.freeze({boxScore:0.8,meshScore:0.9,profileSimilarity:0.42,profileMean:0.48,liveSimilarity:0.62,live:0.5,minSize:0.2,maxYaw:0.4,maxPitch:0.4});
+export const FACE_RULES = Object.freeze({boxScore:0.8,meshScore:0.9,profileSimilarity:0.32,profileMean:0.40,liveSimilarity:0.62,live:0.5,minSize:0.2,maxYaw:0.4,maxPitch:0.4});
 const finitePoint = p => Array.isArray(p) && p.length>=2 && p.every(Number.isFinite);
 function patch(image,cx,cy,w,h){
  let sum=0,sq=0,edge=0,n=0;
