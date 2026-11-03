@@ -23,3 +23,9 @@ test('integration refuses missing/insecure endpoints and Auth server secrets', (
   }
   assert.throws(() => androidBuildConfig({ HB_ANDROID_MODE: 'production-typo' }));
 });
+test('native AdMob configuration rejects a unit ID or malformed app ID before building', () => {
+  androidBuildConfig({...settings,HB_ADMOB_APP_ID:'ca-app-pub-7298850744292647~6064200023'});
+  for (const value of ['ca-app-pub-7298850744292647/4040671916','unexpected-app-id']) {
+    assert.throws(()=>androidBuildConfig({...settings,HB_ADMOB_APP_ID:value}),/HB_ADMOB_APP_ID/);
+  }
+});

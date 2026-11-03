@@ -19,6 +19,13 @@ test('SSV validates exact signed bytes, rejects tampering/duplicate parameters/e
   await assert.rejects(verifyAdmobCallback(signed(content),{keys,now:now+86400001}));
   await assert.rejects(verifyAdmobCallback(signed(content)+'&reward_amount=9999',{keys,now}));
 });
+test('Google UTF-8 signatures survive percent-escaped Korean rewards but reject changed values',async()=>{
+  const unicode=content.replace('reward_item=points','reward_item=포인트');
+  const transported=signed(unicode).replace('포인트',encodeURIComponent('포인트'));
+  assert.equal((await verifyAdmobCallback(transported,{keys,now})).claim,claim);
+  await assert.rejects(verifyAdmobCallback(transported.replace(encodeURIComponent('포인트'),encodeURIComponent('다른값')),{keys,now}));
+  await assert.rejects(verifyAdmobCallback(transported.replace(encodeURIComponent('포인트'),'%ZZ'),{keys,now}));
+});
 test('only listed testers can claim demo rewards, and live rewards cannot be completed by the client',async()=>{
   const env={HB_ANDROID_ADS_MODE:'test',HB_ANDROID_TEST_MEMBER_IDS:'tester'};
   assert.equal(androidAdsConfiguration('stranger',env).enabled,false);

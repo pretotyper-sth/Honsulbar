@@ -24,7 +24,8 @@ export async function verifyAdmobCallback(query, { keys, fetcher = fetch, now = 
   const signature = params.get('signature');
   if (!key?.pem || !/^[A-Za-z0-9_\-=]+$/.test(signature || '')) throw new AppError('Unknown signing key', 403);
   let valid = false;
-  try { valid = verify('sha256', Buffer.from(query.slice(0,index),'utf8'), key.pem, Buffer.from(signature,'base64url')); } catch {}
+  // Google signs the UTF-8 query; Java URI.getQuery() in its reference verifier decodes transport escapes once.
+  try { valid = verify('sha256', Buffer.from(decodeURIComponent(query.slice(0,index)),'utf8'), key.pem, Buffer.from(signature,'base64url')); } catch {}
   if (!valid) throw new AppError('Invalid signature', 403);
   const claim = params.get('custom_data'), transaction = params.get('transaction_id'), unit = params.get('ad_unit');
   const timestamp = Number(params.get('timestamp'));

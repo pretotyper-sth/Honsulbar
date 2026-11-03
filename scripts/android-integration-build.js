@@ -5,7 +5,7 @@ import { androidBuildConfig } from './android-build-config.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const env = { ...process.env, HB_ANDROID_MODE: 'integration' };
-const allowed = new Set(['HB_ANDROID_API_URL','HB_AUTH_PUBLIC_URL','HB_AUTH_PUBLIC_KEY','HB_ANDROID_PUSH_ENABLED']);
+const allowed = new Set(['HB_ANDROID_API_URL','HB_AUTH_PUBLIC_URL','HB_AUTH_PUBLIC_KEY','HB_ANDROID_PUSH_ENABLED','HB_ADMOB_APP_ID']);
 const path = new URL('../.env.integration.local', import.meta.url);
 if (existsSync(path)) for (const line of readFileSync(path, 'utf8').split('\n')) {
   const match = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim());
