@@ -8,6 +8,7 @@ export default defineConfig({
   permissions: [],
   navigationBar: {
     transparentBackground: true,
+    theme: 'dark',
   },
   webView: {
     allowsInlineMediaPlayback: true,

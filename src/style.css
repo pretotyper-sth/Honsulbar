@@ -530,3 +530,9 @@ input::placeholder,textarea::placeholder { color:#b5a292; }
 .settings-list .danger-link { color:#ff9292; }
 .camera-feedback { color:#fff1df; }
 .camera-spinner { border-color:#fff5; border-top-color:#fff1df; }
+
+.exit-backdrop { position:fixed; inset:0; z-index:2000; display:flex; align-items:flex-end; justify-content:center; padding:calc(var(--ait-chrome-top) + 16px) 16px max(20px,env(safe-area-inset-bottom)); background:#0005; }
+.exit-confirm { width:100%; max-width:360px; padding:24px; border-radius:24px; background:#211412; box-shadow:0 8px 32px #0004; }
+.exit-confirm h2 { margin:0 0 24px; font-size:20px; line-height:1.4; overflow-wrap:anywhere; }
+
+html.exit-open, html.exit-open body, html.exit-open .app { overflow:hidden; overscroll-behavior:none; }

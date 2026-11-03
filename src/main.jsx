@@ -2,7 +2,7 @@ import {AccountTransferCode,AccountTransferEntry} from './AccountTransferCode';
 import {visibleCheck,captureFacePair,profileCanSave} from './photo-verification';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { IAP, loadFullScreenAd, showFullScreenAd, SafeAreaInsets, NavigationBar } from '@apps-in-toss/web-framework';
+import { IAP, loadFullScreenAd, showFullScreenAd, SafeAreaInsets, NavigationBar, graniteEvent, closeView } from '@apps-in-toss/web-framework';
 import { Button, BottomSheet, Badge, FaceConsent, CameraVerificationStatus } from './ui';
 import { ArrowLeft, ArrowRight, Bell, Camera, Check, ChevronDown, Clock3, DoorOpen, Coins, MessageCircleMore, Mic, MicOff, Plus, Volume2, VolumeX, Speaker, Wine, X, Flag, Wallet, Eye, LockKeyhole, ArrowLeftRight, Settings, UserRound } from 'lucide-react';
 import { REGIONS, CAPACITY, DRINKS } from './model';
@@ -11,6 +11,8 @@ import { voicePeerIds } from './social';
 import { useMesh } from './useMesh';
 import { VOICE_CONSENT_VERSION } from './voice-evidence';
 import { call, getConfig, login, clearSession, hasSession, assetUrl, insideToss, requestPushAgreement } from './api';
+import { handleMiniappBack, subscribeMiniappBack, navigationBarOptions } from './miniapp-back';
+import { ExitConfirm } from './ExitConfirm';
 import { Glass } from './Glass';
 import { SEATS as positions, POINT_PACKS, SUBSCRIPTIONS, adjacent, audioGain } from './social';
 import { AdminPage } from './admin';
@@ -261,6 +263,8 @@ function App() {
   const [focusSubscription, setFocusSubscription] = useState(false);
   const [region, setRegion] = useState('서울');
   const [sheet, setSheetState] = useState(null);
+  const [exitOpen, setExitOpen] = useState(false);
+  const backHandler = useRef(null);
   const [previewRoom, setPreviewRoom] = useState(null);
   const [previews, setPreviews] = useState({});
   const [profile, setProfile] = useState({ nickname: '', gender: null, photo: null });
@@ -520,10 +524,23 @@ function App() {
     try { off = SafeAreaInsets.subscribe({ onEvent: apply }) || (() => {}); } catch {}
     return () => { try { off(); } catch {} };
   }, []);
+  backHandler.current = () => handleMiniappBack({
+    dismissDialog: () => {
+      const dialog = document.querySelector('dialog[open]');
+      if (!dialog) return false;
+      dialog.close();
+      return true;
+    },
+    sheet, closeSheet, screen, leaveBar: () => open('leave'),
+    exitOpen, cancelExit: () => setExitOpen(false), showExit: () => setExitOpen(true),
+  });
+  useEffect(() => subscribeMiniappBack({
+    window, graniteEvent, insideToss: insideToss(), onBack: () => backHandler.current(),
+  }), []);
   useEffect(() => {
     if (!insideToss() || typeof NavigationBar?.setOptions !== 'function') return;
-    NavigationBar.setOptions({ transparentBackground: true, backgroundColor: sheet ? null : '#ffffff' }).catch(() => {});
-  }, [sheet]);
+    NavigationBar.setOptions(navigationBarOptions(!!sheet || exitOpen)).catch(() => {});
+  }, [sheet, exitOpen]);
   useEffect(() => { getConfig().then(setConfig).catch(() => setConfig({})); }, []);
   useEffect(() => {
     if(screen==='bar' && config?.voiceEvidenceReady && !voiceAgreed) { setPendingEntry(null);setSheetState('voice-consent'); }
@@ -1332,6 +1349,10 @@ function App() {
   const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(new Date(now));
   const guestSeconds = person => tick(person.seconds, person.seat === 11);
 
+  const exitConfirm = <ExitConfirm open={exitOpen} onClose={() => setExitOpen(false)} onConfirm={async () => {
+    try { await closeView(); } catch { setToast('종료하지 못했어요. 다시 시도해 주세요.'); }
+  }}/>;
+
   async function captureVerification() {
     if (!faceConsentRef.current || verificationState !== 'ready' || captureLock.current) return;
     const video=cameraVideo.current,canvas=document.createElement('canvas');
@@ -1371,7 +1392,7 @@ function App() {
     setVerificationMessage('중단했어요. 다시 촬영해 주세요.');
   }
 
-  if (screen === 'onboarding') return <><div className="ait-gnb-fill" aria-hidden="true"/><main className="app onboarding-screen">
+  if (screen === 'onboarding') return <>{exitConfirm}<div className="ait-gnb-fill" aria-hidden="true"/><main className="app onboarding-screen">
     <div className="onboarding-scroll">
       <img className="onboarding-logo" src="/honsulbar-logo.png" alt="혼술바" />
       <p className="eyebrow">혼술바</p>
@@ -1388,9 +1409,10 @@ function App() {
     {toast && <div className="toast" role="status">{toast}</div>}
   </main></>;
 
-  if (screen === 'loading') return <><div className="ait-gnb-fill" aria-hidden="true"/><main className="app loading-screen"><div className="app-spinner" role="status" aria-label="불러오는 중"/></main></>;
+  if (screen === 'loading') return <>{exitConfirm}<div className="ait-gnb-fill" aria-hidden="true"/><main className="app loading-screen"><div className="app-spinner" role="status" aria-label="불러오는 중"/></main></>;
 
   return <>
+  {exitConfirm}
   <div className="ait-gnb-fill" aria-hidden="true"/>
   <main className="app">
     <header>
