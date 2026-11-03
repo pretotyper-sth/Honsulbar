@@ -63,7 +63,7 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .regions>button { flex:0 0 auto; min-width:52px; white-space:nowrap; }
 .regions .region-request-button { min-width:auto; border:1px dashed #d1d6db; color:#6b7684; }
 .list-heading { display:flex; align-items:center; flex-wrap:nowrap; gap:12px; height:20px; margin-bottom:14px; font-size:16px; font-weight:600; overflow:hidden; }
-.leftover-note { margin:0; font-size:12px; line-height:20px; color:#3182f6; word-break:keep-all; font-weight:400; white-space:nowrap; }
+.leftover-note { margin:0; font-size:inherit; line-height:20px; color:#3182f6; word-break:keep-all; font-weight:400; white-space:nowrap; }
 .leftover-note.is-empty { visibility:hidden; }
 .list-heading b { color:#3182f6; font-size:14px; margin-left:4px; }
 .green-dot, .blue-dot { display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:6px; vertical-align:middle; }
