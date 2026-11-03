@@ -1,0 +1,9 @@
+혼술바 Play 스토어 이미지 — 2026-11-03
+
+앱 아이콘: honsulbar-play-icon-512.png (512×512)
+그래픽 이미지: honsulbar-play-feature-1024x500.png (1024×500)
+휴대전화 스크린샷: phone-01-intro.png, phone-02-home.png (432×768, 9:16)
+선택 스크린샷: phone-03-entry.png (432×768, 9:16)
+
+기존에 선택한 문 로고와 현재 AOS UI를 사용했습니다. 스크린샷은 운영 DB/외부 호출이 차단된 로컬 AOS 미리보기의 실제 화면입니다. 합성 손님이나 다른 이용자의 개인정보는 넣지 않았습니다. 네이티브 기기 전체 QA와 Play 심사 통과를 의미하지 않습니다.
+한국어 소개는 docs/PLAY_SUBMISSION.md 기준으로 Play 임시보관함에 저장했습니다. 이미지 업로드는 Chrome 확장의 로컬 파일 접근 제한 해소 후 진행합니다.
