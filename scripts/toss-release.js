@@ -59,10 +59,13 @@ if (!uploadOnly) {
     process.exit(1);
   }
   console.log('웹 번들을 빌드합니다.');
-  run(vite, ['build']);
+  run(vite, ['build', '--mode', 'toss']);
   console.log('앱인토스 번들을 빌드합니다.');
   run(ait, ['build']);
 }
+
+// Inspect the packed archive itself, including for upload-only releases.
+run(process.execPath, ['scripts/check-toss-bundle.js', bundle]);
 
 if (skipUpload) process.exit(0);
 if (!existsSync(bundle)) {
