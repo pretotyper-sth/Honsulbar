@@ -7,6 +7,8 @@ export default async function handler(req,res) {
   try {
     const query = String(req.url || '').split('?').slice(1).join('?');
     const result = await verifyAdmobCallback(query);
+    // Reserved console probe: verify Google's signature without creating a reward or touching member data.
+    if (result.claim === '00000000-0000-0000-0000-000000000000') return res.status(200).json({ok:true,probe:true});
     await rpc('hb_complete_android_ad',{p_claim:result.claim,p_unit:result.unit,p_transaction:result.transaction,p_timestamp:result.timestamp,p_test:false});
     return res.status(200).json({ok:true});
   } catch(error) { return res.status(error instanceof AppError ? error.status : 503).json({error:'reward_not_verified'}); }
