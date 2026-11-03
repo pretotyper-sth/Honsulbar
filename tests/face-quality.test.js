@@ -13,7 +13,7 @@ test('quality gates accept measurable frontal features and reject incomplete, oc
  assert.match(faceQualityError({face:[]},image),/찾지 못/);
  assert.match(faceQualityError({face:[...result.face,...result.face]},image),/혼자/);
  for(const patch of [{faceScore:.5},{boxScore:.3},{mesh:[]},{rotation:{angle:{yaw:.8,pitch:0}}},{embedding:[NaN]}])assert.ok(faceQualityError({face:[{...result.face[0],...patch}]},image));
- assert.match(faceQualityError({...result,hand:[{label:'hand',score:.9,box:[120,60,120,230]}]},image),/손을 내려/);
+ assert.equal(faceQualityError({...result,hand:[{label:'hand',score:.9,box:[120,60,120,230]}]},image),null);
  assert.equal(faceQualityError({...result,hand:[{label:'hand',score:.9,box:[0,0,40,40]}]},image),null);
  for(let y=95;y<135;y++)for(let x=80;x<155;x++){const i=(y*320+x)*4;image.data[i]=image.data[i+1]=image.data[i+2]=170;}
  assert.match(faceQualityError(result,image),/눈·입을 가리지/);
@@ -63,4 +63,15 @@ test('lighting, detail quality and photo mismatch have distinct actionable error
  assert.match(mismatch,/등록 사진과 달라/);
  assert.doesNotMatch(mismatch,/밝은 곳/);
  assert.match(comparisonError(frames,(a)=>a[0]===1?NaN:.8,'near'),/밝은 곳/);
+});
+
+
+test('a false hand box cannot reject a clear face; actual missing detail still fails',()=>{
+ const {image,result}=fixture();
+ result.hand=[{label:'hand',score:.99,box:[60,50,220,250]}];
+ assert.equal(faceQualityError(result,image,{capture:true}),null);
+ for(let y=95;y<135;y++)for(let x=80;x<155;x++){
+  const i=(y*image.width+x)*4;image.data[i]=image.data[i+1]=image.data[i+2]=170;
+ }
+ assert.match(faceQualityError(result,image,{capture:true}),/눈·입을 가리지/);
 });

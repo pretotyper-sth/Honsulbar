@@ -45,7 +45,7 @@ export function FaceConsent({ checked, onChange }) {
     <div className="face-consent-row">
       <label className="face-consent">
         <input type="checkbox" checked={checked} aria-haspopup="dialog" onChange={() => checked ? onChange(false) : showDetails()}/>
-        <span>[필수] 사진 도용 방지용 촬영본·얼굴 비교 정보 처리 동의</span>
+        <span>[필수] 촬영본·얼굴정보 처리 동의</span>
       </label>
       <button type="button" className="face-consent-more" aria-label="얼굴 정보 처리 동의 내용 보기" aria-haspopup="dialog" onClick={showDetails}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>

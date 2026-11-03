@@ -1,6 +1,5 @@
 export const FACE_RULES = Object.freeze({boxScore:0.8,meshScore:0.9,profileSimilarity:0.5,profileMean:0.56,liveSimilarity:0.62,live:0.5,minSize:0.2,maxYaw:0.4,maxPitch:0.4});
 const finitePoint = p => Array.isArray(p) && p.length>=2 && p.every(Number.isFinite);
-const overlap = (a,b) => Math.max(0,Math.min(a[0]+a[2],b[0]+b[2])-Math.max(a[0],b[0]))*Math.max(0,Math.min(a[1]+a[3],b[1]+b[3])-Math.max(a[1],b[1]));
 function patch(image,cx,cy,w,h){
  let sum=0,sq=0,edge=0,n=0;
  const gray=(x,y)=>{const i=(y*image.width+x)*4;return image.data[i]*.299+image.data[i+1]*.587+image.data[i+2]*.114;};
@@ -21,11 +20,9 @@ export function faceQualityError(result,image,{capture=false}={}){
  if(!points.every(finitePoint)||points.some(p=>p[0]<1||p[1]<1||p[0]>=image.width-1||p[1]>=image.height-1))return '눈·코·입이 보이게 해주세요.';
  const angle=face.rotation?.angle;
  if(!angle||!Number.isFinite(angle.yaw)||!Number.isFinite(angle.pitch)||Math.abs(angle.yaw)>FACE_RULES.maxYaw||Math.abs(angle.pitch)>FACE_RULES.maxPitch)return '고개를 바로 하고 화면을 봐 주세요.';
- for(const hand of result.hand||[]){
-  if(hand.label==='face'||!(hand.score>=.65)||!hand.box?.every(Number.isFinite))continue;
-  const inner=[x+w*.12,y+h*.12,w*.76,h*.76];
-  if(overlap(inner,hand.box)/(inner[2]*inner[3])>.035)return '얼굴 앞의 손을 내려 주세요.';
- }
+ // A hand box overlapping the face does not establish that eyes or mouth
+ // are actually covered; do not reject solely on that classifier output.
+ // Judge visible facial detail below; keep identity, liveness and motion checks.
  const regions=[[points[0],points[1]],[points[2],points[3]],[points[5],points[6]]];
  for(const [a,b] of regions){
   const stats=patch(image,(a[0]+b[0])/2,(a[1]+b[1])/2,Math.max(12,Math.abs(b[0]-a[0])*1.15),h*.13);

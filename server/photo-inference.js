@@ -17,7 +17,7 @@ tf.io.registerLoadRouter(url=>typeof url==='string'&&url.startsWith(new URL('./f
  const bytes=Buffer.concat(buffers);
  return {...model,weightSpecs:model.weightsManifest.flatMap(group=>group.weights),weightData:bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength)};
 }}:null);
-const human=new humanModule.Human({backend:'wasm',wasmPath:fileURLToPath(new URL('./vendor/',import.meta.url)),cacheSensitivity:0,skipAllowed:false,modelBasePath:new URL('./face-models/',import.meta.url).href,filter:{enabled:false,return:false},face:{detector:{rotation:true,maxDetected:3,minConfidence:0.75,skipFrames:0,skipTime:0,return:false},mesh:{enabled:true},iris:{enabled:false},description:{enabled:true,crop:.08,skipFrames:0,skipTime:0},emotion:{enabled:false},antispoof:{enabled:false},liveness:{enabled:true,skipFrames:0,skipTime:0}},hand:{enabled:true,maxDetected:2,minConfidence:.35,landmarks:true,skipFrames:0,skipTime:0},body:{enabled:false},object:{enabled:false},gesture:{enabled:false},segmentation:{enabled:false}});
+const human=new humanModule.Human({backend:'wasm',wasmPath:fileURLToPath(new URL('./vendor/',import.meta.url)),cacheSensitivity:0,skipAllowed:false,modelBasePath:new URL('./face-models/',import.meta.url).href,filter:{enabled:false,return:false},face:{detector:{rotation:true,maxDetected:3,minConfidence:0.75,skipFrames:0,skipTime:0,return:false},mesh:{enabled:true},iris:{enabled:false},description:{enabled:true,crop:.08,skipFrames:0,skipTime:0},emotion:{enabled:false},antispoof:{enabled:false},liveness:{enabled:true,skipFrames:0,skipTime:0}},hand:{enabled:false},body:{enabled:false},object:{enabled:false},gesture:{enabled:false},segmentation:{enabled:false}});
 const ready=human.load();
 export function decodePhoto(value){
  if(typeof value!=='string'||value.length>400000||!/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(value))throw new AppError('사진을 다시 촬영해 주세요.');
@@ -63,7 +63,7 @@ export async function verifyImages(profile,frames,motion){
   catch(error){if(!(error instanceof AppError))throw error;}
   const error=comparisonError(results.slice(0,3),(a,b)=>human.match.similarity(a,b),motion,alternateProfile);
   if(error)throw new AppError(error);
-  return {model:'human-3.3.6-face-v4',photoDigest:hash(profile)};
+  return {model:'human-3.3.6-face-v5',photoDigest:hash(profile)};
  }finally{
   for(const image of images)image.data.fill(0);
   for(const result of results)result.embedding.fill(0);
