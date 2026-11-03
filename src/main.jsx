@@ -2,7 +2,7 @@ import {AccountTransferCode,AccountTransferEntry} from './AccountTransferCode';
 import {visibleCheck,captureFacePair,profileCanSave} from './photo-verification';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { IAP, loadFullScreenAd, showFullScreenAd, SafeAreaInsets, NavigationBar, graniteEvent, closeView } from '@apps-in-toss/web-framework';
+import { IAP, loadFullScreenAd, showFullScreenAd, SafeAreaInsets, NavigationBar, graniteEvent, Screen } from '@apps-in-toss/web-framework';
 import { Button, BottomSheet, Badge, FaceConsent, CameraVerificationStatus } from './ui';
 import { ArrowLeft, ArrowRight, Bell, Camera, Check, ChevronDown, Clock3, DoorOpen, Coins, MessageCircleMore, Mic, MicOff, Plus, Volume2, VolumeX, Speaker, Wine, X, Flag, Wallet, Eye, LockKeyhole, ArrowLeftRight, Settings, UserRound } from 'lucide-react';
 import { REGIONS, CAPACITY, DRINKS } from './model';
@@ -536,7 +536,8 @@ function App() {
   });
   useEffect(() => subscribeMiniappBack({
     window, graniteEvent, insideToss: insideToss(), onBack: () => backHandler.current(),
-  }), []);
+    interceptNative: !!sheet || screen === 'bar',
+  }), [!!sheet, screen === 'bar']);
   useEffect(() => {
     if (!insideToss() || typeof NavigationBar?.setOptions !== 'function') return;
     NavigationBar.setOptions(navigationBarOptions()).catch(() => {});
@@ -1350,7 +1351,7 @@ function App() {
   const guestSeconds = person => tick(person.seconds, person.seat === 11);
 
   const exitConfirm = <ExitConfirm open={exitOpen} onClose={() => setExitOpen(false)} onConfirm={async () => {
-    try { await closeView(); } catch { setToast('종료하지 못했어요. 다시 시도해 주세요.'); }
+    try { await Screen.close(); } catch { setToast('종료하지 못했어요. 다시 시도해 주세요.'); }
   }}/>;
 
   async function captureVerification() {

@@ -1,3 +1,4 @@
+import {safetySnapshot} from '../server/safety-queue.js';
 import {ageTestReady,startAgeTest,completeAgeTest,ageTestHealth} from '../server/age-verification.js';
 import {playBillingConfiguration,processPlayPurchase,processPlaySubscription} from '../server/play-billing.js';
 import {androidPushReady,registerAndroidPush,unregisterAndroidPush} from '../server/android-push.js';
@@ -8,6 +9,7 @@ import {startAndroidAd,finishAndroidAd} from '../server/android-ads.js';
 import {randomUUID,randomBytes} from 'node:crypto';
 import {verifyPhoto,warmPhotoVerifier} from '../server/photo-verification.js';
 import {AppError,authenticate,admin,database,rpc,toss,decryptField,isAdult,newToken,hash,dispatchOutbox,sbUrl,signPhoto,photoMatches,skuPoints,findProduct,rewardedAdGroupId,subscriptionSku,isSubscriptionSku,parseTossTime,pushAvailableTemplate,pushReplyTemplate,isProduction,identityKey} from '../server/platform.js';
+const snapshot = args => safetySnapshot(args, {database,rpc});
 const allowedActions=new Set(['state','profile','ticket','read','region','waitlist','enter','order','leave','heartbeat','move','request','respond','cancel','focus-end','preview','signal','ad-start','ad-claim','block']);
 const origins=new Set(['https://honsulbar-app.vercel.app','https://honsulbar.apps.tossmini.com','https://honsulbar.private-apps.tossmini.com','https://honsulbar.web.tossmini.com','https://honsulbar.private-web.tossmini.com']);
 function withPhotos(value,viewer){
@@ -30,7 +32,7 @@ async function sendPhoto(req,res){
 }
 async function startSession(res,memberId,platform='toss'){
  const session=newToken();await database('hb_sessions',{method:'POST',body:{token_hash:hash(session),member_id:memberId,platform}});
- return res.json({token:session,state:withPhotos(await rpc('hb_snapshot',{p_member:memberId}),memberId)});
+ return res.json({token:session,state:withPhotos(await snapshot({p_member:memberId}),memberId)});
 }
 export default async function handler(req,res) {
  res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');
@@ -183,7 +185,7 @@ export default async function handler(req,res) {
   if(action==='android-ad-start')return res.json({result:await startAndroidAd(member)});
   if(action==='android-ad-finish'){
    const result=await finishAndroidAd(member,body.data?.id);
-   return res.json({result,state:withPhotos(await rpc('hb_snapshot',{p_member:member}),member)});
+   return res.json({result,state:withPhotos(await snapshot({p_member:member}),member)});
   }
   if(action==='android-push-config')return res.json({result:{enabled:androidPushReady()}});
   if(action==='android-push-register'){
@@ -196,11 +198,11 @@ export default async function handler(req,res) {
   if(action==='play-billing-config')return res.json({result:{...playBillingConfiguration(member),checkoutAllowed:!await rpc('hb_safety_paused')}});
   if(action==='play-purchase'){
    const result=await processPlayPurchase(member,body.data);
-   return res.json({result,state:withPhotos(await rpc('hb_snapshot',{p_member:member}),member)});
+   return res.json({result,state:withPhotos(await snapshot({p_member:member}),member)});
   }
   if(action==='play-subscription'){
    const result=await processPlaySubscription(member,body.data);
-   return res.json({result,state:withPhotos(await rpc('hb_snapshot',{p_member:member}),member)});
+   return res.json({result,state:withPhotos(await snapshot({p_member:member}),member)});
   }
 
   if(action==='link-social'){
@@ -214,7 +216,7 @@ export default async function handler(req,res) {
 
   if(action==='voice-consent-revoke'){
    await rpc('hb_revoke_voice_consent',{p_member:member});
-   return res.json({result:{revoked:true},state:withPhotos(await rpc('hb_snapshot',{p_member:member}),member)});
+   return res.json({result:{revoked:true},state:withPhotos(await snapshot({p_member:member}),member)});
   }
   if(action==='voice-consent'){
    if(!voiceEvidenceReady()||body.data?.version!==VOICE_CONSENT_VERSION||body.data?.agreed!==true)throw new AppError('안내를 확인하고 동의해 주세요.');
@@ -234,7 +236,7 @@ export default async function handler(req,res) {
    const encrypted=encryptEvidence(validateVoiceEvidence(audioEvidence));
    const result=await rpc('hb_submit_voice_report',{p_member:member,p_data:data,p_evidence:encrypted});
    await dispatchOutbox().catch(()=>{});
-   return res.json({result,state:withPhotos(await rpc('hb_snapshot',{p_member:member}),member)});
+   return res.json({result,state:withPhotos(await snapshot({p_member:member}),member)});
   }
   if(action==='photo-prepare'){await warmPhotoVerifier();return res.json({result:{ready:true}});}
   if(action==='photo-challenge'){ await warmPhotoVerifier(); return res.json({result:await rpc('hb_new_photo_challenge',{p_member:member})}); }
@@ -269,7 +271,7 @@ export default async function handler(req,res) {
     const [room]=await database(`hb_rooms?region=eq.${encodeURIComponent(region)}&number=eq.${number}&select=id&limit=1`);
     if(room?.id)await database(`hb_waitlist?member_id=eq.${member}&room_id=eq.${room.id}`,{method:'DELETE'});
    }else await database(`hb_waitlist?member_id=eq.${member}`,{method:'DELETE'});
-   return res.json({result:{},state:withPhotos(await rpc('hb_snapshot',{p_member:member,p_after:Math.max(0,Number(body.after)||0),p_limit:Math.min(100,Math.max(10,Number(body.limit)||10))}),member)});
+   return res.json({result:{},state:withPhotos(await snapshot({p_member:member,p_after:Math.max(0,Number(body.after)||0),p_limit:Math.min(100,Math.max(10,Number(body.limit)||10))}),member)});
   }
   if(action==='purchase'){
    if(typeof body.orderId!=='string'||!/^[\w-]{8,80}$/.test(body.orderId))throw new AppError('주문 정보를 확인해 주세요.');
@@ -278,13 +280,13 @@ export default async function handler(req,res) {
    if(isSubscriptionSku(order?.sku)){
     if(!['PAYMENT_COMPLETED','PURCHASED','ACTIVE'].includes(order.status))throw new AppError('결제가 완료되지 않았어요.',409);
     await rpc('hb_apply_subscription',{p_member:member,p_order:body.orderId,p_sku:order.sku,p_access:true,p_auto_renew:true,p_expires:parseTossTime(order.expiresAt||order.expires_at)});
-    return res.json({ok:true,state:withPhotos(await rpc('hb_snapshot',{p_member:member}),member)});
+    return res.json({ok:true,state:withPhotos(await snapshot({p_member:member}),member)});
    }
    const product=findProduct(order?.sku);
    if(!product)throw new AppError('등록되지 않은 상품이에요. 고객센터에 문의해 주세요.',400);
    if(!['PAYMENT_COMPLETED','PURCHASED'].includes(order.status))throw new AppError('결제가 완료되지 않았어요.',409);
    await rpc('hb_credit_order',{p_member:member,p_order:body.orderId,p_sku:order.sku,p_points:product.points,p_amount:product.won});
-   return res.json({ok:true,state:withPhotos(await rpc('hb_snapshot',{p_member:member}),member)});
+   return res.json({ok:true,state:withPhotos(await snapshot({p_member:member}),member)});
   }
   if(!allowedActions.has(action))throw new AppError('지원하지 않는 요청이에요.');
   if(action==='profile'){
@@ -295,7 +297,7 @@ export default async function handler(req,res) {
   if(action==='heartbeat'&&typeof (body.data||{}).mic==='boolean')await rpc('hb_set_mic',{p_member:member,p_mic:!!body.data.mic}).catch(()=>{});
   if(action==='ticket')await dispatchOutbox().catch(()=>{});
   if(action==='signal')return res.json({ok:true});
-  const state=await rpc('hb_snapshot',{p_member:member,p_after:Math.max(0,Number(body.after)||0),p_limit:Math.min(100,Math.max(10,Number(body.limit)||10))});
+  const state=await snapshot({p_member:member,p_after:Math.max(0,Number(body.after)||0),p_limit:Math.min(100,Math.max(10,Number(body.limit)||10))});
   return res.json({result:withPhotos(result,member),state:withPhotos(state,member)});
  }catch(error){console.error(error);return res.status(error.status||500).json({error:error instanceof AppError?error.message:'요청을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.'});}
 }

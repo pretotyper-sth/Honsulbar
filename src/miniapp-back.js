@@ -7,7 +7,13 @@ export function handleMiniappBack({ dismissDialog, sheet, closeSheet, screen, le
   showExit();
 }
 
-export function subscribeMiniappBack({ window, graniteEvent, onBack, insideToss }) {
+export function subscribeMiniappBack({ window, graniteEvent, onBack, insideToss, interceptNative = false }) {
+  // At the root, let Toss own its native exit alert and dim the whole GNB.
+  // Do not add a WebView history entry: it prevents reaching the native root.
+  if (insideToss) {
+    if (!interceptNative) return () => {};
+    return graniteEvent.addEventListener('backEvent', { onEvent: onBack, onError: () => {} });
+  }
   // Keep a browser entry behind this state-driven app, including after refresh.
   if (!window.history.state?.miniappBackGuard) {
     window.history.pushState({ ...window.history.state, miniappBackGuard: true }, '');
@@ -17,11 +23,7 @@ export function subscribeMiniappBack({ window, graniteEvent, onBack, insideToss 
     onBack();
   };
   window.addEventListener('popstate', onPop);
-  let off = () => {};
-  if (insideToss) {
-    try { off = graniteEvent.addEventListener('backEvent', { onEvent: onBack, onError: () => {} }); } catch {}
-  }
-  return () => { off(); window.removeEventListener('popstate', onPop); };
+  return () => window.removeEventListener('popstate', onPop);
 }
 
 export function navigationBarOptions() {

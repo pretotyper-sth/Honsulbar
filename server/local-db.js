@@ -32,7 +32,7 @@ const MIGRATIONS = [
   '20261102_auth_cleanup.sql',
 ];
 const TABLES = new Set([
-  'hb_voice_evidence', 'hb_voice_consents', 'hb_push_devices', 'hb_android_ad_claims', 'hb_account_transfers', 'hb_auth_cleanup',
+  'hb_safety_ops', 'hb_voice_evidence', 'hb_voice_consents', 'hb_push_devices', 'hb_android_ad_claims', 'hb_account_transfers', 'hb_auth_cleanup',
   'hb_members', 'hb_sessions', 'hb_tickets', 'hb_outbox', 'hb_visits', 'hb_rooms',
   'hb_ledger', 'hb_notifications', 'hb_waitlist', 'hb_requests', 'hb_focus',
   'toss_login_links', 'hb_orders', 'hb_ad_claims', 'hb_events',
