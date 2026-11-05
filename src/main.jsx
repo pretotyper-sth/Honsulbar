@@ -10,7 +10,7 @@ import { useVoice } from './useVoice';
 import { voicePeerIds } from './social';
 import { useMesh } from './useMesh';
 import { VOICE_CONSENT_VERSION } from './voice-evidence';
-import { beginAgeVerification, finishAgeVerification, call, getConfig, login, resumeLogin, createSocialAccountTransfer, linkSocialAccount, clearSession, hasSession, assetUrl, insideToss, requestPushAgreement } from './api';
+import { beginAgeVerification, finishAgeVerification, call, getConfig, login, playReviewLogin, resumeLogin, createSocialAccountTransfer, linkSocialAccount, clearSession, hasSession, assetUrl, insideToss, requestPushAgreement } from './api';
 import { Glass } from './Glass';
 import { SEATS as positions, POINT_PACKS, SUBSCRIPTIONS, adjacent, audioGain } from './social';
 import { AdminPage } from './admin';
@@ -859,6 +859,17 @@ function App() {
     try {await navigator.clipboard.writeText(accountTransfer.code);setToast('연결 코드를 복사했어요.');}
     catch {setToast('연결 코드를 길게 눌러 복사해 주세요.');}
   }
+  const [reviewEmail,setReviewEmail]=useState('');
+  const [reviewPassword,setReviewPassword]=useState('');
+  useEffect(()=>{if(sheet!=='play-review')setReviewPassword('');},[sheet]);
+  async function submitReviewLogin(event) {
+    event.preventDefault();if(busy)return;setBusy(true);
+    try {
+      const state=await playReviewLogin(reviewEmail.trim(),reviewPassword);
+      appliedSequence.current=++sequence.current;
+      stateHandler.current(state,true);setSheet(null);setReviewEmail('');
+    } catch(error){setToast(error.message);}finally{setReviewPassword('');setBusy(false);}
+  }
   async function completeOnboarding(provider) {
     if (busy) return;
     setBusy(true);
@@ -1525,6 +1536,8 @@ function App() {
     setVerificationMessage('중단했어요. 다시 촬영해 주세요.');
   }
 
+  const reviewLoginForm=<form className="review-login-form" onSubmit={submitReviewLogin}><h2 id="sheet-title">App review sign-in</h2><p className="sheet-description">Use the review account supplied in Play Console.</p><label>Email<input type="email" autoComplete="username" value={reviewEmail} onChange={e=>setReviewEmail(e.target.value)} required maxLength={254}/></label><label>Password<input type="password" autoComplete="current-password" value={reviewPassword} onChange={e=>setReviewPassword(e.target.value)} required maxLength={256}/></label><button type="submit" disabled={busy}>Sign in</button></form>;
+
   if (screen === 'onboarding') return <><div className="ait-gnb-fill" aria-hidden="true"/><main className="app onboarding-screen">
     <div className="onboarding-scroll">
       <img className="onboarding-logo" src="/brand-door.png" alt="혼술바" />
@@ -1538,7 +1551,8 @@ function App() {
       </div>
       <div className="onboarding-notice">만 19세 이상만 이용할 수 있어요.</div>
       {config?.accountTransferReady&&import.meta.env.VITE_SOCIAL_LOGIN_ENABLED&&<AccountTransferEntry connect={connectToss} code={transferCode} onChange={setTransferCode} onToggle={()=>{setConnectToss(value=>!value);setTransferCode('');}} busy={busy}/>}
-      {import.meta.env.VITE_SOCIAL_LOGIN_ENABLED && <><Button display="block" disabled={busy} onClick={()=>completeOnboarding('kakao')}>카카오로 계속하기</Button><Button display="block" disabled={busy} onClick={()=>completeOnboarding('google')}>Google로 계속하기</Button></>}{!import.meta.env.VITE_SOCIAL_LOGIN_ENABLED&&<Button size="xlarge" display="block" disabled={busy} onClick={completeOnboarding}>{busy ? '로그인하는 중…' : '시작하기'}</Button>}    </div>
+      {import.meta.env.VITE_SOCIAL_LOGIN_ENABLED && <><Button display="block" disabled={busy} onClick={()=>completeOnboarding('kakao')}>카카오로 계속하기</Button><Button display="block" disabled={busy} onClick={()=>completeOnboarding('google')}>Google로 계속하기</Button></>}{import.meta.env.VITE_SOCIAL_LOGIN_ENABLED&&config?.playReviewReady&&<button onClick={()=>open('play-review')}>App review sign-in</button>}{!import.meta.env.VITE_SOCIAL_LOGIN_ENABLED&&<Button size="xlarge" display="block" disabled={busy} onClick={completeOnboarding}>{busy ? '로그인하는 중…' : '시작하기'}</Button>}    </div>
+    <BottomSheet open={sheet==='play-review'} onClose={()=>setSheet(null)} ariaLabelledBy="sheet-title">{reviewLoginForm}</BottomSheet>
     {toast && <div className="toast" role="status">{toast}</div>}
   </main></>;
 
@@ -1630,6 +1644,7 @@ function App() {
       {sheet === 'verify-profile' && <><p className="eyebrow">본인 얼굴 확인</p><h2 id="sheet-title">실제 얼굴을 촬영해 주세요</h2><FaceConsent checked={faceConsent} onChange={changeFaceConsent}/><div className={`camera-preview verification-camera is-${verificationGuide.stage}`}><video ref={cameraVideo} className="camera-video-hidden" muted playsInline disablePictureInPicture controls={false} webkit-playsinline="true" x-webkit-airplay="deny" tabIndex={-1} aria-hidden="true"/><canvas ref={cameraView} className="camera-view" aria-label="본인 얼굴 촬영 화면"/><i className={`camera-guide motion-${verificationGuide.motion || 'none'}`} aria-hidden="true"/><canvas ref={cameraCanvas} hidden/><CameraVerificationStatus guide={verificationGuide} message={verificationMessage} state={verificationState} elapsed={Math.max(0,Math.floor((now-verificationStartedAt)/1000))}/></div><div className="camera-actions">{verificationState==='verified'?<Button size="xlarge" display="block" disabled={!faceConsent||!photoProof||busy} onClick={saveProfile}>프로필 저장하기</Button>:verificationState==='unavailable'?<Button size="xlarge" display="block" onClick={() => { setSheetState(null); setTimeout(() => setSheetState('verify-profile'), 0); }}>권한 다시 요청하기</Button>:<Button size="xlarge" display="block" disabled={verificationState!=='ready'||!faceConsent} onClick={captureVerification}>{verificationState==='checking'?'얼굴 확인 중…':verificationState==='starting'?'카메라 준비 중…':verificationGuide.stage==='error'?'다시 촬영하기':'촬영 시작'}</Button>}{verificationState==='checking'&&<button type="button" className="camera-cancel" onClick={cancelVerification}>검사 중단</button>}</div></>}
       {sheet==='account-transfer-provider'&&<><p className="eyebrow">앱인토스 계정 연결</p><h2 id="sheet-title">현재 계정을 확인해 주세요</h2><p className="sheet-description">이 계정에 연결된 로그인 수단을 선택하면 연결 코드를 받을 수 있어요.</p><div className="actions"><Button disabled={busy} onClick={()=>createAccountTransfer('google')}>Google로 확인</Button><Button disabled={busy} onClick={()=>createAccountTransfer('kakao')}>카카오로 확인</Button></div></>}
       {sheet === 'account-transfer'&&<AccountTransferCode target={insideToss()?'Android':'앱인토스'} info={accountTransfer} now={now} onCopy={copyAccountTransfer} onRenew={()=>createAccountTransfer()} busy={busy}/>}
+
       {sheet === 'settings' && <><p className="eyebrow">설정</p><h2 id="sheet-title">도움이 필요하신가요?</h2><p className="sheet-description">서비스 이용과 계정을 관리할 수 있어요.</p><div className="settings-group"><span>도움말</span><div className="settings-list"><button onClick={()=>open('support')}>고객센터<ArrowRight size={16}/></button><button onClick={()=>open('inquiry')}>신고·문의<ArrowRight size={16}/></button><button onClick={()=>open('legal')}>약관 및 정책<ArrowRight size={16}/></button>{Capacitor.getPlatform()==='android'&&<button disabled={busy} onClick={async()=>{if(busy)return;setBusy(true);try{if(!await openAndroidAdPrivacy())setToast('변경할 광고 동의 설정이 없어요.');}catch{setToast('광고 개인정보 설정을 열지 못했어요. 다시 시도해 주세요.');}finally{setBusy(false);}}}>광고 개인정보 설정<ArrowRight size={16}/></button>}{config?.voiceEvidenceReady&&<button disabled={busy} onClick={revokeVoiceConsent}>음성 안전 처리 동의 철회<ArrowRight size={16}/></button>}</div></div><div className="settings-group"><span>알림</span><div className="settings-list"><div className="settings-toggle"><span><strong>빈자리 알림</strong><small>만석 호점에 자리가 나면 알려드려요</small></span><button type="button" role="switch" aria-checked={waitlistAlerts||waitlist.length>0} className={`alert-switch${waitlistAlerts||waitlist.length>0?' is-on':''}`} onClick={()=>setWaitlistAlertEnabled(!(waitlistAlerts||waitlist.length>0))}><i/></button></div></div></div><div className="settings-group"><span>계정 및 결제</span><div className="settings-list">{import.meta.env.VITE_SOCIAL_LOGIN_ENABLED&&<><button disabled={busy} onClick={()=>connectLogin('kakao')}>카카오 로그인 연결<ArrowRight size={16}/></button><button disabled={busy} onClick={()=>connectLogin('google')}>Google 로그인 연결<ArrowRight size={16}/></button></>}{config?.ageTestReady&&import.meta.env.VITE_SOCIAL_LOGIN_ENABLED&&<><button disabled={busy} onClick={startAgeCheck}>성인 확인 테스트<ArrowRight size={16}/></button><button disabled={busy} onClick={()=>finishAgeCheck()}>테스트 인증 결과 확인<ArrowRight size={16}/></button></>}{config?.accountTransferReady&&<button disabled={busy} onClick={()=>createAccountTransfer()}>{insideToss()?'Android 계정 연결':'앱인토스 계정 연결'}<ArrowRight size={16}/></button>}<button onClick={openSubscriptionManager}>결제·정기 구독 관리<ArrowRight size={16}/></button><button onClick={()=>open('withdraw')} className="danger-link">회원탈퇴<ArrowRight size={16}/></button></div></div></>}
       {sheet === 'region-request' && <><p className="eyebrow">지역 추가 요청</p><h2 id="sheet-title">어디에서 만나고 싶나요?</h2><p className="sheet-description">원하는 지역을 골라 주세요.</p>{REGION_REQUEST_GROUPS.map(group=><div className="region-request-section" key={group.title}><span>{group.title}</span><div className="region-request-grid">{group.options.map(item=><button key={item} className={requestedRegion===item?'selected':''} onClick={()=>{setRequestedRegion(item);setShowCustomRegion(false);}}>{item}</button>)}{group.title==='주요 도시'&&<button style={{borderStyle:'dashed',borderWidth:'1.5px',borderColor:'#b7c0cb'}} className={`custom-region-toggle ${showCustomRegion?'selected':''}`} onClick={()=>{setShowCustomRegion(v=>!v);setRequestedRegion('');}}>직접 입력</button>}</div></div>)}{showCustomRegion&&<input className="custom-region-input" value={customRegion} onChange={e=>setCustomRegion(e.target.value)} placeholder="지역명을 입력해 주세요" maxLength={20}/>}<Button display="block" disabled={!requestedRegion && !(showCustomRegion&&customRegion.trim())} onClick={submitRegion}>이 지역 추가 요청하기</Button><p className="digital-note">요청 건수와 우선순위에 따라 지역을 추가해요.</p></>}
       {sheet === 'legal' && <><p className="eyebrow">약관 및 정책</p><h2 id="sheet-title">혼술바 정책</h2><p className="sheet-description">서비스 이용에 필요한 약관과 정책을 확인할 수 있어요.</p><div className="settings-list">{LEGAL_DOCS.map(([label,href])=><button key={href} onClick={()=>{setLegalSrc(href);open('legal-doc');}}>{label}<ArrowRight size={16}/></button>)}</div></>}

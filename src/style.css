@@ -530,3 +530,5 @@ input::placeholder,textarea::placeholder { color:#b5a292; }
 .settings-list .danger-link { color:#ff9292; }
 .camera-feedback { color:#fff1df; }
 .camera-spinner { border-color:#fff5; border-top-color:#fff1df; }
+
+.review-login-form{display:grid;gap:12px}.review-login-form label{display:grid;gap:6px}.review-login-form input{width:100%;min-width:0;box-sizing:border-box;padding:12px;font:inherit;color:inherit;background:transparent;border:1px solid currentColor;border-radius:10px}.review-login-form button{padding:12px;font:inherit}

@@ -123,6 +123,21 @@ export async function login(config, provider, accountTransferCode) {
   return result.state;
 }
 
+export async function playReviewLogin(email,password) {
+  const startingToken=token;
+  const base=import.meta.env.VITE_SUPABASE_URL;
+  if(!base?.startsWith('https://')||!import.meta.env.VITE_SUPABASE_ANON_KEY)throw new ApiError('Review access is unavailable.',503);
+  let response;
+  try { response=await fetch(`${base}/auth/v1/token?grant_type=password`,{method:'POST',headers:{apikey:import.meta.env.VITE_SUPABASE_ANON_KEY,'Content-Type':'application/json'},body:JSON.stringify({email,password}),signal:AbortSignal.timeout(15000)}); }
+  catch {throw new ApiError('Please try again later.',503);}
+  const proof=await response.json().catch(()=>null);
+  if(!response.ok||!proof?.access_token)throw new ApiError('Check your review credentials.',401);
+  if(token!==startingToken)throw new ApiError('Please sign in again.',409);
+  const result=await request({action:'play-review-login',accessToken:proof.access_token});
+  setToken(result.token);
+  return result.state;
+}
+
 export async function logout() {
   const startingToken = token;
   try { await call('logout'); } catch {}
