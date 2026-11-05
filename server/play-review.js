@@ -13,10 +13,11 @@ export async function playReviewMember(accessToken,{env=process.env,fetcher=fetc
  const user=await response.json().catch(()=>null);
  if(!response.ok||user?.id!==env.HB_PLAY_REVIEW_AUTH_USER_ID||user?.is_anonymous||!user?.email_confirmed_at||!user.identities?.some(i=>i.provider==='email'))throw new AppError('Check your review credentials.',401);
  const mid=env.HB_PLAY_REVIEW_MEMBER_ID;
- const owners=await db(`hb_login_identities?auth_user_id=eq.${user.id}&select=member_id`);
+ const owners=await db(`hb_login_identities?auth_user_id=eq.${user.id}&select=member_id,provider`);
  // Never bind a password account to an arbitrary member or a shared Auth account.
- if(!owners.length||owners.some(i=>i.member_id!==mid))throw new AppError('Review account is not ready.',403);
- const [member]=await db(`hb_members?id=eq.${mid}&select=adult,photo_checked,photo,banned_until`);
- if(!member?.adult||!member.photo_checked||!member.photo||(member.banned_until&&new Date(member.banned_until)>new Date()))throw new AppError('Review account is not ready.',403);
+ if(!owners.some(i=>i.provider==='play-review')||owners.some(i=>i.member_id!==mid))throw new AppError('Review account is not ready.',403);
+ const [member]=await db(`hb_members?id=eq.${mid}&select=id,banned_until`);
+ if(!member?.id||(member.banned_until&&new Date(member.banned_until)>new Date()))throw new AppError('Review account is not ready.',403);
+ // Admission still uses the normal DB adult/photo gates; this route grants no checks.
  return mid;
 }
