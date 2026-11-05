@@ -245,6 +245,7 @@ function setStorageFlag(key, on) { try { on ? localStorage.setItem(key, '1') : l
 
 function App() {
   const [config, setConfig] = useState(null);
+  const [androidIceServers, setAndroidIceServers] = useState(null);
   const [server, setServer] = useState(null);
   const [syncedAt, setSyncedAt] = useState(Date.now());
   const [screen, setScreen] = useState(() => hasSession() ? 'loading' : 'onboarding');
@@ -461,9 +462,9 @@ function App() {
     const broadcast = g.speaker && !partners.me && !partners[g.id];
     return [g.id, broadcast ? 1 : audioGain({ id: 'me', seat }, g, audioFacing, partners, mutedGuests)];
   })), [guests, soundOn, mutedGuests, partners, seat, audioFacing]);
-  const iceServers = useMemo(() => config?.iceServers?.length ? config.iceServers : DEFAULT_ICE, [config]);
+  const iceServers = useMemo(() => androidIceServers?.length ? androidIceServers : config?.iceServers?.length ? config.iceServers : DEFAULT_ICE, [config, androidIceServers]);
   const sending = voice.mic && (seconds > 0 || seat === 11) ? voice.stream : null;
-  const mesh = useMesh({ enabled: screen === 'bar' && !!me && !!member?.photoChecked && !server?.safetyPaused && (!config?.voiceEvidenceReady || voiceAgreed), evidenceEnabled: !!config?.voiceEvidenceReady && voiceAgreed, selfId: me, peerIds: voicePeerIds(guests,partners,reportedIds), stream: sending, iceServers, gains });
+  const mesh = useMesh({ enabled: screen === 'bar' && (!nativePlayBilling || androidIceServers !== null) && !!me && !!member?.photoChecked && !server?.safetyPaused && (!config?.voiceEvidenceReady || voiceAgreed), evidenceEnabled: !!config?.voiceEvidenceReady && voiceAgreed, selfId: me, peerIds: voicePeerIds(guests,partners,reportedIds), stream: sending, iceServers, gains });
   const speakingGuest = mesh.talking.find(id => guests.some(g => g.id === id)) || null;
   const guest = guests.find(g => g.id === speakingGuest);
 
@@ -523,6 +524,15 @@ function App() {
     if (response.state) stateHandler.current(response.state, fresh);
     return response.result;
   }
+  useEffect(() => {
+    if (!nativePlayBilling || !me) return;
+    let cancelled = false;
+    setAndroidIceServers(null);
+    call('android-voice-config').then(({result}) => {
+      if (!cancelled) setAndroidIceServers(result?.iceServers || null);
+    }).catch(() => { if (!cancelled) setAndroidIceServers([]); });
+    return () => { cancelled = true; setAndroidIceServers(null); };
+  }, [me]);
   useEffect(() => {
     if (!nativePlayBilling || !me) return;
     let cancelled = false, recovering = false, listener;

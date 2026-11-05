@@ -6,6 +6,56 @@
 
 이 목록이 아래 작업 이력보다 우선합니다. 설정 완료와 실제 기기 성공은 구분합니다.
 
+### 2026-11-05 무료 TURN 연결 구현
+
+- 승인 후 Metered honsulbar-aos-free-test 접속정보를 South Korea Seoul 지역으로 생성. 카드/충전/유료전환없음. 기존공개WEBRTC_ICE_SERVERS에추가하지않음.
+- 공통서버49ed59c: HB_ANDROID_ICE_SERVERS를읽는android-voice-config추가. 유효Android세션필수,미로그인401/Toss세션403,공개config미노출. JSON배열/URL스킴/필수접속정보검증,잘못된설정503및원문비공개. 초기무료테스트용고정접속정보이므로사용자확대전회전/단기발급보완필요.
+- AOS로그인후인증된API로중계설정을받고나서음성연결시작. 실패시기존STUN직접연결유지,계정전환응답폐기. 화면/기능/TossSDK변경없음.
+- 자동검사공통148/AOS152통과(공개노출/권한회귀검사포함). 새AAB버전코드2/1.0.1빌드성공. SHA2562842686e2605eb6d144c2379d1d2c23a7c88b51fab58dc9015daa9b5ed972220. 기존release-files/honsulbar-android-internal.aab갱신. 내부트랙현재버전1이므로새버전업로드필요. APK는갱신하지않음.
+- VercelHB_ANDROID_ICE_SERVERS/Secret/Production빈Value준비. Metered행의Copy ICE servers configuration으로JSON배열복사후사용자직접저장요청. credential원문/비밀번호를채팅/Git에노출하지않음. 설정저장·운영배포Ready·강제relay실기기통화성공은아직확인전.
+
+### 2026-11-05 구매 설정 배포·Metered 실계정 확인 — 최신
+
+- 사용자 구매 검증 JSON 입력/재인증 완료 후 Vercel 목록에서 HB_PLAY_SERVICE_ACCOUNT_JSON이 Secret/Production으로 저장된 사실 확인. 값은 열람하지 않음. 사용자 저장 후 배포2wPkWFug1b7EeZxkNsy46uTxePbG Ready/Current(main498b98c) 확인.
+- 누락된 공개 HB_PLAY_PACKAGE_NAME=com.honsulbar.app을 Config/Production 추가. 현재 Production 소스로재배포8dJ31AjBhTkehScKZjQ12ZVvpqw1 Ready 확인. 기본test모드유지, 테스트회원허용목록/라이선스확인플래그/실제구매검증은미완료. 키저장·배포성공을GoogleAPI인증/주문성공으로간주하지않음.
+- 사용자Metered가입후기존앱생성화면에서honsulbar워크스페이스생성. 초기개요Free50GB/$30balance표시는TURN구독이아닌일반초기표시로판명: Credentials접근시TURN플랜없음/500MB무료trial선택필수표시. 카드없는Free Trial Global500MB선택후Credentials화면접근성공. 20GB/50GB영구무료보장표현철회. 결제페이지No payment methods/Auto-reload Off확인,충전·카드·유료플랜없음.
+- TURNCreate credential모달까지준비. Label/Region(Seoul옵션있음)/Project선택가능. 새음성제3자경로및접속정보생성500MB무료범위승인요청중. 생성버튼누르지않음,서비스연결/실제음성전송없음. 무료한도초과처리/실제relay통과후속검증필요.
+
+### 2026-11-04 무료 운영 경로 재조사 및 입력 화면 준비
+
+- Google Play Android Developer API 활성화 완료, Cloud 화면 상태 사용 설정됨 확인. 구매 검증 계정은 Play 활성. JSON 키 생성 모달(JSON 선택) 및 Vercel HB_PLAY_SERVICE_ACCOUNT_JSON/Secret/Production 빈 Value 준비 후 사용자 직접 발급·입력 요청. 키 발급/입력/실제 구매 검증 성공은 아직 미완료.
+- Toss 공식 문서는 앱인토스 로그인 파트너의 자체 웹·앱 별도 계약 면제 및 이메일 Client ID 발급 절차를 명시. 공개 커뮤니티 2026-10-19 담당자 답변은 자체 웹도 같은 userKey/미니앱과 별도 API/mTLS 불필요/셀프 로그인 어드민 없음/별도 개발키 없음 안내. 10-02 독립앱 미지원 답변과 범위가 상충해 네이티브 Android+외부 브라우저 복귀 지원은 확정 불가. 커뮤니티 확인만으로 Client ID를 발급할 수는 없음. 건당0원이나 법정 성인확인 적합성까지 답변된 것은 아님. 문의 발송은 승인하지 않은 상태 유지.
+- 2026-09-15 커뮤니티 답변은 미니앱이19+에게만 노출되어 추가본인인증 불필요해 보인다고 안내. 이는 미니앱 범위 답변이며 독립앱으로 일반화하지 않음. 기존 토스 성인정보/본인확인 결과를 같은 서비스의 계정 연결 후 재사용하는 안이 추가 건당비용 없는 우선 후보이나, 서버 검증 증거·수집목적/제공범위·연결해제/재확인 정책을 확인하기 전 자동 승인하지 않음.
+- TURN 대안: Metered Open Relay 공식20GB/월 무료·카드없음 안내. 일반 Metered 상용TURN 가격표는500MB무료라 서로 다른 안내를 혼용하지 않으며 실제 콘솔 플랜과 한도초과차단 확인 필요. 무료 계정 가입 화면 열어둠(가입/약관/카드입력 안함). 기존 RTCPeerConnection/WEBRTC_ICE_SERVERS 구성으로TURN 추가 가능, 새 음성SDK 교체 불필요. 서버측 단기 자격증명·남용 방지 및 relay 강제 시험이 구현 후 필요. 아직 자격증명/음성 제3자 전송 활성화 없음.
+- Cloudflare TURN/SFU는공유1000GB/월무료 후0.05달러/GB. 무료한도가 커도 자동 과금 방지 확정이 없어 비용0원 우선경로에서 후순위. coturn 자체호스팅은소프트웨어무료이나서버/트래픽/공인IP/운영부담있어무비용보장아님.
+- 근거: https://techchat-apps-in-toss.toss.im/t/userkey/5034 · https://techchat-apps-in-toss.toss.im/t/ios-android-mozaic/4892/2 · https://techchat-apps-in-toss.toss.im/t/mozaic/4803 · https://developers-apps-in-toss.toss.im/guide/authentication/intro · https://www.metered.ca/tools/openrelay/ · https://www.metered.ca/tools/openrelay/webrtc-signaling-server/ · https://www.metered.ca/stun-turn · https://developers.cloudflare.com/realtime/sfu/platform/pricing/
+
+### 사용자 운영 방향 및 검증 권한 — 2026-11-04 최신
+
+- 사용자 결정: 현재 Vercel 유지, 이전을 출시 선행 조건으로 두지 않음. 사용자 유입/잔존을 확인하며 문제 발생 시 중단·개선. 추가 결제·유료 전환 없음. Hobby 제약은 기록하되 반복 승인/이전 요구하지 않음.
+- 구매 검증 계정·앱 권한 승인 수신 후 honsulbar-play-verifier@noted-processor-513409-r5.iam.gserviceaccount.com 생성 완료. Cloud 프로젝트 IAM 역할 없음. Play 혼술바 앱에만 앱 정보 읽기/종속 품질 읽기/재무 데이터 보기/주문 및 구독 관리 부여, 사용자 목록 활성 확인. 계정 전체·출시·사용자 관리 권한 없음. 실제 거래 없음.
+- 서비스 계정 상세 화면이 로딩에 머물러 키 등록 준비 미완료. 비공개 JSON 발급/서버 입력은 아직 없고 구매 검증 API 활성·실결제 성공 아님. Play Developer API 사용 설정도 후속 확인 필요.
+- 월 구독 monthly 정확한13200원 저장. 5종 포인트 실제 가격 모두 대조 완료:1100/3300/5500/8800/16500. 원화 자동 단수가격으로 달라진2종 정정 및 저장 성공. 모든 상품/구독은 활성화 전.
+
+### 2026-11-04 구독·가격·비용 후속
+
+- 월 구독 honsulbar_monthly 생성, 기본 요금제 monthly/매월 자동 갱신/대한민국만 제공/13,200원 저장. 기본 유예 7일·계정 보류 자동 계산·재신청 허용 유지. 판매 활성화는 하지 않음. Google 일괄 가격이 13,000원으로 조정되어 개별 지역 가격을 직접 정정한 뒤 저장. 구독 혜택 문구는 기존 기능과 대조 후 추가 필요.
+- 포인트 구매 옵션 5종을 실제 저장 화면에서 재대조. p1000=1100, p3300=3300, p6000=5500 확인. p10000은 8900→8800, p20000은16000→16500으로 개별 가격 정정 및 변경사항 저장 확인. 모두 판매 활성화 전 임시 상태. 이전 기록의 입력 가격과 실제 저장 가격을 구분하며 이번 기록 우선.
+- 운영 Google 계정으로 Cloud 서비스 계정 목록 접근 확인. 기존 Firebase Admin/FCM sender만 존재. 구매 검증 전용 honsulbar-play-verifier 생성 및 혼술바 앱 한정 조회/주문·구독 관리 권한에 대해 사용자 승인 요청 중. 승인 전 계정·키·Play 권한 생성하지 않음. FCM 키 재사용 없음.
+- 비용 제약 추가 발견: 실제 Vercel 화면에서 Hobby 확인. 공식 Hobby 문서는 비상업적 개인 용도만 허용. 현재 무료 인프라로 법인 결제/광고 서비스의 정식 운영까지 가능하다고 확정할 수 없음. 유료 전환하지 않았으며 무료 상업 이용 가능 호스팅으로의 공통 API 이전 검토가 필요. 앱인토스 공통 API도 영향 있어 즉시 변경하지 않음.
+- 운영 성인인증 0원 경로는 미확정. PortOne TEST는 운영 권한 부여 불가. KG 공식 안내는 성공40원(VAT별도), 가입/연관리 면제이며 실제 업종 허용/견적은 별도. Toss 자체 앱 로그인/기존 확인 재사용의 적합성과 0원 조건은 미확정, 문의는 사용자 요청으로 미발송 유지.
+- 사용자 직접 작업: 새 권한 승인, 이후 구매 검증 JSON을 서버 비공개 변수에 직접 입력(화면 준비 후 상세 안내), 결제 프로필의 개인 표시와 법인 실제 판매 주체 확인, 최종 실제 기기 QA, 비공개 테스터 모집. 개발자 계정 인증·AAB 업로드·결제 프로필 생성은 완료이며 반복 요청하지 않음.
+- 에이전트 남은 작업: 승인 후 구매 검증 연결/상품 테스트 활성화, 심사용 접근 경로 구현·검증, 타겟 성인 및 미성년 차단/데이터 보안 마무리, 스토어 이미지 업로드 확인, 앱서명 OAuth/FCM 인증서 대조, 음성/푸시/광고/결제 통합 검증. 실결제/환불 거래는 실행하지 않음.
+- 근거: https://vercel.com/docs/plans/hobby · https://faq.portone.io/6a1cba84-a99b-4ee1-a5a8-fffea0092399 · https://developer.android.com/google/play/billing/test · https://developers.google.com/android-publisher/getting_started
+
+### 2026-11-04 콘솔 후속 — 최신 상태
+
+- 사용자 IARC 약관/설문 승인 후 실제 기능으로 작성·저장. IARC 완료, 대한민국 12세 이상 결과. 서비스 19세 제한과 별도이며 타겟 18+ 및 미성년자 접근 차단은 아직 미설정.
+- 사용자 데이터 보안 검토안 초안 승인 후 15개 유형의 처리 방식 작성·임시저장 성공. 미리보기에서 타겟층 설정 선행 요구 확인. 타겟층은 심사 로그인 세부정보가 없어 잠김. 실제 전체 접근 가능한 심사 계정/경로 준비가 필요하며 제한 없음으로 선언하지 않음.
+- 사용자 결제 프로필 생성 완료를 화면에서 확인. 새로고침/동기화 후 일회성 상품 페이지 접근 가능. 은행/카드/수수료 약관 추가 없음. 프로필 요약 김정수 표시는 법인 운영 주체와 일치 여부 확인 필요.
+- 사용자가 업로드한 AAB 1(1.0), min24/target36 정상 인식. 경고 2개는 가독화 파일/네이티브 디버그 기호 권고. 내부 QA 트랙에 저장 및 출시 완료, 활성 및 내부 테스터에게 제공됨 확인. 기존 목록 1명 유지. 설치 링크 https://play.google.com/apps/internaltest/4700887997940427327 . 미검토 임시 앱명 com.honsulbar.app (unreviewed). 일반 공개 출시/실기기 QA 완료 아님.
+- 포인트 5종 honsulbar_p1000/p3300/p6000/p10000/p20000 생성·저장 및 목록 확인. standard 구매 옵션, 대한민국만 가능, 원화 1100/3300/5500/8800/16500. 모두 임시 상태, 활성 구매 옵션 0. 실결제/테스트 주문 없음. 월 구독 및 검증 서버 권한 연결은 남음.
+
 ### Play 앱 생성 후 콘솔 설정 — 2026-11-03 후속
 
 - 문의 발송은 사용자 요청으로 보류. 발송 승인으로 해석하지 않음.

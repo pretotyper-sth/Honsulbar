@@ -1,3 +1,4 @@
+import {androidVoiceServers} from '../server/android-voice.js';
 import {ageTestReady,startAgeTest,completeAgeTest,ageTestHealth} from '../server/age-verification.js';
 import {voiceEvidenceReady,VOICE_CONSENT_VERSION,validateVoiceEvidence,encryptEvidence,decryptEvidence} from '../server/voice-evidence.js';
 import {emailReady,sendNotificationEmail} from '../server/notification-email.js';
@@ -166,6 +167,11 @@ export default async function handler(req,res) {
    throw new AppError('지원하지 않는 관리자 요청이에요.');
   }
   const member=await authenticate(req);
+  if(action==='android-voice-config'){
+   const [session]=await database(`hb_sessions?token_hash=eq.${hash(req.headers.authorization.slice(7))}&select=platform`);
+   if(session?.platform!=='android')throw new AppError('Android 로그인 후 이용해 주세요.',403);
+   return res.json({result:{iceServers:androidVoiceServers()}});
+  }
   if(action==='account-transfer-create'){
    if(process.env.HB_ACCOUNT_TRANSFER_ENABLED!=='1')throw new AppError('계정 연결을 준비 중이에요.',503);
    const sessionHash=hash(req.headers.authorization.slice(7));
