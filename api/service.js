@@ -1,3 +1,4 @@
+import {playReviewReady,playReviewMember} from '../server/play-review.js';
 import {newPhotoChallenge} from '../server/photo-test-window.js';
 import {androidVoiceServers} from '../server/android-voice.js';
 import {safetySnapshot} from '../server/safety-queue.js';
@@ -49,7 +50,7 @@ export default async function handler(req,res) {
   let body=req.body||{};if(typeof body==='string')body=JSON.parse(body);
   if(JSON.stringify(body).length>1500000)throw new AppError('요청이 너무 커요.',413);
   const action=req.method==='GET'?'config':body.action;
-  if(action==='config')return res.json({accountTransferReady:process.env.HB_ACCOUNT_TRANSFER_ENABLED==='1',ageTestReady:ageTestReady(),androidPushReady:androidPushReady(),androidAuthReady:process.env.HB_ANDROID_AUTH_ENABLED==='1',voiceEvidenceReady:voiceEvidenceReady(),voiceConsentVersion:VOICE_CONSENT_VERSION,apiReady:!!(sbUrl()&&process.env.SUPABASE_SERVICE_ROLE_KEY),loginReady:!!(process.env.TOSS_CLIENT_CERT_BASE64&&process.env.TOSS_CLIENT_KEY_BASE64&&process.env.TOSS_DECRYPTION_KEY&&process.env.TOSS_AAD),devLogin:!isProduction()&&process.env.HB_DEV_LOGIN==='1',supabaseUrl:sbUrl(),supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_ANON_KEY||'',adGroupId:rewardedAdGroupId(),products:skuPoints(),subscriptionSku:subscriptionSku(),pushAvailableTemplate:pushAvailableTemplate(),pushReplyTemplate:pushReplyTemplate(),iceServers:process.env.WEBRTC_ICE_SERVERS?JSON.parse(process.env.WEBRTC_ICE_SERVERS):[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]});
+  if(action==='config')return res.json({playReviewReady:playReviewReady(),accountTransferReady:process.env.HB_ACCOUNT_TRANSFER_ENABLED==='1',ageTestReady:ageTestReady(),androidPushReady:androidPushReady(),androidAuthReady:process.env.HB_ANDROID_AUTH_ENABLED==='1',voiceEvidenceReady:voiceEvidenceReady(),voiceConsentVersion:VOICE_CONSENT_VERSION,apiReady:!!(sbUrl()&&process.env.SUPABASE_SERVICE_ROLE_KEY),loginReady:!!(process.env.TOSS_CLIENT_CERT_BASE64&&process.env.TOSS_CLIENT_KEY_BASE64&&process.env.TOSS_DECRYPTION_KEY&&process.env.TOSS_AAD),devLogin:!isProduction()&&process.env.HB_DEV_LOGIN==='1',supabaseUrl:sbUrl(),supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_ANON_KEY||'',adGroupId:rewardedAdGroupId(),products:skuPoints(),subscriptionSku:subscriptionSku(),pushAvailableTemplate:pushAvailableTemplate(),pushReplyTemplate:pushReplyTemplate(),iceServers:process.env.WEBRTC_ICE_SERVERS?JSON.parse(process.env.WEBRTC_ICE_SERVERS):[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]});
   if(action==='login'){
    const code=typeof body.authorizationCode==='string'?body.authorizationCode.trim():'';
    const referrer=String(body.referrer||'').trim().toUpperCase();
@@ -74,6 +75,10 @@ export default async function handler(req,res) {
    if(member?.banned_until&&new Date(member.banned_until)>new Date())throw new AppError('이용이 제한된 계정이에요.',403);
    await database('toss_login_links?on_conflict=user_key',{method:'POST',headers:{Prefer:'resolution=merge-duplicates'},body:{user_key:String(info.userKey),is_connected:true,disconnected_at:null}}).catch(()=>{});
    return await startSession(res,memberId);
+  }
+  if(action==='play-review-login'){
+   if(process.env.HB_ANDROID_AUTH_ENABLED!=='1')throw new AppError('Review access is unavailable.',503);
+   return await startSession(res,await playReviewMember(body.accessToken),'android');
   }
   if(action==='social-login'){
    if(process.env.HB_ANDROID_AUTH_ENABLED!=='1')throw new AppError('로그인 설정을 준비 중이에요.',503);
