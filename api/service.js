@@ -8,7 +8,7 @@ import {androidPushReady,registerAndroidPush,unregisterAndroidPush} from '../ser
 import {voiceEvidenceReady,VOICE_CONSENT_VERSION,validateVoiceEvidence,encryptEvidence,decryptEvidence} from '../server/voice-evidence.js';
 import {emailReady,sendNotificationEmail} from '../server/notification-email.js';
 import {verifySocialIdentity,socialAuthMember} from '../server/social-auth.js';
-import {startAndroidAd,finishAndroidAd} from '../server/android-ads.js';
+import {androidAdsConfiguration,startAndroidAd,finishAndroidAd} from '../server/android-ads.js';
 import {randomUUID,randomBytes} from 'node:crypto';
 import {verifyPhoto,warmPhotoVerifier} from '../server/photo-verification.js';
 import {AppError,authenticate,admin,database,rpc,toss,decryptField,isAdult,newToken,hash,dispatchOutbox,sbUrl,signPhoto,photoMatches,skuPoints,findProduct,rewardedAdGroupId,subscriptionSku,isSubscriptionSku,parseTossTime,pushAvailableTemplate,pushReplyTemplate,isProduction,identityKey} from '../server/platform.js';
@@ -193,6 +193,10 @@ export default async function handler(req,res) {
   if(['ad-start','ad-claim'].includes(action)){
    const [session]=await database(`hb_sessions?token_hash=eq.${hash(req.headers.authorization.slice(7))}&select=platform`);
    if(session?.platform==='android')throw new AppError('Android 광고 시청 경로를 이용해 주세요.',403);
+  }
+  if(action==='android-ad-config'){
+   const {enabled,isTesting}=androidAdsConfiguration(member);
+   return res.json({result:{enabled,isTesting:!!isTesting}});
   }
   if(action==='android-ad-start')return res.json({result:await startAndroidAd(member)});
   if(action==='android-ad-finish'){
