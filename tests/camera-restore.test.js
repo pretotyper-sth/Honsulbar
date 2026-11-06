@@ -40,7 +40,11 @@ test('no face, wrong movement, cancellation and camera disconnect do not produce
 test('revoking consent while the server is checking cannot revive verification',async()=>{
  let release;const response=new Promise(resolve=>{release=resolve;});const results=[];
  const env={document:{createElement:()=>({})},AbortController,verificationController:{current:null},setVerificationStartedAt(){},setVerificationGuide(){},faceConsentRef:{current:true},verificationAttempt:{current:0},captureLock:{current:false},verificationState:'ready',cameraVideo:{current:{}},cameraCanvas:{current:{}},cameraStream:{current:{getVideoTracks:()=>[{readyState:'live'}]}},photoDraft:'photo',loadFaceModel:async()=>({}),visibleCheck:task=>task(),captureFacePair:async()=>['frame1','frame2'],run:async action=>action==='photo-challenge'?{id:'id',motion:'near'}:response,setPhotoProof:p=>results.push(p),setDraftVerified:v=>results.push(v),setVerificationState(){},setVerificationMessage(){}};
- vm.createContext(env);const a=source.indexOf('  async function captureVerification('),b=source.indexOf("\n  if (screen === 'onboarding')",a);vm.runInContext(source.slice(a,b),env);
+ vm.createContext(env);
+ const start=source.indexOf('  async function captureVerification(');
+ const end=source.indexOf('\n  function cancelVerification(',start);
+ assert.ok(start>=0&&end>start,'captureVerification source must be isolated');
+ vm.runInContext(source.slice(start,end),env);
  const work=env.captureVerification();await new Promise(resolve=>setImmediate(resolve));
  env.faceConsentRef.current=false;env.verificationAttempt.current++;release({proof:'late-proof'});await work;
  assert.ok(!results.includes('late-proof'));assert.ok(!results.includes(true));

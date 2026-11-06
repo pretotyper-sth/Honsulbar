@@ -267,6 +267,8 @@ function App() {
   const [focusSubscription, setFocusSubscription] = useState(false);
   const [region, setRegion] = useState('서울');
   const [sheet, setSheetState] = useState(null);
+  const [androidBilling, setAndroidBilling] = useState(null);
+  const [androidAds, setAndroidAds] = useState(null);
   const [previewRoom, setPreviewRoom] = useState(null);
   const [previews, setPreviews] = useState({});
   const [profile, setProfile] = useState({ nickname: '', gender: null, photo: null });
@@ -395,6 +397,24 @@ function App() {
 
   const member = server?.member || null;
   const me = member?.id;
+  const isShop = sheet === 'shop';
+  useEffect(() => {
+    if (!nativePlayBilling || !isShop) return;
+    setAndroidBilling(null);
+    setAndroidAds(null);
+    if (!me) return;
+    let cancelled = false;
+    call('play-billing-config').then(({ result }) => {
+      if (!cancelled) setAndroidBilling(result);
+    }).catch(() => { if (!cancelled) setAndroidBilling({ enabled: false }); });
+    call('android-ad-config').then(({ result }) => {
+      if (!cancelled) setAndroidAds(result);
+    }).catch(() => { if (!cancelled) setAndroidAds({ enabled: false }); });
+    return () => { cancelled = true; };
+  }, [me, isShop]);
+  const canBuy = !nativePlayBilling || (androidBilling?.enabled && androidBilling.checkoutAllowed !== false);
+  const canWatchAd = !nativePlayBilling || androidAds?.enabled;
+
   useEffect(()=>{setVoiceAgreed(false);setReportAudio(null);},[me]);
   useEffect(()=>{
     if(!me||Capacitor.getPlatform()!=='android')return;
@@ -1018,9 +1038,10 @@ function App() {
   async function attendance() {
     if (wallet.attendanceDate === today || adInProgress) return;
     setAdInProgress(true);
-    if (Capacitor.getPlatform() === 'android' && !import.meta.env.VITE_ANDROID_TEST) {
+    if (nativePlayBilling) {
+      let claim;
       try {
-        const claim = await run('android-ad-start');
+        claim = await run('android-ad-start');
         setToast('광고를 불러오고 있어요.');
         await showAndroidReward(claim);
         let reward;
@@ -1031,7 +1052,7 @@ function App() {
         }
         setSheet('shop');
         setToast(reward?.verified ? '출석 포인트 1,000P를 받았어요.' : '광고 보상을 확인 중이에요. 잠시 후 잔액에 반영돼요.');
-      } catch { setToast('광고를 완료하지 못했어요. 다시 시도해 주세요.'); }
+      } catch (error) { setToast(claim ? '광고를 완료하지 못했어요. 다시 시도해 주세요.' : error.message); }
       finally { setAdInProgress(false); }
       return;
     }
@@ -1304,6 +1325,10 @@ function App() {
     } catch(error) { fail(error); } finally { setBusy(false); }
   }
   function proceedEntry(target, { confirm, consented } = {}) {
+    if (nativePlayBilling && member?.adult === false) {
+      setToast('성인 확인을 완료해야 입장할 수 있어요. 현재 Android 성인 확인은 준비 중이에요.');
+      return;
+    }
     if(config?.voiceEvidenceReady && !voiceAgreed && !consented) { setPendingEntry(target); setVoiceConsentChecked(false); open('voice-consent'); return; }
     setPendingEntry(null);
     setEntryRoom({ region: target.region || region, number: target.number, count: target.count });
@@ -1536,12 +1561,12 @@ function App() {
     setVerificationMessage('중단했어요. 다시 촬영해 주세요.');
   }
 
-  const reviewLoginForm=<form className="review-login-form" onSubmit={submitReviewLogin}><h2 id="sheet-title">App review sign-in</h2><p className="sheet-description">Use the review account supplied in Play Console.</p><label>Email<input type="email" autoComplete="username" value={reviewEmail} onChange={e=>setReviewEmail(e.target.value)} required maxLength={254}/></label><label>Password<input type="password" autoComplete="current-password" value={reviewPassword} onChange={e=>setReviewPassword(e.target.value)} required maxLength={256}/></label><button type="submit" disabled={busy}>Sign in</button></form>;
+  const reviewLoginForm=<form className="review-login-form" onSubmit={submitReviewLogin}><h2 id="sheet-title">App review sign-in</h2><p className="sheet-description">Use the review account supplied in Play Console.</p><label>Email<input type="email" autoComplete="username" value={reviewEmail} onChange={e=>setReviewEmail(e.target.value)} required maxLength={254}/></label><label>Password<input type="password" autoComplete="current-password" value={reviewPassword} onChange={e=>setReviewPassword(e.target.value)} required maxLength={256}/></label><Button type="submit" display="block" disabled={busy}>Sign in</Button></form>;
 
   if (screen === 'onboarding') return <><div className="ait-gnb-fill" aria-hidden="true"/><main className="app onboarding-screen">
     <div className="onboarding-scroll">
-      <img className="onboarding-logo" src="/brand-door.png" alt="혼술바" />
-      <p className="eyebrow">혼술바</p>
+      <img className="onboarding-logo" src="/honsulbar-logo.png" alt="온라인 혼술바" />
+      <p className="eyebrow">온라인 혼술바</p>
       <h1>혼술바의 분위기를<br/>온라인에 담았어요</h1>
       <p className="onboarding-lead">지역별 혼술바에서 내 목소리로 가볍게 대화해요.</p>
       <div className="onboarding-points">
@@ -1551,7 +1576,7 @@ function App() {
       </div>
       <div className="onboarding-notice">만 19세 이상만 이용할 수 있어요.</div>
       {config?.accountTransferReady&&import.meta.env.VITE_SOCIAL_LOGIN_ENABLED&&<AccountTransferEntry connect={connectToss} code={transferCode} onChange={setTransferCode} onToggle={()=>{setConnectToss(value=>!value);setTransferCode('');}} busy={busy}/>}
-      {import.meta.env.VITE_SOCIAL_LOGIN_ENABLED && <><Button display="block" disabled={busy} onClick={()=>completeOnboarding('kakao')}>카카오로 계속하기</Button><Button display="block" disabled={busy} onClick={()=>completeOnboarding('google')}>Google로 계속하기</Button></>}{import.meta.env.VITE_SOCIAL_LOGIN_ENABLED&&config?.playReviewReady&&<button onClick={()=>open('play-review')}>App review sign-in</button>}{!import.meta.env.VITE_SOCIAL_LOGIN_ENABLED&&<Button size="xlarge" display="block" disabled={busy} onClick={completeOnboarding}>{busy ? '로그인하는 중…' : '시작하기'}</Button>}    </div>
+      {import.meta.env.VITE_SOCIAL_LOGIN_ENABLED && <><Button display="block" disabled={busy} onClick={()=>completeOnboarding('kakao')}>카카오로 계속하기</Button><Button display="block" disabled={busy} onClick={()=>completeOnboarding('google')}>Google로 계속하기</Button></>}{import.meta.env.VITE_SOCIAL_LOGIN_ENABLED&&config?.playReviewReady&&<Button display="block" variant="weak" onClick={()=>open('play-review')}>App review sign-in</Button>}{!import.meta.env.VITE_SOCIAL_LOGIN_ENABLED&&<Button size="xlarge" display="block" disabled={busy} onClick={completeOnboarding}>{busy ? '로그인하는 중…' : '시작하기'}</Button>}    </div>
     <BottomSheet open={sheet==='play-review'} onClose={()=>setSheet(null)} ariaLabelledBy="sheet-title">{reviewLoginForm}</BottomSheet>
     {toast && <div className="toast" role="status">{toast}</div>}
   </main></>;
@@ -1630,14 +1655,14 @@ function App() {
       {sheet==='shop'&&<><h2 id="sheet-title">내 포인트</h2><div className="point-balance"><Coins size={24}/><strong>{wallet.balance.toLocaleString()}<small> P</small></strong></div>
         <h3 className="section-title">포인트 모으기</h3>
         <div className="shop-list">
-          <div className="shop-row"><span><strong>매일 출석</strong><small>{nativeTestAds?'테스트 광고 · 하루 한 번 1,000P':import.meta.env.VITE_ANDROID_TEST?'모의 보상 · 하루 한 번 1,000P':'광고 보고 하루 한 번 1,000P'}</small></span><Button size="small" variant="weak" disabled={wallet.attendanceDate===today || adInProgress} onClick={attendance}>{wallet.attendanceDate===today?'완료':adInProgress?'진행 중…':nativeTestAds?'테스트 광고':import.meta.env.VITE_ANDROID_TEST?'테스트 보상':'광고 보기'}</Button></div>
+          <div className="shop-row"><span><strong>매일 출석</strong><small>{nativePlayBilling&&!canWatchAd?(androidAds?'현재 이 계정에서 광고를 이용할 수 없어요.':'광고 이용 가능 여부를 확인 중이에요.'):nativeTestAds||androidAds?.isTesting?'테스트 광고 · 하루 한 번 1,000P':import.meta.env.VITE_ANDROID_TEST?'모의 보상 · 하루 한 번 1,000P':'광고 보고 하루 한 번 1,000P'}</small></span><Button size="small" variant="weak" disabled={!canWatchAd || wallet.attendanceDate===today || adInProgress} onClick={attendance}>{wallet.attendanceDate===today?'완료':adInProgress?'진행 중…':!canWatchAd?'이용 불가':nativeTestAds||androidAds?.isTesting?'테스트 광고':import.meta.env.VITE_ANDROID_TEST?'테스트 보상':'광고 보기'}</Button></div>
           <div className="shop-row"><span><strong>자리 양보</strong><small>요청을 수락하고 자리를 바꾸면</small></span><b>+500P</b></div>
         </div>
-        <h3 className="section-title">포인트 충전</h3><p className="shop-note">많이 충전할수록 보너스를 받아요.</p><div className="point-packs">{POINT_PACKS.map(pack=><button key={pack.points} onClick={()=>{setShopPack(pack);open('charge');}}><span>{pack.points.toLocaleString()} P {pack.bonus>0&&<em>{pack.label}</em>}</span><strong>{pack.won.toLocaleString()}원 <ArrowRight size={15}/></strong></button>)}</div>
-        <h3 ref={subscriptionSection} className="section-title">정기 구독</h3><div className={`subscription-card ${subscriptionCancelAt?'is-canceling':''}`}><div><strong>{subscription?subscriptionCancelAt?'해지됨':'이용 중':`${SUBSCRIPTIONS[0].price.toLocaleString()}원`}</strong><small>{subscriptionCancelAt?`${subscriptionEndLabel()}까지 이용할 수 있어요.`:'입장·연장·미리보기 제한 없이 사용'}</small></div><Button size="small" variant="weak" onClick={requestSubscriptionChange}>{subscription?'해지 방법':'시작하기'}</Button></div><p className="shop-note">{import.meta.env.VITE_ANDROID_TEST?'테스트에서는 실제 결제되지 않아요.':'Google Play 결제 연동을 준비 중이에요.'}</p><h3 className="section-title">이렇게 사용해요</h3><div className="shop-list point-uses"><span>입장<strong>500P</strong></span><span>시간 연장<strong>30분 500P</strong></span><span>손님 미리보기<strong>500P</strong></span><span>자리 양보 부탁<strong>수락 시 500P</strong></span></div>
+        <h3 className="section-title">포인트 충전</h3><p className="shop-note">많이 충전할수록 보너스를 받아요.</p><div className="point-packs">{POINT_PACKS.map(pack=><button key={pack.points} disabled={!canBuy} onClick={()=>{setShopPack(pack);open('charge');}}><span>{pack.points.toLocaleString()} P {pack.bonus>0&&<em>{pack.label}</em>}</span><strong>{pack.won.toLocaleString()}원 <ArrowRight size={15}/></strong></button>)}</div>
+        <h3 ref={subscriptionSection} className="section-title">정기 구독</h3><div className={`subscription-card ${subscriptionCancelAt?'is-canceling':''}`}><div><strong>{subscription?subscriptionCancelAt?'해지됨':'이용 중':`${SUBSCRIPTIONS[0].price.toLocaleString()}원`}</strong><small>{subscriptionCancelAt?`${subscriptionEndLabel()}까지 이용할 수 있어요.`:'입장·연장·미리보기 제한 없이 사용'}</small></div><Button size="small" variant="weak" disabled={!subscription && !canBuy} onClick={requestSubscriptionChange}>{subscription?'해지 방법':'시작하기'}</Button></div><p className="shop-note">{import.meta.env.VITE_ANDROID_TEST?'테스트에서는 실제 결제되지 않아요.':nativePlayBilling?(canBuy?(androidBilling.mode==='test'?'Google Play 테스트 결제 대상 계정이에요.':'Google Play에서 결제해요.'):androidBilling?'현재 이 계정에서 결제와 신규 구독을 이용할 수 없어요.':'결제 이용 가능 여부를 확인 중이에요.'):'Google Play에서 결제해요.'}</p><h3 className="section-title">이렇게 사용해요</h3><div className="shop-list point-uses"><span>입장<strong>500P</strong></span><span>시간 연장<strong>30분 500P</strong></span><span>손님 미리보기<strong>500P</strong></span><span>자리 양보 부탁<strong>수락 시 500P</strong></span></div>
         <h3 className="section-title">최근 내역 <small className="history-limit">{historyLimit===10?'최근 10건':`${Math.min(historyLimit,ledgerCount)}건`}</small></h3><div className="point-history">{ledger.slice(0,historyLimit).map((item,index)=><div key={item.id}><span className="history-item-label"><strong>{item.label}</strong><small>{formatHistoryDate(item.date || Date.now() - index * 86400000)}</small></span><b className={item.amount>0?'earned':''}>{item.amount>0?'+':''}{item.amount.toLocaleString()} P</b></div>)}</div>{ledgerCount>10&&<div className="history-actions">{historyLimit===10?<Button size="small" variant="weak" display="block" onClick={()=>setHistoryLimit(Math.min(30,ledgerCount))}>전체 내역 보기</Button>:<>{historyLimit>=ledgerCount&&<p className="history-complete">모든 내역을 보고 있어요.</p>}<Button size="small" variant="weak" display="block" onClick={()=>setHistoryLimit(10)}>최근 10건만 보기</Button>{historyLimit<ledgerCount&&historyLimit<100&&<Button size="small" variant="weak" display="block" onClick={()=>setHistoryLimit(v=>Math.min(v+20,ledgerCount,100))}>더 불러오기</Button>}</>}</div>}</>}
-      {sheet==='charge'&&<><h2 id="sheet-title">포인트 충전</h2><div className="point-balance"><Coins size={24}/><strong>{shopPack.points.toLocaleString()} P</strong></div><div className="order-summary"><span>상품 금액<strong>{shopPack.won.toLocaleString()}원</strong></span><span>충전 후 포인트<b>{(wallet.balance+shopPack.points).toLocaleString()} P</b></span></div><p className="sheet-description">{import.meta.env.VITE_ANDROID_TEST?'테스트 포인트만 충전돼요. 실제 결제는 없어요.':`결제 후 ${shopPack.points.toLocaleString()}P가 충전돼요. Google Play에서 결제해요.`}</p><Button display="block" disabled={busy} onClick={buyPoints}>{busy ? '진행 중…' : import.meta.env.VITE_ANDROID_TEST ? '테스트 포인트 충전' : '결제하고 충전하기'}</Button><Button display="block" variant="weak" color="dark" onClick={()=>open('shop')}>다른 상품 보기</Button></>}
-      {sheet==='subscription-confirm'&&<><p className="eyebrow">정기 구독</p><h2 id="sheet-title">정기 구독을 시작할까요?</h2><p className="sheet-description">{import.meta.env.VITE_ANDROID_TEST?'모의 구독 기능을 확인해요. 실제 결제나 자동 갱신은 없어요.':`매월 ${SUBSCRIPTIONS[0].price.toLocaleString()}원이 자동 결제되고, 입장·연장·미리보기를 제한 없이 이용할 수 있어요.`}</p><div className="actions"><Button color="dark" variant="weak" onClick={()=>setSheet('shop')}>취소</Button><Button size="xlarge" onClick={confirmSubscriptionChange}>구독 시작하기</Button></div></>}
+      {sheet==='charge'&&<><h2 id="sheet-title">포인트 충전</h2><div className="point-balance"><Coins size={24}/><strong>{shopPack.points.toLocaleString()} P</strong></div><div className="order-summary"><span>상품 금액<strong>{shopPack.won.toLocaleString()}원</strong></span><span>충전 후 포인트<b>{(wallet.balance+shopPack.points).toLocaleString()} P</b></span></div><p className="sheet-description">{import.meta.env.VITE_ANDROID_TEST?'테스트 포인트만 충전돼요. 실제 결제는 없어요.':`결제 후 ${shopPack.points.toLocaleString()}P가 충전돼요. Google Play에서 결제해요.`}</p><Button display="block" disabled={busy || !canBuy} onClick={buyPoints}>{busy ? '진행 중…' : import.meta.env.VITE_ANDROID_TEST ? '테스트 포인트 충전' : '결제하고 충전하기'}</Button><Button display="block" variant="weak" color="dark" onClick={()=>open('shop')}>다른 상품 보기</Button></>}
+      {sheet==='subscription-confirm'&&<><p className="eyebrow">정기 구독</p><h2 id="sheet-title">정기 구독을 시작할까요?</h2><p className="sheet-description">{import.meta.env.VITE_ANDROID_TEST?'모의 구독 기능을 확인해요. 실제 결제나 자동 갱신은 없어요.':`매월 ${SUBSCRIPTIONS[0].price.toLocaleString()}원이 자동 결제되고, 입장·연장·미리보기를 제한 없이 이용할 수 있어요.`}</p><div className="actions"><Button color="dark" variant="weak" onClick={()=>setSheet('shop')}>취소</Button><Button size="xlarge" disabled={busy || !canBuy} onClick={confirmSubscriptionChange}>구독 시작하기</Button></div></>}
       {sheet==='subscription-cancel-guide'&&<><p className="eyebrow">정기 구독</p><h2 id="sheet-title">구독 해지 안내</h2><p className="sheet-description">Google Play 정기 결제에서 해지할 수 있어요. 현재 테스트에서는 실제 구독 결제를 제공하지 않아요.</p><Button size="xlarge" display="block" onClick={()=>setSheet('shop')}>확인</Button></>}
       {sheet==='notifications'&&<><h2 id="sheet-title">알림</h2>{notifications.length===0?<p className="sheet-description">새로운 알림이 없어요.</p>:<div className="notification-list">{notifications.map(item=><button key={item.id} onClick={()=>openNotification(item)}><Bell size={17}/><span><strong>{item.title}</strong><small>{item.body}</small></span><ArrowRight size={16}/></button>)}</div>}</>}
       {sheet === 'profile' && <><div className="sheet-heading-row"><div><p className="eyebrow">내 프로필</p><h2 id="sheet-title">프로필을 설정해 주세요</h2></div></div><p className="sheet-description">사진과 닉네임은 다른 손님에게 보여요.</p><input ref={upload} hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={choosePhoto}/><button className="upload" onClick={() => upload.current.click()}>{profile.photo ? <img src={profile.photo} alt="선택한 내 사진"/> : <Camera size={30}/>}<span>{profile.photo ? '사진 바꾸기' : '사진 등록하기'}</span></button><p className={`photo-note${photoCheck==='ok' || (profileVerified && photoCheck!=='checking') ? ' is-ok' : ''}`}>{photoCheck==='checking' ? '얼굴 사진을 검사하고 있어요.' : photoCheck==='ok' ? '이 사진으로 진행할 수 있어요.' : profileVerified ? '확인된 사진이에요. 변경 시 다시 검사해요.' : '본인 얼굴 사진을 사용해 주세요.'}</p><label className="profile-field"><span>닉네임</span><input value={profile.nickname} maxLength={16} aria-invalid={!!nicknameError} onChange={e=>setProfile(v=>({...v,nickname:e.target.value}))} placeholder="닉네임을 입력해 주세요"/>{nicknameError&&<small className="field-error">{nicknameError}</small>}</label><div className="gender-choice">{[['male','남성'],['female','여성']].map(([value,label]) => <button key={value} aria-pressed={profile.gender === value} className={profile.gender === value ? `selected ${value}` : ''} onClick={() => setProfile(v => ({...v,gender:value}))}>{label}{profile.gender === value && <Check size={17}/>}</button>)}</div><p className="profile-save-note">{profileVerified ? '변경한 내용을 저장해 주세요.' : '사진을 저장하려면 얼굴 확인이 필요해요.'}</p><Button size="xlarge" display="block" disabled={!profile.photo || !profile.gender || !!nicknameError || photoCheck==='checking' || (!profileVerified && photoCheck!=='ok')} onClick={() => profileVerified ? saveProfile() : open('verify-profile')}>{profileVerified ? '프로필 저장하기' : '얼굴 확인하기'}</Button>{import.meta.env.VITE_ANDROID_TEST && config?.devLogin && <Button display="block" variant="weak" disabled={busy} onClick={async()=>{setBusy(true);try{await run('android-test-profile');setSheet(null);setToast('로컬 테스트 프로필로 입장할 수 있어요.');}catch(e){setError(e.message);}finally{setBusy(false);}}}>로컬 테스트 통과</Button>}</>}
