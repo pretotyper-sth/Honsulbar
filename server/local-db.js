@@ -31,8 +31,13 @@ const MIGRATIONS = [
   '20261102_account_transfer.sql',
   '20261102_play_refund_review.sql',
   '20261102_auth_cleanup.sql',
+  '20261108_solo_visit_clock.sql',
+  '20261108_z_preview_before_profile.sql',
+  '20261109_signup_consent.sql',
+  '20261110_full_voice_recordings.sql',
 ];
 const TABLES = new Set([
+  'hb_recording_sessions','hb_recording_chunks','hb_recording_reports','hb_recording_daily',
   'hb_voice_evidence', 'hb_voice_consents',
   'hb_members', 'hb_sessions', 'hb_tickets', 'hb_outbox', 'hb_visits', 'hb_rooms',
   'hb_ledger', 'hb_notifications', 'hb_waitlist', 'hb_requests', 'hb_focus',
@@ -62,7 +67,8 @@ function sqlFile(name) {
 async function seed(db) {
   const seated = await db.query(`select count(*)::int as n from hb_visits where not coalesce(away,false)`);
   if (seated.rows[0].n > 0) return;
-  for (const guest of GUESTS) {
+  await db.exec("insert into hb_rooms(region,number) values('서울',2) on conflict do nothing");
+  for (const [index,guest] of GUESTS.entries()) {
     const photoPath = join(root, 'scripts/local-guests', guest.file);
     const photo = existsSync(photoPath)
       ? `data:image/jpeg;base64,${readFileSync(photoPath).toString('base64')}`
@@ -74,11 +80,11 @@ async function seed(db) {
       nickname: guest.nick, gender: guest.gender, photo, photoProof: `local-seed:${id}`, faceConsent: true,
     })]);
     await db.query('select hb_action($1,$2,$3::jsonb)', [id, 'enter', JSON.stringify({
-      region: '서울', number: 1, drinkId: guest.drink,
+      region: index === 3 ? '경기' : '서울', number: index === 2 ? 2 : 1, drinkId: guest.drink,
     })]);
   }
   await db.query(`update hb_visits set heartbeat_at=now() where member_id in (select id from hb_members where toss_key like '9188%')`);
-  console.log('local db: 서울 1호점에 손님 4명을 넣어 두었어요.');
+  console.log('local db: 서울·경기 혼술바에 테스트 손님을 넣어 두었어요.');
 }
 
 export async function grantLocalTestPoints(db,memberId) {

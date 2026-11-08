@@ -9,6 +9,6 @@ export default async function handler(req,res){
  const cron=!!process.env.CRON_SECRET&&timingSafeEqual(Buffer.from(hash(header)),Buffer.from(hash(`Bearer ${process.env.CRON_SECRET}`)));
  if(!cron&&!await githubMaintenanceToken(header.replace(/^Bearer /,'')))return res.status(401).end();
  let stage='retention';
- try{await rpc('hb_retention',{});stage='notifications';await dispatchOutbox();stage='android-auth-cleanup';await cleanupAuthUsers();stage='android-play-refunds';await pollPlayRefunds();return res.json({ok:true});}
+ try{await rpc('hb_retention',{});await rpc('hb_recording_cleanup',{});stage='notifications';await dispatchOutbox();stage='android-auth-cleanup';await cleanupAuthUsers();stage='android-play-refunds';await pollPlayRefunds();return res.json({ok:true});}
  catch(error){return res.status(503).json({error:'maintenance_failed',stage,databaseStatus:error.databaseStatus||null,databaseCode:error.databaseCode||null});}
 }

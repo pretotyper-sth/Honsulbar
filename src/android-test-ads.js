@@ -3,7 +3,7 @@ import { AdMob, RewardAdPluginEvents } from '@capacitor-community/admob';
 
 // Demo rewards and live SSV use the same native completion flow.
 export const TEST_REWARD_AD_ID = 'ca-app-pub-3940256099942544/5224354917';
-export const nativeTestAds = !!import.meta.env?.VITE_ANDROID_TEST && Capacitor.getPlatform() === 'android';
+export const nativeTestAds = !!import.meta.env?.VITE_ANDROID_TEST && !import.meta.env?.VITE_FLOW_MOCK && Capacitor.getPlatform() === 'android';
 let initialization;
 let initializationMode;
 

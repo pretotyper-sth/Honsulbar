@@ -59,7 +59,13 @@ function setToken(value) {
 }
 export const clearSession = () => { setToken(null); pendingAgeTest(''); };
 
+const flowMockTransport = import.meta.env.VITE_FLOW_MOCK ? async (body, method) => {
+  const { flowMockRequest } = await import('./flow-mock-api.js');
+  return flowMockRequest(body, method);
+} : null;
+
 async function request(body, method = 'POST', {signal} = {}) {
+  if (typeof flowMockTransport === 'function') return flowMockTransport(body, method);
   const requestToken = token;
   const photoRequest=body?.action?.startsWith('photo-');
   const controller=photoRequest?new AbortController():null;

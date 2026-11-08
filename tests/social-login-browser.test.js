@@ -78,3 +78,11 @@ test('cold-start code issuance retains the authenticated session binding and rej
  assert.equal(result.purpose,'transfer-source');assert.equal(result.sessionTag,pending.sessionTag);
  assert.equal(await resumeSocialLogin(config,{app,now,storage:pendingStore({...pending,sessionTag:''}),fetcher:()=>assert.fail('missing source session')}),null);
 });
+
+test('cancellation while registering listeners never opens the provider again',async()=>{
+ let opened=0;
+ const app={addListener:async()=>({remove:async()=>{}})};
+ const browser={addListener:async(_,callback)=>{callback();return {remove:async()=>{}};},open:async()=>opened++,close:async()=>{}};
+ await assert.rejects(socialLogin('kakao',config,{app,browser}),/취소/);
+ assert.equal(opened,0);
+});

@@ -13,6 +13,7 @@ export function androidBuildConfig(env = process.env) {
   const mode = env.HB_ANDROID_MODE || 'local';
   if (!['local', 'integration'].includes(mode)) throw new Error('HB_ANDROID_MODE: local 또는 integration을 사용하세요.');
   const integration = mode === 'integration';
+  const flowMock = !integration && env.HB_ANDROID_FLOW_MOCK === '1';
   if (env.HB_ADMOB_APP_ID && !/^ca-app-pub-\d{16}~\d{10}$/.test(env.HB_ADMOB_APP_ID)) throw new Error('HB_ADMOB_APP_ID: AdMob 앱 ID를 확인하세요. 광고 단위 ID와 달라요.');
   const api = integration ? httpsOrigin(env.HB_ANDROID_API_URL, 'HB_ANDROID_API_URL') : 'http://localhost:3001';
   const social = integration || env.HB_SOCIAL_LOGIN_ENABLED === '1';
@@ -29,6 +30,7 @@ export function androidBuildConfig(env = process.env) {
   return {
     envDir: '.android-test-env-unused',
     define: {
+      'import.meta.env.VITE_FLOW_MOCK': JSON.stringify(flowMock),
       'import.meta.env.VITE_API_BASE': JSON.stringify(api),
       'import.meta.env.VITE_ANDROID_TEST': JSON.stringify(!integration),
       'import.meta.env.VITE_ANDROID_PUSH_ENABLED': JSON.stringify(integration && env.HB_ANDROID_PUSH_ENABLED === '1'),

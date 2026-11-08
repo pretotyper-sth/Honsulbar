@@ -34,7 +34,9 @@ export async function resumeSocialLogin(config = import.meta.env, {app = App, fe
   removePending(storage, pending.verifier);
   return { provider: pending.provider, purpose: pending.purpose, sessionTag: pending.sessionTag, accountTransferCode:pending.accountTransferCode, ...await exchange(launch.url, pending, config, fetcher) };
 }
+let loginInProgress=false;
 export async function socialLogin(provider, config = import.meta.env, {browser = Browser, app = App, fetcher = fetch, storage = localStore(), purpose = 'login', sessionTag, accountTransferCode} = {}) {
+  if(loginInProgress) throw new Error('로그인을 진행 중이에요.');
   const base = config.VITE_SUPABASE_URL;
   const key = config.VITE_SUPABASE_ANON_KEY;
   if (!['google','kakao'].includes(provider) || !base?.startsWith('https://') || !key) throw new Error('로그인 설정을 준비 중이에요.');
@@ -43,6 +45,7 @@ export async function socialLogin(provider, config = import.meta.env, {browser =
   try { storage?.setItem(pendingKey, JSON.stringify(pending)); } catch {}
   const challenge = encode(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
   let handle, closeHandle, timer;
+  loginInProgress=true;
   try {
     return await new Promise(async (resolve, reject) => {
       let finishing = false;
@@ -61,11 +64,12 @@ export async function socialLogin(provider, config = import.meta.env, {browser =
           finishing = true;
           reject(new Error('로그인을 취소했어요.'));
         });
+        if(finishing)return;
         timer = setTimeout(() => { finishing = true; reject(new Error('로그인 시간이 지났어요. 다시 시도해 주세요.')); },120000);
         const url = new URL(`${base}/auth/v1/authorize`);
         url.search = new URLSearchParams({provider,redirect_to:callback,code_challenge:challenge,code_challenge_method:'s256'}).toString();
-        await browser.open({url:url.toString()});
+        if(!finishing) await browser.open({url:url.toString()});
       } catch(error) { reject(error); }
     });
-  } finally { removePending(storage, verifier); clearTimeout(timer); await handle?.remove(); await closeHandle?.remove(); await browser.close().catch(()=>{}); }
+  } finally { loginInProgress=false; removePending(storage, verifier); clearTimeout(timer); await handle?.remove(); await closeHandle?.remove(); await browser.close().catch(()=>{}); }
 }

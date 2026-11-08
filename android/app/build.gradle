@@ -11,9 +11,9 @@ android {
         applicationId "com.honsulbar.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 5
-        versionName "1.0.4"
-        manifestPlaceholders = [honsulbarAdmobAppId: System.getenv('HB_ADMOB_APP_ID') ?: 'ca-app-pub-3940256099942544~3347511713']
+        versionCode 7
+        versionName "1.0.6"
+        manifestPlaceholders = [honsulbarAppName: System.getenv('HB_ANDROID_FLOW_MOCK') == '1' ? '혼술바 테스트' : '혼술바', honsulbarAdmobAppId: System.getenv('HB_ADMOB_APP_ID') ?: 'ca-app-pub-3940256099942544~3347511713']
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -22,6 +22,12 @@ android {
         }
     }
     buildTypes {
+        debug {
+            if (System.getenv('HB_ANDROID_FLOW_MOCK') == '1') {
+                applicationIdSuffix ".flowtest"
+                versionNameSuffix "-flowtest"
+            }
+        }
         release {
             if (uploadFile.exists()) {
                 signingConfig signingConfigs.create('upload') {
@@ -70,7 +76,7 @@ apply from: 'capacitor.build.gradle'
 
 try {
     def servicesJSON = file('google-services.json')
-    if (servicesJSON.text) {
+    if (servicesJSON.text && System.getenv('HB_ANDROID_FLOW_MOCK') != '1') {
         apply plugin: 'com.google.gms.google-services'
     }
 } catch(Exception e) {

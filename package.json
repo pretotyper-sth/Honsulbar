@@ -16,6 +16,7 @@
     "android:server": "node scripts/android-test-server.js",
     "android:apk": "npm run android:sync && cd android && ./gradlew assembleDebug",
     "android:open": "cap open android",
+    "android:flow-test": "node scripts/android-flow-build.js",
     "android:integration": "node scripts/android-integration-build.js",
     "android:aab": "node scripts/android-integration-build.js --aab"
   },
@@ -32,6 +33,8 @@
     "@tensorflow-models/blazeface": "^0.1.0",
     "@tensorflow/tfjs": "^4.22.0",
     "@tensorflow/tfjs-backend-wasm": "^4.22.0",
+    "@toss/tds-mobile": "^2.5.1",
+    "@toss/tds-mobile-ait": "^2.5.1",
     "google-auth-library": "10.9.1",
     "jpeg-js": "^0.4.4",
     "long": "5.3.2",

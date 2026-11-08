@@ -21,6 +21,14 @@ test('Android simulated purchases require isolated local test mode and cannot ru
     for(const invalid of [0,-1000,'1000',2500,100000000]) assert.equal(androidTestProduct(invalid),null);
     const login=await invoke({action:'dev-login',key:'98765432'});
     assert.equal(login.code,200);
+    const consent=await invoke({action:'signup-consent',data:{agreed:true,version:'2026-11-08-full'}},login.data.token);
+    assert.equal(consent.code,200);
+    assert.equal(consent.data.state.member.serviceConsentVersion,'2026-11-08-full');
+    const consentReload=await invoke({action:'state'},login.data.token);
+    assert.equal(consentReload.data.state.member.serviceConsentVersion,'2026-11-08-full');
+    const refused=await invoke({action:'signup-consent',data:{agreed:false,version:'2026-11-08-full'}},login.data.token);
+    assert.notEqual(refused.code,200);
+
     const bypass=await invoke({action:'android-test-profile'},login.data.token);
     assert.equal(bypass.code,200);assert.equal(bypass.data.state.member.photoChecked,true);assert.ok(bypass.data.state.member.photo);assert.equal(bypass.data.state.member.nickname,'테스트 손님');
     const before=login.data.state.member.balance;
