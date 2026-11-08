@@ -20,7 +20,7 @@ import { Glass } from './Glass';
 import { SEATS as positions, POINT_PACKS, SUBSCRIPTIONS, adjacent, audioGain } from './social';
 import { AdminPage } from './admin';
 import './style.css';
-import { nativeTestAds, showAndroidTestReward, showAndroidReward, openAndroidAdPrivacy } from './android-test-ads';
+import { nativeTestAds, showAndroidTestReward, showAndroidReward, prepareAndroidReward, openAndroidAdPrivacy } from './android-test-ads';
 import { nativePlayBilling, purchasePlayPoints, recoverPlayBilling, purchasePlaySubscription, managePlaySubscriptions } from './play-billing';
 import { App as NativeApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
@@ -275,6 +275,7 @@ function App() {
   const [sheet, setSheetState] = useState(null);
   const [androidBilling, setAndroidBilling] = useState(null);
   const [androidAds, setAndroidAds] = useState(null);
+  const preparedAttendance = useRef(null);
   const [previewRoom, setPreviewRoom] = useState(null);
   const [previews, setPreviews] = useState({});
   const [profile, setProfile] = useState({ nickname: '', gender: null, photo: null });
@@ -462,6 +463,18 @@ function App() {
   const incomingSeconds = incoming ? Math.max(0, Math.ceil((incoming.expiresAt - now) / 1000)) : 0;
   const reportedIds = useMemo(() => new Set(server?.reportedIds || []), [server?.reportedIds]);
   const wallet = { balance: member?.balance ?? 0, drinkId: visit?.drinkId ?? null, attendanceDate: server?.attendanceDate ?? null };
+  const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(new Date(now));
+  useEffect(() => {
+    if (!nativePlayBilling || !me || !isShop || !androidAds?.enabled || wallet.attendanceDate === today || adInProgress) return;
+    const key = `${me}:${today}`;
+    if (preparedAttendance.current?.key === key && Date.now() - preparedAttendance.current.at < 45 * 60000) return;
+    const entry = {key, at:Date.now()};
+    entry.promise = call('android-ad-start').then(async ({result}) => {
+      await prepareAndroidReward(result);
+      return result;
+    }).catch(() => { if (preparedAttendance.current === entry) preparedAttendance.current = null; return null; });
+    preparedAttendance.current = entry;
+  }, [me, isShop, androidAds?.enabled, wallet.attendanceDate, today, adInProgress]);
   const currentDrink = DRINKS.find(d => d.id === wallet.drinkId);
   const chosen = DRINKS.find(d => d.id === selection);
   const isWelcome = sheet === 'welcome';
@@ -1050,8 +1063,11 @@ function App() {
     if (nativePlayBilling) {
       let claim;
       try {
-        claim = await run('android-ad-start');
         setToast('광고를 불러오고 있어요.');
+        const cached = preparedAttendance.current;
+        preparedAttendance.current = null;
+        claim = cached?.key === `${me}:${today}` && Date.now() - cached.at < 45 * 60000 ? await cached.promise : null;
+        claim ||= await run('android-ad-start');
         await showAndroidReward(claim);
         let reward;
         for (let attempt=0;attempt<5;attempt++) {
@@ -1522,7 +1538,6 @@ function App() {
   const guestsTalking = !!guest;
   const audible = guest && gains[guest.id] > 0;
   const selected = selectedRoom?.region === region ? localRooms.find(r=>r.number===selectedRoom.number) : null;
-  const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(new Date(now));
   const guestSeconds = person => tick(person.seconds, person.seat === 11 || soloPaused);
 
   async function captureVerification() {

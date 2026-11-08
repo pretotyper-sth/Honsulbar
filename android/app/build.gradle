@@ -11,8 +11,8 @@ android {
         applicationId "com.honsulbar.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 7
-        versionName "1.0.6"
+        versionCode 8
+        versionName "1.0.7"
         manifestPlaceholders = [honsulbarAppName: System.getenv('HB_ANDROID_FLOW_MOCK') == '1' ? '혼술바 테스트' : '혼술바', honsulbarAdmobAppId: System.getenv('HB_ADMOB_APP_ID') ?: 'ca-app-pub-3940256099942544~3347511713']
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {

@@ -58,3 +58,16 @@ test('Android privacy settings expose the SDK form only when required, without l
  await assert.rejects(openAndroidAdPrivacy({enabled:false,sdk:{requestConsentInfo:()=>assert.fail('no SDK')}}),/Android/);
  await assert.rejects(openAndroidAdPrivacy({enabled:true,sdk:{requestConsentInfo:async()=>{throw Error('network');}}}),/network/);
 });
+
+test('preloaded reward is shown without a second network load and cannot be reused after display',async()=>{
+  const {prepareAndroidReward}=await import('../src/android-test-ads.js');
+  let loads=0,shows=0;
+  const env=fakeSdk(events=>{shows++;events.get(Events.Rewarded)();events.get(Events.Dismissed)();},async()=>{loads++;});
+  const ad={adId:TEST_REWARD_AD_ID,isTesting:true};
+  await Promise.all([prepareAndroidReward(ad,{sdk:env.sdk}),prepareAndroidReward(ad,{sdk:env.sdk})]);
+  assert.equal(loads,1);assert.equal(shows,0);
+  await showAndroidTestReward({enabled:true,sdk:env.sdk});
+  assert.equal(loads,1);assert.equal(shows,1);
+  await showAndroidTestReward({enabled:true,sdk:env.sdk});
+  assert.equal(loads,2);assert.equal(shows,2);
+});

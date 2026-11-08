@@ -40,8 +40,13 @@ test('reward SQL grants once per claim/day and rejects a reused Google transacti
   const db=new PGlite();
   try {
     await db.exec('create role anon;create role authenticated;create role service_role;');
-    for (const name of ['20260924_toss_login_disconnect.sql','20260924_service_backend.sql','20260924_admin_ops.sql','20260926_rejoin_visit.sql','20261012_safety_automation.sql','20261016_face_verification.sql','20261102_android_ads.sql']) await db.exec(readFileSync(new URL('../supabase/migrations/'+name,import.meta.url),'utf8'));
+    for (const name of ['20260924_toss_login_disconnect.sql','20260924_service_backend.sql','20260924_admin_ops.sql','20260926_rejoin_visit.sql','20261012_safety_automation.sql','20261016_face_verification.sql','20261102_android_ads.sql','20261111_android_attendance_snapshot.sql']) await db.exec(readFileSync(new URL('../supabase/migrations/'+name,import.meta.url),'utf8'));
     const member=(await db.query("select hb_login('12345') as id")).rows[0].id;
+    const demo=(await db.query("select hb_start_android_ad($1,'test','5224354917') as id",[member])).rows[0].id;
+    await db.query('select hb_complete_android_ad($1,$2,null,$3,true)',[demo,'5224354917',Date.now()]);
+    const snapshot=(await db.query('select hb_snapshot($1) as state',[member])).rows[0].state;
+    assert.match(snapshot.attendanceDate,/^\d{4}-\d{2}-\d{2}$/);
+    await assert.rejects(db.query("select hb_start_android_ad($1,'test','5224354917')",[member]),/이미 받았어요/);
     const create=async()=>{
       const id=(await db.query('insert into hb_ad_claims(member_id) values($1) returning id',[member])).rows[0].id;
       await db.query("insert into hb_android_ad_claims(id,mode,ad_unit) values($1,'live','123456789')",[id]);return id;
