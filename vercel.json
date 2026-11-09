@@ -6,9 +6,12 @@
     }
   ],
   "functions": {
-    "api/*.js": {
+    "api/service.js": {
       "maxDuration": 60,
-      "includeFiles": "server/**"
+      "includeFiles": "server/{photo-inference.js,face-models/**,vendor/**}"
+    },
+    "api/{admob-ssv,maintenance,play-notifications,toss-iap,toss-unlink}.js": {
+      "maxDuration": 60
     }
   },
   "regions": [
