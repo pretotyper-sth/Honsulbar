@@ -7,11 +7,12 @@ import { IAP, loadFullScreenAd, showFullScreenAd, SafeAreaInsets, NavigationBar,
 import { Button, BottomSheet, Badge, FaceConsent, CameraVerificationStatus } from './ui';
 import { ArrowLeft, ArrowRight, Bell, Camera, Check, ChevronDown, Clock3, DoorOpen, Coins, MessageCircleMore, Mic, MicOff, Plus, Volume2, VolumeX, Speaker, Wine, X, Flag, Wallet, Eye, LockKeyhole, ArrowLeftRight, Settings, UserRound } from 'lucide-react';
 import { REGIONS, CAPACITY, DRINKS } from './model';
+import { findAvailableBars } from './quick-match';
 import { useVoice } from './useVoice';
 import { voicePeerIds } from './social';
 import { useMesh } from './useMesh';
 import { VOICE_CONSENT_VERSION } from './voice-evidence';
-import { call, getConfig, login, clearSession, hasSession, assetUrl, insideToss, requestPushAgreement } from './api';
+import { call, getConfig, login, clearSession, hasSession, assetUrl, insideToss } from './api';
 import { handleMiniappBack, subscribeMiniappBack, navigationBarOptions } from './miniapp-back';
 import { ExitConfirm } from './ExitConfirm';
 import { Glass } from './Glass';
@@ -36,8 +37,7 @@ const FAQ_ITEMS = [
   ['바를 나가면 남은 시간이 어떻게 되나요?', '바를 나가도 같은 호점의 이용시간은 계속 흘러요. 자리가 있으면 남은 시간으로 다시 들어갈 수 있고, 다른 호점은 새로 입장해야 해요.'],
   ['입장 전에 손님 사진을 볼 수 있나요?', '미리보기 상품을 구매하면 현재 호점에 있는 손님들의 사진을 확인할 수 있어요. 미리보기는 입장이나 자리 예약을 포함하지 않아요.'],
   ['목소리가 불편한 손님은 어떻게 신고하나요?', '손님 프로필에서 신고를 선택하고 사유와 내용을 접수해 주세요. 신고한 손님의 목소리는 바로 들리지 않고, 서로 상대가 있는 바에는 입장할 수 없어요.'],
-  ['정기 구독은 어떻게 해지하나요?', '토스 결제 내역에서 구독을 해지해 주세요. 해지 후에도 남은 기간은 이용할 수 있어요. 같은 화면에서 자동 결제를 다시 켤 수 있어요.'],
-  ['빈자리 알림은 어떻게 끄나요?', '설정 알림에서 빈자리 알림 스위치를 끄면 신청한 호점 알림이 해제돼요. 토스 푸시 자체를 끄려면 토스 앱 알림 설정에서 바꿀 수 있어요.'],
+  ['정기 구독은 어떻게 해지하나요?', '토스 앱 결제 내역 → 혼술바 정기 구독 → 구독 해지. 해지 후 혼술바 설정에서 회원탈퇴를 다시 눌러 주세요.'],
   ['회원탈퇴는 어떻게 하나요?', '정기 구독이 유지 중이면 탈퇴할 수 없어요. 토스 결제 내역에서 구독을 먼저 해지한 뒤 설정에서 탈퇴해 주세요.'],
 ];
 const LEGAL_DOCS = [
@@ -238,12 +238,14 @@ function resizePhoto(file) {
   });
 }
 const DEFAULT_ICE = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
-const WAITLIST_ALERT_KEY = 'honsulbar:alerts:waitlist:v1';
-const PUSH_AGREED_KEY = 'honsulbar:push-agreed:v1';
-function storageFlag(key) { try { return localStorage.getItem(key) === '1'; } catch { return false; } }
-function setStorageFlag(key, on) { try { on ? localStorage.setItem(key, '1') : localStorage.removeItem(key); } catch {} }
+
+
+const QuickRegionOptions = React.lazy(() => import('./QuickRegionOptions.jsx'));
 
 function App() {
+  const [quickRoom, setQuickRoom] = useState(null);
+  const [skippedQuickRooms, setSkippedQuickRooms] = useState([]);
+  const [quickSearchStarted, setQuickSearchStarted] = useState(0);
   const [config, setConfig] = useState(null);
   const [server, setServer] = useState(null);
   const [syncedAt, setSyncedAt] = useState(Date.now());
@@ -253,13 +255,12 @@ function App() {
   const [connectAndroid,setConnectAndroid]=useState(false);
   const [transferCode,setTransferCode]=useState('');
   const [selectedRoom, setSelectedRoom] = useState(null);
+  const [browseRooms, setBrowseRooms] = useState(false);
   const [entryRoom, setEntryRoom] = useState(null);
   const [shopPack, setShopPack] = useState(POINT_PACKS[0]);
   const [historyLimit, setHistoryLimit] = useState(10);
   const historyLimitRef = useRef(10);
   historyLimitRef.current = historyLimit;
-  const [waitlistAlerts, setWaitlistAlerts] = useState(() => storageFlag(WAITLIST_ALERT_KEY));
-  const [pushAgreed, setPushAgreed] = useState(() => storageFlag(PUSH_AGREED_KEY));
   const [facing, setFacing] = useState(0);
   const [audioFacing, setAudioFacing] = useState(0);
   const [waveSent, setWaveSent] = useState([]);
@@ -409,7 +410,8 @@ function App() {
   }, [server?.partners, me]);
   const activeFocus = partners.me;
   const neighbors = guests.filter(g => adjacent(seat, g.seat));
-  const seconds = visit ? tick(visit.seconds, visit.seat === 11 && inside) : 0;
+  const soloPaused = inside && visit?.soloPaused === true;
+  const seconds = visit ? tick(visit.seconds, inside && (visit.seat === 11 || soloPaused)) : 0;
   const voice = useVoice(screen === 'bar', setToast, seconds > 0 || seat === 11);
   const pendingRequests = server?.requests || [];
   const incomingRequest = pendingRequests.find(r => r.receiver === me && r.kind === 'swap');
@@ -430,7 +432,7 @@ function App() {
   const dailySwapRequests = server?.swapRequestsToday ?? 0;
   const seatRequestCounts = useMemo(() => Object.fromEntries((server?.requestedSeats || []).map(key => [key, 1])), [server?.requestedSeats]);
   const waitlist = server?.waitlist || [];
-  const notifications = useMemo(() => (server?.notifications || []).map(n => ({ id: n.id, type: n.kind, title: n.title, body: n.body, unread: !n.read_at, inquiryId: n.data?.inquiryId, region: n.data?.region, number: n.data?.number })), [server?.notifications]);
+  const notifications = useMemo(() => (server?.notifications || []).filter(n => n.kind !== 'available').map(n => ({ id: n.id, type: n.kind, title: n.title, body: n.body, unread: !n.read_at, inquiryId: n.data?.inquiryId, region: n.data?.region, number: n.data?.number })), [server?.notifications]);
   const inquiries = useMemo(() => (server?.inquiries || []).map(t => ({ id: t.id, type: t.category, message: t.message, answer: t.answer, createdAt: Date.parse(t.created_at) })), [server?.inquiries]);
   const ledger = useMemo(() => (server?.ledger || []).map(l => ({ id: l.id, label: l.label, amount: l.amount, date: Date.parse(l.created_at) })), [server?.ledger]);
   const ledgerCount = server?.ledgerCount ?? ledger.length;
@@ -485,7 +487,7 @@ function App() {
     if (before.visit && !before.visit.away && !state.visit && !leaving.current) { voice.stop(); setSpeaker(false); setSheet(null); setToast('이용시간이 끝나 바에서 나왔어요.'); }
     else if (before.visit?.away && !state.visit && !leaving.current) { setToast('남은 이용시간이 끝났어요.'); }
     const seen = new Set((before.notifications || []).map(n => n.id));
-    const arrived = (state.notifications || []).filter(n => !seen.has(n.id) && !n.read_at);
+    const arrived = (state.notifications || []).filter(n => n.kind !== 'available' && !seen.has(n.id) && !n.read_at);
     if (arrived.length) { setToast(arrived[0].title); playCue('notification'); }
     const incomingBefore = new Set((before.requests || []).filter(r => r.receiver === state.member?.id).map(r => r.id));
     if ((state.requests || []).some(r => r.receiver === state.member?.id && !incomingBefore.has(r.id))) playCue('request');
@@ -570,13 +572,8 @@ function App() {
   }, [screen, speaker, voice.mic]);
   useEffect(() => { if (['lobby', 'bar'].includes(screen)) run('state').catch(() => {}); }, [historyLimit]);
   useEffect(() => {
-    if (waitlist.length && !waitlistAlerts) {
-      setWaitlistAlerts(true);
-      setStorageFlag(WAITLIST_ALERT_KEY, true);
-      setPushAgreed(true);
-      setStorageFlag(PUSH_AGREED_KEY, true);
-    }
-  }, [waitlist.length, waitlistAlerts]);
+    if (waitlist.length) run('waitlist-off').catch(() => {});
+  }, [me, server?.waitlist]);
 
   const faceModel = useRef(null);
   const faceModelLoading = useRef(null);
@@ -833,7 +830,7 @@ function App() {
   }
   function openNotification(item) {
     if (item.type === 'inquiry') { setSelectedInquiry(inquiries.find(entry => entry.id === item.inquiryId) || null); open('inquiry-detail'); return; }
-    if (item.region) { setRegion(item.region); setSelectedRoom({ region: item.region, number: item.number }); setSheet(null); setToast(`${item.region} ${item.number}호점을 선택했어요.`); return; }
+    if (item.region) { setBrowseRooms(true); setRegion(item.region); setSelectedRoom({ region: item.region, number: item.number }); setSheet(null); setToast(`${item.region} ${item.number}호점을 선택했어요.`); return; }
     setSheet(null);
   }
   function resetConversation() { setFacing(0); setAudioFacing(0); }
@@ -852,78 +849,6 @@ function App() {
   async function sendWave(target) {
     try { await run('request', { targetId: target.id, kind: 'wave' }); setWaveSent(v => [...v, target.id]); setToast('인사를 남겼어요.'); }
     catch (e) { setError(e.message); }
-  }
-  function pushTemplate() {
-    return config?.pushAvailableTemplate || 'honsulbar-seat-open';
-  }
-  function agreementType(result) {
-    return result?.type || result?.agreementResult || result;
-  }
-  function rememberPushAgreed() {
-    setPushAgreed(true);
-    setStorageFlag(PUSH_AGREED_KEY, true);
-  }
-  function rememberWaitlistAlerts(on) {
-    setWaitlistAlerts(on);
-    setStorageFlag(WAITLIST_ALERT_KEY, on);
-  }
-  function askPushAgreement() {
-    return new Promise(resolve => {
-      if (!insideToss()) { resolve('agreed'); return; }
-      let settled = false;
-      let cleanup = () => {};
-      const done = value => { if (settled) return; settled = true; cleanup(); resolve(value); };
-      const timer = setTimeout(() => done('skipped'), 20000);
-      try {
-        cleanup = requestPushAgreement(pushTemplate(), {
-          onEvent: result => {
-            clearTimeout(timer);
-            const type = agreementType(result);
-            done(type === 'newAgreement' || type === 'alreadyAgreed' ? 'agreed' : type === 'agreementRejected' ? 'rejected' : 'skipped');
-          },
-          onError: () => { clearTimeout(timer); done('skipped'); },
-        });
-      } catch { clearTimeout(timer); done('skipped'); }
-    });
-  }
-  async function ensureWaitlistConsent() {
-    if (pushAgreed) return 'agreed';
-    const consent = await askPushAgreement();
-    if (consent === 'agreed') rememberPushAgreed();
-    return consent;
-  }
-  async function requestWaitlist(target) {
-    const targetRegion = target.region || region;
-    const key = `${targetRegion}:${target.number}`;
-    if (sheet === 'preview') setSheet(null);
-    if (waitlist.includes(key)) {
-      try { await run('waitlist-off', { region: targetRegion, number: target.number }); setToast('빈자리 알림을 껐어요.'); }
-      catch (e) { setToast(e.message); }
-      return;
-    }
-    const consent = await ensureWaitlistConsent();
-    if (consent === 'rejected') { setToast('알림에 동의해야 빈자리를 알려드려요.'); return; }
-    if (consent === 'skipped' && !pushAgreed) { setToast('알림에 동의해야 빈자리를 알려드려요.'); return; }
-    try {
-      await run('waitlist', { region: targetRegion, number: target.number });
-      rememberWaitlistAlerts(true);
-      setToast('빈자리가 생기면 알려드릴게요.');
-    } catch (e) { setToast(e.message); }
-  }
-  async function setWaitlistAlertEnabled(on) {
-    if (!on) {
-      rememberWaitlistAlerts(false);
-      if (waitlist.length) {
-        try { await run('waitlist-off'); } catch (e) { setToast(e.message); return; }
-      }
-      setToast('빈자리 알림을 껐어요.');
-      return;
-    }
-    const consent = await ensureWaitlistConsent();
-    if (consent === 'rejected') { setToast('알림에 동의해야 빈자리를 알려드려요.'); return; }
-    if (consent === 'skipped' && !pushAgreed) { setToast('알림에 동의해야 빈자리를 알려드려요.'); return; }
-    rememberWaitlistAlerts(true);
-    setToast('빈자리 알림을 켰어요.');
   }
   async function attendance() {
     if (wallet.attendanceDate === today || adInProgress) return;
@@ -1084,10 +1009,18 @@ function App() {
       setSheet(null); setToast('프로필을 저장했어요.');
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
+  const mustCancelSubscription = subscription && (member?.subscribed ? member.subAutoRenew !== false : !subscriptionCancelAt);
+  function openCancellationFaq() {
+    setOpenFaq(FAQ_ITEMS.findIndex(([question]) => question === '정기 구독은 어떻게 해지하나요?'));
+    open('faq');
+  }
+  function requestWithdrawal() {
+    open(mustCancelSubscription ? 'withdraw-subscription' : 'withdraw');
+  }
   async function withdraw() {
     if (busy) return;
-    if (subscription && !subscriptionCancelAt) {
-      setError('정기 구독을 먼저 해지해 주세요.');
+    if (mustCancelSubscription) {
+      requestWithdrawal();
       return;
     }
     setBusy(true);
@@ -1171,7 +1104,7 @@ function App() {
   }
   function proceedEntry(target, { confirm, consented } = {}) {
     if(config?.voiceEvidenceReady && !voiceAgreed && !consented) { setPendingEntry(target); setVoiceConsentChecked(false); open('voice-consent'); return; }
-    setEntryRoom({ region: target.region || region, number: target.number, count: target.count });
+    setEntryRoom({ region: target.region || region, number: target.number, count: target.count, firstGuest: target.firstGuest });
     const requirement = entryRequirement(member);
     if (requirement === 'adult') {
       clearSession();setSheet(null);setScreen('onboarding');
@@ -1179,7 +1112,7 @@ function App() {
     }
     if (requirement) { setPendingEntry(target);openProfileEditor(); return; }
     setPendingEntry(null);
-    if (leftoverFor(target)) {
+    if (!target.firstGuest && leftoverFor(target)) {
       if (confirm) open('rejoin');
       else rejoinRoom(target);
       return;
@@ -1205,7 +1138,7 @@ function App() {
     if (welcome) entering.current = true;
     try {
       if (welcome) {
-        await run('enter', { region: room.region, number: room.number, drinkId: selection });
+        await run('enter', { region: room.region, number: room.number, drinkId: selection, ...(room.firstGuest ? {firstGuest:true} : {}) });
         resetConversation();setWaveSent([]);setSpeaker(false);setSoundOn(true);setMutedGuests([]);
         // Playback readiness cannot turn a committed entry into a failed purchase.
         try { mesh.resume(); } catch {}
@@ -1321,7 +1254,11 @@ function App() {
     setServer(s => s?.visit ? { ...s, visit: { ...s.visit, away: true } } : s);
     setScreen('lobby');
     setEntryRoom(null);
-    try { await run('leave'); }
+    setQuickSearchStarted(0);
+    try {
+      const result = await run('leave');
+      if (result?.firstGuestCredit) setToast(`입장 포인트 ${result.firstGuestCredit.toLocaleString()}P를 돌려드렸어요.`);
+    }
     catch (e) {
       setServer(s => s?.visit ? { ...s, visit: { ...s.visit, away: false } } : s);
       setScreen('bar');
@@ -1346,6 +1283,20 @@ function App() {
   const time = `${String(Math.floor(seconds / 60)).padStart(2,'0')}:${String(seconds % 60).padStart(2,'0')}`;
   const localRooms = rooms[region];
   const recommended = localRooms.filter(r => r.count < CAPACITY && !r.hasReportedGuest).sort((a,b) => Math.abs(a.count - 7) - Math.abs(b.count - 7))[0];
+  function findQuickRoom(excluded) {
+    setSkippedQuickRooms(excluded);
+    setQuickSearchStarted(Date.now());
+    setQuickRoom(null);
+  }
+  const quickTarget = quickRoom && rooms[quickRoom.region]?.some(r =>
+    r.number === quickRoom.number && r.count > 0 && r.count < CAPACITY && !r.hasReportedGuest
+  ) ? quickRoom : null;
+  const quickWaiting = !!quickSearchStarted && !quickTarget;
+  useEffect(() => {
+    if (!quickWaiting || screen !== 'lobby' || browseRooms || server?.safetyPaused) return;
+    const [match] = findAvailableBars(rooms, region, now - quickSearchStarted, skippedQuickRooms);
+    if (match) setQuickRoom(match);
+  }, [quickWaiting, screen, browseRooms, server?.safetyPaused, rooms, region, now, quickSearchStarted, skippedQuickRooms]);
   const guestsTalking = !!guest;
   const audible = guest && gains[guest.id] > 0;
   const selected = selectedRoom?.region === region ? localRooms.find(r=>r.number===selectedRoom.number) : null;
@@ -1422,8 +1373,43 @@ function App() {
       {screen === 'bar' ? <button className="icon-button" aria-label="바 나가기" onClick={()=>open('leave')}><ArrowLeft size={21}/></button> : <button className="point-entry" aria-label={`포인트 상점, ${wallet.balance.toLocaleString()}P`} onClick={()=>open('shop')}><Coins size={17}/><span>{wallet.balance.toLocaleString()}<small> P</small></span></button>}
       <div className="header-actions"><button className="header-icon-button" aria-label="설정" onClick={()=>open('settings')}><Settings size={18}/></button><button className="notification-button" aria-label={`알림 ${notifications.length}개`} onClick={openNotifications}><Bell size={18}/>{notifications.some(item=>item.unread)&&<i/>}</button><button className="profile-button" aria-label="내 프로필" onClick={()=>openProfileEditor()}>{myPhoto ? <img src={myPhoto} alt="내 프로필"/> : <UserRound size={18}/>}</button></div>
     </header>
-    {screen === 'lobby' ? <section className="lobby">
-      <div className="lobby-heading"><h1>마음 가는 곳에서 잠시 머물러요</h1></div>
+    {screen === 'lobby' && !browseRooms ? <section className="lobby quick-home-preview">
+      {quickWaiting ? <>
+        <div className="quick-home-hero quick-result-hero" role="status">
+          <div className="app-spinner quick-wait-spinner" aria-hidden="true"/>
+          <h1>대화할 자리를 찾고 있어요</h1>
+          <p>이용 가능한 바가 생기면 여기서 보여드려요.</p>
+        </div>
+        <div className="lobby-footer">
+          <p className="entry-benefit">먼저 입장하면 혼자 있는 동안 이용 시간이 멈춰요.</p>
+          <Button size="xlarge" display="block" disabled={server?.safetyPaused} onClick={()=>proceedEntry({region,firstGuest:true})}>첫 손님으로 기다리기</Button>
+          <Button size="large" variant="weak" display="block" onClick={()=>setQuickSearchStarted(0)}>대기 취소</Button>
+        </div>
+      </> : quickTarget && quickSearchStarted ? <>
+        <div className="quick-home-hero quick-result-hero">
+          <DoorOpen size={38} aria-hidden="true"/>
+          <h1>{quickTarget.region} {quickTarget.number}호점에 자리가 있어요</h1>
+        </div>
+        <div className="quick-home-card">
+          <strong>손님 미리보기</strong>
+          <Button size="small" variant="weak" onClick={()=>requestPreview(quickTarget)}><Eye size={16}/>{previews[`${quickTarget.region}:${quickTarget.number}`]?'구매한 미리보기':subscription?'구독으로 미리보기':'미리보기 · 500P'}</Button>
+        </div>
+        <div className="lobby-footer">
+          <Button size="xlarge" display="block" disabled={server?.safetyPaused} onClick={()=>requestEntry(quickTarget)}>이 바에 입장하기</Button>
+          <Button size="large" variant="weak" display="block" onClick={()=>findQuickRoom([...skippedQuickRooms,`${quickTarget.region}:${quickTarget.number}`])}>다른 장소 찾기</Button>
+        </div>
+      </> : <>
+        <div className="quick-home-hero"><img src="/honsulbar-logo.png" alt=""/><h1>마음 가는 곳에서 잠시 머물러요</h1><p>선호 지역에서 대화할 자리를 먼저 찾아요.</p></div>
+        <div className="quick-home-card"><strong>선호 지역</strong><Button size="small" variant="weak" onClick={()=>open('quick-region')}>{region}<ChevronDown size={16}/></Button></div>
+        <Button className="quick-guide" size="small" variant="weak" onClick={()=>open('quick-safety')}>안전한 대화 가이드</Button>
+        <div className="lobby-footer">
+          <p className="entry-benefit">입장 시 포인트가 차감돼요.</p>
+          <Button size="xlarge" display="block" disabled={server?.safetyPaused} onClick={()=>findQuickRoom([])}>혼술바 입장하기</Button>
+          <Button variant="weak" display="block" onClick={()=>setBrowseRooms(true)}>전체 바 보기</Button>
+        </div>
+      </>}
+    </section> : screen === 'lobby' ? <section className="lobby">
+      <div className="lobby-heading"><h1>마음 가는 곳에서 잠시 머물러요</h1><Button size="small" variant="weak" onClick={()=>{setBrowseRooms(false);setQuickSearchStarted(0);}}>홈으로</Button></div>
       <div className="regions" aria-label="지역">{REGIONS.map(r=><Button key={r} size="small" variant="weak" color={r===region?'primary':'dark'} aria-pressed={r===region} onClick={()=>{setRegion(r);setSelectedRoom(null);}}>{r}</Button>)}<Button className="region-request-button" size="small" variant="weak" color="dark" onClick={()=>{setRequestedRegion('');setCustomRegion('');setShowCustomRegion(false);open('region-request');}}>+ 지역 추가 요청</Button></div>
       <div className="list-heading"><span><i className="green-dot"/>{localRooms.reduce((sum,r)=>sum+r.count,0)}명 머무는 중</span><span className={`leftover-note${leftover?.region===region?'':' is-empty'}`} role={leftover?.region===region?'status':undefined} aria-hidden={leftover?.region!==region}><i className="blue-dot"/>{leftover?.region===region?`${leftover.number}호점 남은 이용시간 ${time}`:'1호점 남은 이용시간 00:00'}</span></div>
       {newRoom && <div className="new-room-notice" role="status">{region} {newRoom}호점이 열렸어요.</div>}
@@ -1434,7 +1420,7 @@ function App() {
           <Badge size="small" variant="weak" color={r.hasReportedGuest||r.count===CAPACITY?'elephant':'blue'}>{r.hasReportedGuest?'입장 제한':r.count===CAPACITY?'만석':leftoverFor(r)||r.count>0?'입장 가능':'새로 열림'}</Badge>
           <span className="room-count"><b>{r.count}</b> / 12</span>
         </button>
-        {r.hasReportedGuest ? <p className="protected-room-note">이용자 보호를 위해 현재 입장할 수 없는 바예요.</p> : selected?.number===r.number&&<div className="selected-room-detail"><span>{r.count===CAPACITY?'빈자리가 생기면 알려드려요':`빈자리 ${CAPACITY-r.count}석`}</span>{r.count===CAPACITY?<div className="room-detail-actions"><button onClick={()=>requestPreview(r)}><Eye size={14}/>{previews[`${region}:${r.number}`]?'미리보기 보기':'미리보기 · 500P'}</button><button onClick={()=>requestWaitlist(r)}><Bell size={14}/>{waitlist.includes(`${region}:${r.number}`)?'알림 신청됨':'빈자리 알림'}</button></div>:r.count>0&&<button onClick={()=>requestPreview(r)}><Eye size={14}/>{previews[`${region}:${r.number}`]?'구매한 미리보기':'미리보기 · 500P'}</button>}</div>}
+        {r.hasReportedGuest ? <p className="protected-room-note">이용자 보호를 위해 현재 입장할 수 없는 바예요.</p> : selected?.number===r.number&&<div className="selected-room-detail"><span>{r.count===CAPACITY?'만석이에요':`빈자리 ${CAPACITY-r.count}석`}</span>{r.count===CAPACITY?<div className="room-detail-actions"><button onClick={()=>requestPreview(r)}><Eye size={14}/>{previews[`${region}:${r.number}`]?'미리보기 보기':'미리보기 · 500P'}</button></div>:r.count>0&&<button onClick={()=>requestPreview(r)}><Eye size={14}/>{previews[`${region}:${r.number}`]?'구매한 미리보기':'미리보기 · 500P'}</button>}</div>}
       </div>)}</div>
       <p className="branch-note">{server?.safetyPaused?'안전 점검 중이에요. 잠시 후 다시 이용해 주세요.':'자리가 다 차면 다음 호점이 열려요.'}</p>
       <div className="lobby-footer">
@@ -1443,7 +1429,7 @@ function App() {
       </div>
     </section> : <section className="bar-screen">
       <div className="room-heading"><div><button className="room-title" aria-label={`${room.region} ${room.number}호점 나가기`} onClick={() => open('leave')}>{room.region} {room.number}호점 <DoorOpen size={18}/></button></div><span className="occupancy"><i className="green-dot"/>{guests.length+1}<span> / 12</span></span></div>
-      <div className={`time-strip ${seconds < 300 && seat !== 11 ? 'time-low' : ''}`}><Clock3 size={16}/><span>{seat === 11 ? '사장 자리' : '남은 시간'}</span><strong>{seat === 11 ? '시간 제한 없음' : time}</strong><button aria-label="메뉴판 열고 시간 연장" onClick={() => {setSelection(wallet.drinkId || 'highball'); open('menu');}}><Plus size={18}/></button></div>
+      <div className={`time-strip ${seconds < 300 && seat !== 11 ? 'time-low' : ''}`}><Clock3 size={16}/><span>{seat === 11 ? '사장 자리' : soloPaused ? '혼자 대기 중 · 시간 일시정지' : '남은 시간'}</span><strong>{seat === 11 ? '시간 제한 없음' : time}</strong><button aria-label="메뉴판 열고 시간 연장" onClick={() => {setSelection(wallet.drinkId || 'highball'); open('menu');}}><Plus size={18}/></button></div>
       <div className="bar-space"><div className={`bar-floor${seatFrozen ? ' is-frozen' : ''}`}><div className="bar-rug"/><div className="wood-bar"><i className="table-lamp lamp-one"/><i className="table-lamp lamp-two"/><i className="table-lamp lamp-three"/></div>
         {positions.map(([x,y], i) => {
           const person = guests.find(g => g.seat === i);
@@ -1480,8 +1466,19 @@ function App() {
       {screen === 'bar' && config?.voiceEvidenceReady && voiceAgreed && <p className="voice-safety-notice">신고 보호 · 최근 20초 기기 임시 보관 · 신고 시 선택 제출</p>}
       <BottomSheet open={!!sheet} onClose={closeSheet} ariaLabelledBy="sheet-title" className="app-bottom-sheet">
       <div className={`sheet sheet-compact ${sheet === 'guest' ? 'sheet-guest' : ''} ${sheet === 'profile' ? 'sheet-profile' : ''} ${sheet === 'verify-profile' ? 'sheet-camera' : ''} ${sheet === 'region-request' ? 'sheet-region-request' : ''}`}><button className="close icon-button" aria-label="닫기" onClick={closeSheet}><X size={22}/></button>
-      {(sheet === 'welcome' || sheet === 'menu') && <><p className="eyebrow">{isWelcome ? `${room?.region} ${room?.number}호점 입장` : '메뉴판'}</p><h2 id="sheet-title">{isWelcome ? '어떤 음료로 시작할까요?' : '한 잔 더 하고 갈까요?'}</h2><p className="sheet-description">{isWelcome ? (subscription ? '구독 중이면 입장에 포인트가 차감되지 않아요.' : '입장 시 포인트가 차감돼요.') : '주문한 잔은 내 사진 옆에 놓여요.'}</p><div className="menu">{DRINKS.filter(item => !isWelcome || item.minutes === 30).map(item => <button className={selection === item.id ? 'chosen' : ''} key={item.id} aria-pressed={selection === item.id} onClick={() => {setSelection(item.id);setError('');}}><div className="drink-illustration"><Glass id={item.id}/></div><span><strong>{item.name}</strong><small>{item.note}</small><em>{`+${item.minutes}분`}</em></span><span className="menu-price">{isWelcome ? `입장 ${item.price.toLocaleString()}P` : `${item.price.toLocaleString()} P`}{selection === item.id && <Check size={16}/>}</span></button>)}</div><div className="order-summary"><span>보유 포인트<b>{wallet.balance.toLocaleString()} P</b></span><span>{subscription ? '구독 이용' : (isWelcome ? '입장 후 남는 포인트' : '주문 후 남는 포인트')}<strong>{subscription ? '0 P' : `${Math.max(0,wallet.balance-price).toLocaleString()} P`}</strong></span></div><p className="digital-note">음료는 취향을 표현하는 아이템이에요.</p>{!subscription && wallet.balance<price?<><div className="insufficient-state"><strong>{(price-wallet.balance).toLocaleString()}P가 더 필요해요</strong><span>충전 후 {isWelcome ? '입장' : '주문'}할 수 있어요.</span></div><Button className="sheet-recharge-cta" size="xlarge" display="block" onClick={()=>open('shop')}>포인트 충전하기</Button><p className="footnote">충전 후 선택한 음료로 이용해요.</p></>:<div className="sheet-inline-cta"><Button size="xlarge" display="block" disabled={busy} onClick={confirmOrder}>{subscription ? (isWelcome ? `${chosen.minutes}분 입장하기` : `주문 · ${chosen.minutes}분 연장`) : (isWelcome ? `${price.toLocaleString()} 포인트로 ${chosen.minutes}분 입장하기` : `${price.toLocaleString()} 포인트로 주문 · ${chosen.minutes}분 연장`)}</Button><p className="footnote">{subscription ? '구독 기간에는 입장·연장에 포인트가 차감되지 않아요.' : (isWelcome ? (leftover ? '다른 호점에 입장하면 남은 이용시간은 끝나요.' : '바를 나가도 이 호점 이용시간은 이어져요.') : '주문을 누르면 포인트가 차감되고 이용시간이 늘어나요.')}</p></div>}</>}
-      {sheet === 'preview' && previewRoom && <><p className="eyebrow">{previewRoom.region} {previewRoom.number}호점</p><h2 id="sheet-title">{purchasedPreview ? '지금 이 바의 손님들' : '들어가기 전에 살짝 볼까요?'}</h2>{purchasedPreview ? <><p className="sheet-description">구매한 시점의 손님들이에요. 입장할 때는 달라질 수 있어요.</p><div className="preview-portraits">{purchasedPreview.guests.map(g => <div key={g.id} className={g.gender}><img src={g.photo} alt="미리보기 손님"/></div>)}</div>{rooms[previewRoom.region].find(r => r.number === previewRoom.number)?.count === CAPACITY ? <Button size="xlarge" display="block" onClick={() => requestWaitlist(previewRoom)}><Bell size={17}/>빈자리 알림 신청</Button> : <Button size="xlarge" display="block" onClick={() => requestEntry(previewRoom)}>이 바에 입장하기</Button>}</> : <><div className="locked-preview"><LockKeyhole size={29}/><span>사진은 미리보기 구매 후 공개돼요.</span></div><p className="sheet-description">{subscription ? '구독 중이면 미리보기에 포인트가 차감되지 않아요.' : '500P로 현재 손님들의 프로필 사진을 확인해요.'}<br/>입장·자리 예약은 포함되지 않아요.</p><div className="order-summary"><span>보유 포인트<b>{wallet.balance.toLocaleString()} P</b></span><span>{subscription ? '구독 이용' : '구매 후 남는 포인트'}<strong>{subscription ? '0 P' : `${Math.max(0,wallet.balance-500).toLocaleString()} P`}</strong></span></div><Button size="xlarge" display="block" disabled={!subscription && wallet.balance < 500} onClick={buyPreview}>{subscription ? '구독으로 미리보기' : '500P로 미리보기'}</Button></>}</>}
+      {sheet==='quick-region'&&<><h2 id="sheet-title">선호 지역</h2><React.Suspense fallback={<p className="sheet-description" role="status">지역을 불러오는 중이에요.</p>}><QuickRegionOptions region={region} onSelect={name=>{setRegion(name);setQuickRoom(null);setQuickSearchStarted(0);closeSheet();}}/></React.Suspense></>}
+      {sheet==='quick-safety'&&<>
+        <h2 id="sheet-title">안전한 대화 가이드</h2>
+        <div className="quick-safety-rules">
+          <p className="sheet-description"><strong>위험한 행동</strong><br/>성희롱, 욕설·협박, 금전 요구</p>
+          <p className="sheet-description"><strong>상대를 존중해 주세요</strong><br/>혐오·차별, 연락처 강요, 거절 후 반복되는 요구</p>
+        </div>
+        <p className="sheet-description">불편하면 바로 신고해 주세요. 신고 사유는 상대에게 공개되지 않으며, 운영자가 검토해 조치해요.</p>
+        <div className="settings-list"><button onClick={()=>{setLegalSrc('/legal/community.html');open('legal-doc');}}>커뮤니티 가이드라인 보기<ArrowRight size={16}/></button></div>
+        <div className="sheet-inline-cta"><Button display="block" onClick={closeSheet}>확인</Button></div>
+      </>}
+      {(sheet === 'welcome' || sheet === 'menu') && <><p className="eyebrow">{isWelcome ? (room?.firstGuest ? `${room.region} · 첫 손님으로 입장` : `${room?.region} ${room?.number}호점 입장`) : '메뉴판'}</p><h2 id="sheet-title">{isWelcome ? '어떤 음료로 시작할까요?' : '한 잔 더 하고 갈까요?'}</h2><p className="sheet-description">{isWelcome ? (subscription ? '구독 중이면 입장에 포인트가 차감되지 않아요.' : '입장 시 포인트가 차감돼요.') : '주문한 잔은 내 사진 옆에 놓여요.'}</p><div className="menu">{DRINKS.filter(item => !isWelcome || item.minutes === 30).map(item => <button className={selection === item.id ? 'chosen' : ''} key={item.id} aria-pressed={selection === item.id} onClick={() => {setSelection(item.id);setError('');}}><div className="drink-illustration"><Glass id={item.id}/></div><span><strong>{item.name}</strong><small>{item.note}</small><em>{`+${item.minutes}분`}</em></span><span className="menu-price">{isWelcome ? `입장 ${item.price.toLocaleString()}P` : `${item.price.toLocaleString()} P`}{selection === item.id && <Check size={16}/>}</span></button>)}</div><div className="order-summary"><span>보유 포인트<b>{wallet.balance.toLocaleString()} P</b></span><span>{subscription ? '구독 이용' : (isWelcome ? '입장 후 남는 포인트' : '주문 후 남는 포인트')}<strong>{subscription ? '0 P' : `${Math.max(0,wallet.balance-price).toLocaleString()} P`}</strong></span></div><p className="digital-note">음료는 취향을 표현하는 아이템이에요.</p>{!subscription && wallet.balance<price?<><div className="insufficient-state"><strong>{(price-wallet.balance).toLocaleString()}P가 더 필요해요</strong><span>충전 후 {isWelcome ? '입장' : '주문'}할 수 있어요.</span></div><Button className="sheet-recharge-cta" size="xlarge" display="block" onClick={()=>open('shop')}>포인트 충전하기</Button><p className="footnote">충전 후 선택한 음료로 이용해요.</p></>:<div className="sheet-inline-cta"><Button size="xlarge" display="block" disabled={busy} onClick={confirmOrder}>{subscription ? (isWelcome ? `${chosen.minutes}분 입장하기` : `주문 · ${chosen.minutes}분 연장`) : (isWelcome ? `${price.toLocaleString()} 포인트로 ${chosen.minutes}분 입장하기` : `${price.toLocaleString()} 포인트로 주문 · ${chosen.minutes}분 연장`)}</Button><p className="footnote">{subscription ? '구독 기간에는 입장·연장에 포인트가 차감되지 않아요.' : (isWelcome ? (leftover ? '다른 호점에 입장하면 남은 이용시간은 끝나요.' : '바를 나가도 이 호점 이용시간은 이어져요.') : '주문을 누르면 포인트가 차감되고 이용시간이 늘어나요.')}</p></div>}</>}
+      {sheet === 'preview' && previewRoom && <><p className="eyebrow">{previewRoom.region} {previewRoom.number}호점</p><h2 id="sheet-title">{purchasedPreview ? '지금 이 바의 손님들' : '들어가기 전에 살짝 볼까요?'}</h2>{purchasedPreview ? <><p className="sheet-description">미리보기 당시 이 바에 있던 손님들이에요. 입장할 때는 달라질 수 있어요.</p><div className="preview-portraits">{purchasedPreview.guests.map(g => <div key={g.id} className={g.gender}><img src={g.photo} alt="미리보기 손님"/></div>)}</div>{rooms[previewRoom.region].find(r => r.number === previewRoom.number)?.count === CAPACITY ? <Button size="xlarge" display="block" disabled>만석이에요</Button> : <Button size="xlarge" display="block" onClick={() => requestEntry(previewRoom)}>이 바에 입장하기</Button>}</> : <><div className="locked-preview"><LockKeyhole size={29}/><span>사진은 미리보기 구매 후 공개돼요.</span></div><p className="sheet-description">{subscription ? '구독 중이면 미리보기에 포인트가 차감되지 않아요.' : '500P로 현재 손님들의 프로필 사진을 확인해요.'}<br/>입장·자리 예약은 포함되지 않아요.</p><div className="order-summary"><span>보유 포인트<b>{wallet.balance.toLocaleString()} P</b></span><span>{subscription ? '구독 이용' : '구매 후 남는 포인트'}<strong>{subscription ? '0 P' : `${Math.max(0,wallet.balance-500).toLocaleString()} P`}</strong></span></div><Button size="xlarge" display="block" disabled={!subscription && wallet.balance < 500} onClick={buyPreview}>{subscription ? '구독으로 미리보기' : '500P로 미리보기'}</Button></>}</>}
       {sheet === 'incoming' && incoming && <><p className="eyebrow">자리 양보 요청</p><h2 id="sheet-title">자리 바꿔주실래요?</h2><p className="sheet-description">다른 손님이 지금 내 자리를 부탁했어요.<br/>{incomingSeconds}초 안에 수락하면 500P를 받아요.<br/>오늘 남은 보상 {Math.max(0,DAILY_SWAP_REWARD_LIMIT-dailySwapRewards)}회</p><div className="swap-reward"><ArrowLeftRight size={24}/><strong>+500 P</strong><span>수락과 동시에 적립</span></div><div className="actions"><Button color="dark" variant="weak" onClick={() => respondSwap(false)}>거절하기</Button><Button size="xlarge" disabled={dailySwapRewards >= DAILY_SWAP_REWARD_LIMIT} onClick={() => respondSwap(true)}>{dailySwapRewards >= DAILY_SWAP_REWARD_LIMIT ? '오늘 보상 한도에 도달했어요' : '양보하고 500P 받기'}</Button></div></>}
       {sheet === 'seat-request' && selectedGuest && <><p className="eyebrow">자리 양보 부탁</p><h2 id="sheet-title">자리 양보를 부탁할까요?</h2><p className="sheet-description">상대가 수락하면 500P를 보내고 서로 자리를 바꿔요.<br/>거절하거나 취소하면 포인트는 사용되지 않아요.<br/>같은 자리에는 한 번만 부탁할 수 있어요.<br/>오늘 남은 요청 {Math.max(0,DAILY_SWAP_REQUEST_LIMIT-dailySwapRequests)}회</p><div className="order-summary"><span>보유 포인트<b>{wallet.balance.toLocaleString()} P</b></span><span>수락 후 남는 포인트<strong>{Math.max(0,wallet.balance-500).toLocaleString()} P</strong></span></div><Button size="xlarge" display="block" disabled={wallet.balance < 500 || !!outgoing || dailySwapRequests >= DAILY_SWAP_REQUEST_LIMIT || (seatRequestCounts[`${selectedGuest.id}:${selectedGuest.seat}`] || 0) >= 1} onClick={sendSeatRequest}>{dailySwapRequests >= DAILY_SWAP_REQUEST_LIMIT ? '오늘 요청 한도에 도달했어요' : (seatRequestCounts[`${selectedGuest.id}:${selectedGuest.seat}`] || 0) >= 1 ? '이미 요청했어요' : '500 포인트로 자리 양보 부탁하기'}</Button></>}
       {sheet==='shop'&&<><h2 id="sheet-title">내 포인트</h2><div className="point-balance"><Coins size={24}/><strong>{wallet.balance.toLocaleString()}<small> P</small></strong></div>
@@ -1500,7 +1497,7 @@ function App() {
       {sheet === 'profile' && <><div className="sheet-heading-row"><div><p className="eyebrow">내 프로필</p><h2 id="sheet-title">프로필을 설정해 주세요</h2></div></div><p className="sheet-description">사진과 닉네임은 다른 손님에게 보여요.</p><input ref={upload} hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={choosePhoto}/><button className="upload" onClick={() => upload.current.click()}>{profile.photo ? <img src={profile.photo} alt="선택한 내 사진"/> : <Camera size={30}/>}<span>{profile.photo ? '사진 바꾸기' : '사진 등록하기'}</span></button><p className={`photo-note${photoCheck==='ok' || (profileVerified && photoCheck!=='checking') ? ' is-ok' : ''}`}>{photoCheck==='checking' ? '얼굴 사진을 검사하고 있어요.' : photoCheck==='ok' ? '이 사진으로 진행할 수 있어요.' : profileVerified ? '확인된 사진이에요. 변경 시 다시 검사해요.' : '본인 얼굴 사진을 사용해 주세요.'}</p><label className="profile-field"><span>닉네임</span><input value={profile.nickname} maxLength={16} aria-invalid={!!nicknameError} onChange={e=>setProfile(v=>({...v,nickname:e.target.value}))} placeholder="닉네임을 입력해 주세요"/>{nicknameError&&<small className="field-error">{nicknameError}</small>}</label><div className="gender-choice">{[['male','남성'],['female','여성']].map(([value,label]) => <button key={value} aria-pressed={profile.gender === value} className={profile.gender === value ? `selected ${value}` : ''} onClick={() => setProfile(v => ({...v,gender:value}))}>{label}{profile.gender === value && <Check size={17}/>}</button>)}</div><p className="profile-save-note">{profileVerified ? '변경한 내용을 저장해 주세요.' : '사진을 저장하려면 얼굴 확인이 필요해요.'}</p><Button size="xlarge" display="block" disabled={!profile.photo || !profile.gender || !!nicknameError || photoCheck==='checking' || (!profileVerified && photoCheck!=='ok')} onClick={() => profileVerified ? saveProfile() : open('verify-profile')}>{profileVerified ? '프로필 저장하기' : '얼굴 확인하기'}</Button></>}
       {sheet === 'verify-profile' && <><p className="eyebrow">본인 얼굴 확인</p><h2 id="sheet-title">실제 얼굴을 촬영해 주세요</h2><FaceConsent checked={faceConsent} onChange={changeFaceConsent}/><div className={`camera-preview verification-camera is-${verificationGuide.stage}`}><video ref={cameraVideo} className="camera-video-hidden" muted playsInline disablePictureInPicture controls={false} webkit-playsinline="true" x-webkit-airplay="deny" tabIndex={-1} aria-hidden="true"/><canvas ref={cameraView} className="camera-view" aria-label="본인 얼굴 촬영 화면"/><i className={`camera-guide motion-${verificationGuide.motion || 'none'}`} aria-hidden="true"/><canvas ref={cameraCanvas} hidden/><CameraVerificationStatus guide={verificationGuide} message={verificationMessage} state={verificationState} elapsed={Math.max(0,Math.floor((now-verificationStartedAt)/1000))}/></div><div className="camera-actions">{verificationState==='verified'?<Button size="xlarge" display="block" disabled={!faceConsent||!photoProof||busy} onClick={saveProfile}>프로필 저장하기</Button>:verificationState==='unavailable'?<Button size="xlarge" display="block" onClick={() => { setSheetState(null); setTimeout(() => setSheetState('verify-profile'), 0); }}>권한 다시 요청하기</Button>:<Button size="xlarge" display="block" disabled={verificationState!=='ready'||!faceConsent} onClick={captureVerification}>{verificationState==='checking'?'얼굴 확인 중…':verificationState==='starting'?'카메라 준비 중…':verificationGuide.stage==='error'?'다시 촬영하기':'촬영 시작'}</Button>}{verificationState==='checking'&&<button type="button" className="camera-cancel" onClick={cancelVerification}>검사 중단</button>}</div></>}
       {sheet === 'account-transfer'&&<AccountTransferCode info={accountTransfer} now={now} onCopy={copyAccountTransfer} onRenew={createAccountTransfer} busy={busy}/>}
-      {sheet === 'settings' && <><p className="eyebrow">설정</p><h2 id="sheet-title">도움이 필요하신가요?</h2><p className="sheet-description">서비스 이용과 계정을 관리할 수 있어요.</p><div className="settings-group"><span>도움말</span><div className="settings-list"><button onClick={()=>open('support')}>고객센터<ArrowRight size={16}/></button><button onClick={()=>open('inquiry')}>신고·문의<ArrowRight size={16}/></button><button onClick={()=>open('legal')}>약관 및 정책<ArrowRight size={16}/></button>{config?.voiceEvidenceReady&&<button disabled={busy} onClick={revokeVoiceConsent}>음성 안전 처리 동의 철회<ArrowRight size={16}/></button>}</div></div><div className="settings-group"><span>알림</span><div className="settings-list"><div className="settings-toggle"><span><strong>빈자리 알림</strong><small>만석 호점에 자리가 나면 알려드려요</small></span><button type="button" role="switch" aria-checked={waitlistAlerts||waitlist.length>0} className={`alert-switch${waitlistAlerts||waitlist.length>0?' is-on':''}`} onClick={()=>setWaitlistAlertEnabled(!(waitlistAlerts||waitlist.length>0))}><i/></button></div></div></div><div className="settings-group"><span>계정 및 결제</span><div className="settings-list">{ANDROID_ACCOUNT_LINK_VISIBLE&&config?.accountTransferReady&&insideToss()&&<button disabled={busy} onClick={createAccountTransfer}>Android 계정 연결<ArrowRight size={16}/></button>}<button onClick={openSubscriptionManager}>결제·정기 구독 관리<ArrowRight size={16}/></button><button onClick={()=>open('withdraw')} className="danger-link">회원탈퇴<ArrowRight size={16}/></button></div></div></>}
+      {sheet === 'settings' && <><p className="eyebrow">설정</p><h2 id="sheet-title">도움이 필요하신가요?</h2><p className="sheet-description">서비스 이용과 계정을 관리할 수 있어요.</p><div className="settings-group"><span>도움말</span><div className="settings-list"><button onClick={()=>open('support')}>고객센터<ArrowRight size={16}/></button><button onClick={()=>open('inquiry')}>신고·문의<ArrowRight size={16}/></button><button onClick={()=>open('legal')}>약관 및 정책<ArrowRight size={16}/></button>{config?.voiceEvidenceReady&&<button disabled={busy} onClick={revokeVoiceConsent}>음성 안전 처리 동의 철회<ArrowRight size={16}/></button>}</div></div><div className="settings-group"><span>계정 및 결제</span><div className="settings-list">{ANDROID_ACCOUNT_LINK_VISIBLE&&config?.accountTransferReady&&insideToss()&&<button disabled={busy} onClick={createAccountTransfer}>Android 계정 연결<ArrowRight size={16}/></button>}<button onClick={openSubscriptionManager}>결제·정기 구독 관리<ArrowRight size={16}/></button><button onClick={requestWithdrawal} className="danger-link">회원탈퇴<ArrowRight size={16}/></button></div></div></>}
       {sheet === 'region-request' && <><p className="eyebrow">지역 추가 요청</p><h2 id="sheet-title">어디에서 만나고 싶나요?</h2><p className="sheet-description">원하는 지역을 골라 주세요.</p>{REGION_REQUEST_GROUPS.map(group=><div className="region-request-section" key={group.title}><span>{group.title}</span><div className="region-request-grid">{group.options.map(item=><button key={item} className={requestedRegion===item?'selected':''} onClick={()=>{setRequestedRegion(item);setShowCustomRegion(false);}}>{item}</button>)}{group.title==='주요 도시'&&<button style={{borderStyle:'dashed',borderWidth:'1.5px',borderColor:'#b7c0cb'}} className={`custom-region-toggle ${showCustomRegion?'selected':''}`} onClick={()=>{setShowCustomRegion(v=>!v);setRequestedRegion('');}}>직접 입력</button>}</div></div>)}{showCustomRegion&&<input className="custom-region-input" value={customRegion} onChange={e=>setCustomRegion(e.target.value)} placeholder="지역명을 입력해 주세요" maxLength={20}/>}<Button display="block" disabled={!requestedRegion && !(showCustomRegion&&customRegion.trim())} onClick={submitRegion}>이 지역 추가 요청하기</Button><p className="digital-note">요청 건수와 우선순위에 따라 지역을 추가해요.</p></>}
       {sheet === 'legal' && <><p className="eyebrow">약관 및 정책</p><h2 id="sheet-title">혼술바 정책</h2><p className="sheet-description">서비스 이용에 필요한 약관과 정책을 확인할 수 있어요.</p><div className="settings-list">{LEGAL_DOCS.map(([label,href])=><button key={href} onClick={()=>{setLegalSrc(href);open('legal-doc');}}>{label}<ArrowRight size={16}/></button>)}</div></>}
       {sheet === 'legal-doc' && <><p className="eyebrow">약관 및 정책</p><h2 id="sheet-title">{LEGAL_DOCS.find(([_,href])=>href===legalSrc)?.[0]||'정책'}</h2><iframe className="legal-frame" src={legalSrc} title="약관 문서"/><Button display="block" variant="weak" color="dark" onClick={()=>open('legal')}>목록으로</Button></>}
@@ -1508,12 +1505,21 @@ function App() {
       {sheet === 'faq' && <><p className="eyebrow">자주 묻는 질문</p><h2 id="sheet-title">혼술바 이용 안내</h2><p className="sheet-description">자주 궁금해하는 내용을 모아봤어요.</p><div className="faq-list">{FAQ_ITEMS.map(([question,answer],index)=><div className={`faq-item ${openFaq===index?'open':''}`} key={question}><button onClick={()=>setOpenFaq(openFaq===index?null:index)}><span>{question}</span>{openFaq===index?<ChevronDown size={17}/>:<ArrowRight size={17}/>}</button>{openFaq===index&&<p>{answer}</p>}</div>)}</div><Button display="block" variant="weak" color="dark" onClick={()=>open('inquiry')}>답을 찾지 못했어요 · 문의하기</Button></>}
       {sheet === 'inquiry' && <><p className="eyebrow">신고·문의</p><h2 id="sheet-title">문의 내용을 남겨 주세요</h2><p className="sheet-description">확인 후 운영팀이 순서대로 답변드릴게요.</p><div className="form-choice">{['결제·구독 문의','이용 방법 문의','서비스 신고','기타 문의'].map(item=><button key={item} className={inquiryType===item?'selected':''} onClick={()=>setInquiryType(item)}>{item}</button>)}</div><textarea className="support-textarea" value={inquiryMessage} onChange={e=>setInquiryMessage(e.target.value)} placeholder={inquiryType==='서비스 신고'?'신고할 내용을 자세히 입력해 주세요.':'문의 내용을 입력해 주세요.'} maxLength={500}/><div className="form-footer"><span>{inquiryMessage.length}/500</span><Button size="large" disabled={!inquiryMessage.trim()} onClick={submitInquiry}>{inquiryType==='서비스 신고'?'신고 접수하기':'문의 접수하기'}</Button></div></>}
       {sheet === 'inquiry-detail' && selectedInquiry && <><p className="eyebrow">문의 답변</p><h2 id="sheet-title">운영팀 답변</h2><div className="inquiry-message"><small>{selectedInquiry.type}</small><p>{selectedInquiry.message}</p></div><div className="inquiry-answer"><strong>운영팀</strong><p>{selectedInquiry.answer || '확인 중이에요. 답변은 알림으로 알려드려요.'}</p></div><Button display="block" variant="weak" color="dark" onClick={()=>open('inquiry')}>문의 남기기</Button></>}
-      {sheet === 'withdraw' && <><p className="eyebrow">회원탈퇴</p><h2 id="sheet-title">정말 탈퇴할까요?</h2><p className="sheet-description">탈퇴하면 프로필·이용 기록을 복구할 수 없어요. 구독 중이면 먼저 해지해 주세요.</p>{subscription&&!subscriptionCancelAt&&<p className="error">지금은 구독 중이라, 해지한 뒤에 탈퇴할 수 있어요.</p>}<div className="actions">{subscription&&!subscriptionCancelAt?
-        <Button size="xlarge" display="block" onClick={()=>{setOpenFaq(4);open('faq');}}>해지 방법 보기</Button>
-      :<>
-        <Button color="dark" variant="weak" onClick={closeSheet}>취소</Button>
-        <Button size="xlarge" disabled={busy} onClick={withdraw}>탈퇴하기</Button>
-      </>}</div></>}
+      {(sheet === 'withdraw-subscription' || (sheet === 'withdraw' && mustCancelSubscription)) && <>
+        <p className="eyebrow">회원탈퇴</p>
+        <h2 id="sheet-title">구독을 먼저 해지해 주세요</h2>
+        <p className="sheet-description">해지한 뒤 혼술바 설정에서 다시 탈퇴할 수 있어요.</p>
+        <Button size="xlarge" display="block" onClick={openCancellationFaq}>FAQ에서 해지 방법 보기</Button>
+      </>}
+      {sheet === 'withdraw' && !mustCancelSubscription && <>
+        <p className="eyebrow">회원탈퇴</p>
+        <h2 id="sheet-title">정말 탈퇴할까요?</h2>
+        <p className="sheet-description">탈퇴하면 프로필·이용 기록을 복구할 수 없어요.</p>
+        <div className="actions">
+          <Button color="dark" variant="weak" onClick={closeSheet}>취소</Button>
+          <Button size="xlarge" disabled={busy} onClick={withdraw}>탈퇴하기</Button>
+        </div>
+      </>}
       {sheet === 'move' && <><h2 id="sheet-title">옆자리 분께 인사하고 갈까요?</h2><p className="sheet-description">가볍게 인사를 건네고 자리를 옮겨요.</p><div className="actions"><Button color="dark" variant="weak" onClick={() => setSheet(null)}>머무르기</Button><Button size="xlarge" onClick={() => commitMove(pendingSeat)}>자리 옮기기</Button></div></>}
       {sheet === 'guest' && selectedGuest && <><div className="guest-photo"><img src={selectedGuest.photo} alt="선택한 손님"/><Glass id={selectedGuest.drinkId}/></div><h2 id="sheet-title">{selectedGuest.nickname || '혼술 친구'}</h2><p className="guest-meta"><span>{DRINKS.find(d => d.id === selectedGuest.drinkId)?.name} 마시는 중</span><span aria-hidden="true">·</span><span>{partners[selectedGuest.id]&&partners[selectedGuest.id]!=='me'?'옆자리와 대화 중':mutedGuests.includes(selectedGuest.id)?(reportedIds.has(selectedGuest.id)?'이용자 보호로 연결되지 않아요':'음소거되어 들리지 않아요'):selectedGuest.mic===false?'마이크가 꺼져 있어요':`내 자리에서 ${Math.round(audioGain({id:'me',seat},selectedGuest,facing,partners,mutedGuests)*100)}%로 들려요`}</span></p>
         {partners[selectedGuest.id]&&partners[selectedGuest.id]!=='me'?<div className="guest-focus-panel"><MessageCircleMore size={18}/><p>지금 1:1로 대화하고 있어요.<br/>다른 사람에게는 목소리가 들리지 않아요.</p><Button size="large" variant="weak" disabled={waveSent.includes(selectedGuest.id)} onClick={()=>sendWave(selectedGuest)}>{waveSent.includes(selectedGuest.id)?'인사를 남겼어요':'손 흔들기'}</Button></div>:activeFocus===selectedGuest.id?<Button display="block" variant="weak" onClick={()=>{endFocus();setSheet(null);}}>전체 대화로 돌아가기</Button>:<div className="guest-focus-panel"><Button size="large" display="block" disabled={!adjacent(seat,selectedGuest.seat)||!!activeFocus||!!focusRequest||mutedGuests.includes(selectedGuest.id)||seconds===0} onClick={()=>requestFocus(selectedGuest)}>이 옆자리와만 대화하기</Button><p>{!adjacent(seat,selectedGuest.seat)?'바로 옆에 앉아 있을 때 이용할 수 있어요.':'수락하면 둘만 들리고, 자리를 옮기면 전체 대화로 돌아가요.'}</p></div>}

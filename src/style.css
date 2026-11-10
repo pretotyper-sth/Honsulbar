@@ -515,3 +515,18 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .account-transfer-footnote { margin:20px 0 0; color:#8b95a1; font-size:12px; line-height:1.6; word-break:keep-all; }
 .account-transfer-entry { margin-top:16px; }
 .account-transfer-entry .profile-field { margin-top:20px; }
+.quick-home-hero{text-align:center;padding:18px 0}
+.quick-home-hero img{width:88px;height:88px;border-radius:24px}
+.quick-home-hero p{color:#4e5968;font-size:14px}
+.quick-home-card{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;margin:10px 0;border:1px solid #e5edf7;border-radius:16px}
+.quick-home-card button{flex-shrink:0}
+.quick-guide{align-self:flex-start;margin:4px 0 16px}
+.quick-home-preview .lobby-footer button+button{margin-top:8px}
+.quick-safety-rules .sheet-description{padding:10px 12px;margin-bottom:8px;background:#f2f6fc;border-radius:12px}
+.quick-safety-rules{margin-bottom:12px}
+.quick-safety-rules strong{color:#191f28}
+.quick-result-hero{padding-top:40px;word-break:keep-all}
+.quick-result-hero>svg{color:#3182f6;flex:none}
+
+.quick-wait-spinner{margin:0 auto 16px}
+@media(prefers-reduced-motion:reduce){.quick-wait-spinner{animation:none}}
