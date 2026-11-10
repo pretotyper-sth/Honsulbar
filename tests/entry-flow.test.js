@@ -40,7 +40,7 @@ test('entry waits for the server, blocks double taps and does not undo success f
 const gateSource=source.slice(source.indexOf('  function proceedEntry('),source.indexOf('  useEffect(() => {\n    if (pendingEntry'));
 test('registered but unverified profile is sent to verification before the drink picker',()=>{
  const calls=[];
- const env={entryRequirement,config:{voiceEvidenceReady:false},member:{adult:true,photo:'/existing',gender:'male',photoChecked:false},region:'서울',setEntryRoom:()=>{},setPendingEntry:()=>{},openProfileEditor:()=>calls.push('profile'),leftoverFor:()=>false,open:value=>calls.push(value),setSelection:()=>{}};
+ const env={entryRequirement,hasVoiceConsent:true,member:{adult:true,photo:'/existing',gender:'male',photoChecked:false},region:'서울',setEntryRoom:()=>{},setPendingEntry:()=>{},openProfileEditor:()=>calls.push('profile'),leftoverFor:()=>false,open:value=>calls.push(value),setSelection:()=>{}};
  vm.createContext(env);vm.runInContext(gateSource,env);env.proceedEntry({number:1});
  assert.deepEqual(calls,['profile']);
 });

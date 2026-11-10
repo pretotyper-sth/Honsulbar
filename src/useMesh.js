@@ -17,9 +17,11 @@ function waitForIce(pc) {
 
 // Full-mesh voice between guests in the same room. The member with the smaller id always offers,
 // so both sides never create competing offers for the same pair.
-export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains, evidenceEnabled = false }) {
+export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains, evidenceEnabled = false, recordingEnabled = false }) {
   const peers = useRef(new Map());
   const context = useRef(null);
+  const recording = useRef(null);
+  const [recordingStream,setRecordingStream] = useState(null);
   const track = useRef(null);
   const gainValues = useRef({});
   const active = useRef(enabled);
@@ -34,6 +36,11 @@ export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains, e
     if (!context.current) {
       const AudioContext = window.AudioContext || window.webkitAudioContext;
       context.current = new AudioContext();
+
+    }
+    if (recordingEnabled && !recording.current) {
+      recording.current = context.current.createMediaStreamDestination();
+      setRecordingStream(recording.current.stream);
     }
     if (context.current.state === 'suspended') context.current.resume().catch(() => {});
     return context.current;
@@ -71,6 +78,7 @@ export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains, e
       peer.source.connect(peer.analyser);
       peer.source.connect(peer.gain);
       peer.gain.connect(ctx.destination);
+      if (recording.current) peer.gain.connect(recording.current);
       if (evidenceEnabled) {
         peer.evidence = createVoiceBuffer();
         // Capture only this peer's audible output. Zero output avoids a second playback path.
@@ -183,5 +191,5 @@ export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains, e
     if(document.hidden || !enabled || !evidenceEnabled || !(gains[id]>0) || !peer?.lastSampleAt || Date.now()-peer.lastSampleAt>2000)return null;
     return evidencePayload(peer.evidence);
   };
-  return { receive, talking, resume: audio, evidenceFor };
+  return { receive, talking, resume: audio, evidenceFor, recordingStream };
 }
