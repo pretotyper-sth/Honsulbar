@@ -505,6 +505,8 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 /* Overlays never change the app scroller or the native WebView layout. */
 .exit-backdrop { position:fixed; inset:0; z-index:2000; display:flex; align-items:flex-end; justify-content:center; padding:calc(var(--ait-chrome-top) + 16px) 16px max(20px,env(safe-area-inset-bottom)); background:#0005; }
 .exit-confirm { width:100%; max-width:360px; max-height:calc(100dvh - var(--ait-chrome-top) - 36px); overflow:auto; padding:24px; border-radius:24px; color:#191f28; background:#fff; box-shadow:0 8px 32px #0004; }
+.exit-backdrop-centered { align-items:center; }
+.exit-confirm p { margin:-12px 0 20px; color:#6b7684; font-size:15px; line-height:1.55; }
 .exit-confirm h2 { margin:0 0 24px; font-size:20px; line-height:1.4; overflow-wrap:anywhere; }
 
 .account-transfer-panel .sheet-description { margin-bottom:24px; line-height:1.7; }
@@ -527,11 +529,12 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .quick-safety-rules strong{color:#191f28}
 .quick-result-hero{padding-top:40px;word-break:keep-all}
 .quick-results-list { display:grid; gap:12px; margin:14px 0 20px; }
-.quick-result-card { padding:16px; border:1px solid #e5edf7; border-radius:16px; }
-.quick-result-title { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-.quick-result-title span { color:#6b7684; font-size:13px; }
-.quick-result-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:12px; }
+.quick-result-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; padding:0 16px 14px; }
 .quick-result-actions button { white-space:normal; }
 
 .quick-wait-spinner{margin:0 auto 16px}
 @media(prefers-reduced-motion:reduce){.quick-wait-spinner{animation:none}}
+
+.quick-region-options{display:flex;flex-direction:column;margin-top:12px}
+.quick-region-options button{display:flex;align-items:center;justify-content:space-between;min-height:56px;width:100%;padding:12px 0;background:transparent;color:#333d4b;font:inherit;text-align:left}
+.quick-region-options button svg{color:#3182f6}
