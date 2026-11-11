@@ -34,6 +34,7 @@ const MIGRATIONS = [
   '20261108_z_preview_before_profile.sql',
   '20261109_signup_consent.sql',
   '20261110_full_voice_recordings.sql',
+  '20261111_toss_quick_match.sql',
 ];
 const TABLES = new Set([
   'hb_safety_ops', 'hb_voice_evidence', 'hb_voice_consents', 'hb_push_devices', 'hb_android_ad_claims', 'hb_account_transfers', 'hb_auth_cleanup',

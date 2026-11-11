@@ -526,7 +526,12 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .quick-safety-rules{margin-bottom:12px}
 .quick-safety-rules strong{color:#191f28}
 .quick-result-hero{padding-top:40px;word-break:keep-all}
-.quick-result-hero>svg{color:#3182f6;flex:none}
+.quick-results-list { display:grid; gap:12px; margin:14px 0 20px; }
+.quick-result-card { padding:16px; border:1px solid #e5edf7; border-radius:16px; }
+.quick-result-title { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.quick-result-title span { color:#6b7684; font-size:13px; }
+.quick-result-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:12px; }
+.quick-result-actions button { white-space:normal; }
 
 .quick-wait-spinner{margin:0 auto 16px}
 @media(prefers-reduced-motion:reduce){.quick-wait-spinner{animation:none}}

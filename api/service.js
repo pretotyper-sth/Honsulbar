@@ -16,18 +16,18 @@ import {AppError,authenticate,admin,database,rpc,toss,decryptField,isAdult,newTo
 const snapshot = args => safetySnapshot(args, {database,rpc});
 const allowedActions=new Set(['state','profile','ticket','read','region','waitlist','enter','order','leave','heartbeat','move','request','respond','cancel','focus-end','preview','signal','ad-start','ad-claim','block']);
 const origins=new Set(['https://honsulbar-app.vercel.app','https://honsulbar.apps.tossmini.com','https://honsulbar.private-apps.tossmini.com','https://honsulbar.web.tossmini.com','https://honsulbar.private-web.tossmini.com']);
-function withPhotos(value,viewer){
+function withPhotos(value,viewer,quick=false){
  const expires=Math.floor(Date.now()/60000)*60+300;
- if(Array.isArray(value))return value.map(item=>withPhotos(item,viewer));
+ if(Array.isArray(value))return value.map(item=>withPhotos(item,viewer,quick));
  if(!value||typeof value!=='object')return value;
  const out={};
- for(const [k,v] of Object.entries(value))out[k]=k==='photo'&&typeof v==='number'&&value.id?`/api/service?photo=${value.id}&v=${v}&viewer=${viewer}&expires=${expires}&s=${signPhoto(value.id,v,viewer,expires)}`:withPhotos(v,viewer);
+ for(const [k,v] of Object.entries(value))out[k]=k==='photo'&&typeof v==='number'&&value.id?`/api/service?photo=${value.id}&v=${v}&viewer=${viewer}&expires=${expires}&s=${signPhoto(value.id,v,viewer,expires)}${quick?'&quick=1':''}`:withPhotos(v,viewer,quick);
  return out;
 }
 async function sendPhoto(req,res){
  const {photo:id,v,viewer,expires,s}=req.query||{};
  if(!/^[\da-f-]{36}$/.test(id||'')||!/^\d{1,16}$/.test(v||'')||!/^([\da-f-]{36})$/.test(viewer||'')||!photoMatches(id,v,viewer,expires,s))return res.status(404).end();
- if(!await rpc('hb_can_view_photo',{p_viewer:viewer,p_target:id,p_version:Number(v)}))return res.status(404).end();
+ if(!await rpc(req.query?.quick==='1'?'hb_can_view_quick_photo':'hb_can_view_photo',{p_viewer:viewer,p_target:id,p_version:Number(v)}))return res.status(404).end();
  const [m]=await database(`hb_members?id=eq.${id}&select=photo`);
  const match=/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(m?.photo||'');
  if(!match)return res.status(404).end();
@@ -341,6 +341,11 @@ export default async function handler(req,res) {
    await rpc('hb_credit_order',{p_member:member,p_order:body.orderId,p_sku:order.sku,p_points:product.points,p_amount:product.won});
    return res.json({ok:true,state:withPhotos(await snapshot({p_member:member}),member)});
   }
+  if(action==='quick-search'){
+   const {command,region}=body.data||{};
+   if(!['start','poll','cancel'].includes(command)||!['서울','경기','인천','부산','대구'].includes(region))throw new AppError('검색 조건을 확인해 주세요.');
+   return res.json({result:withPhotos(await rpc('hb_quick_search',{p_member:member,p_command:command,p_region:region}),member,true)});
+  }
   if(!allowedActions.has(action))throw new AppError('지원하지 않는 요청이에요.');
   if(action==='profile'){
    const data=body.data||{};
@@ -351,11 +356,15 @@ export default async function handler(req,res) {
    if (eligibility?.adult !== true) throw new AppError('성인 확인을 갱신하려면 토스 로그인을 다시 진행해 주세요.',403);
    if (eligibility.photo_checked !== true) throw new AppError('등록한 프로필 사진의 얼굴 확인을 먼저 완료해 주세요.',403);
   }
-  const result=await rpc('hb_action',{p_member:member,p_action:action,p_data:body.data||{}});
+  const result=action==='enter'
+   ? await rpc('hb_quick_enter',{p_member:member,p_data:body.data||{}})
+   : await rpc('hb_action',{p_member:member,p_action:action,p_data:body.data||{}});
+  if(action==='leave')await rpc('hb_quick_search',{p_member:member,p_command:'cancel',p_region:'서울'}).catch(()=>{});
   if(action==='heartbeat'&&typeof (body.data||{}).mic==='boolean')await rpc('hb_set_mic',{p_member:member,p_mic:!!body.data.mic}).catch(()=>{});
   if(action==='ticket')await dispatchOutbox().catch(()=>{});
   if(action==='signal')return res.json({ok:true});
-  const state=await snapshot({p_member:member,p_after:Math.max(0,Number(body.after)||0),p_limit:Math.min(100,Math.max(10,Number(body.limit)||10))});
+  let state=await snapshot({p_member:member,p_after:Math.max(0,Number(body.after)||0),p_limit:Math.min(100,Math.max(10,Number(body.limit)||10))});
+  if(action!=='heartbeat')state=await rpc('hb_quick_visible_rooms',{p_state:state});
   return res.json({result:withPhotos(result,member),state:withPhotos(state,member)});
  }catch(error){console.error(error);return res.status(error.status||500).json({error:error instanceof AppError?error.message:'요청을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.'});}
 }

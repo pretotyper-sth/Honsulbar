@@ -2,11 +2,10 @@ import { CAPACITY, REGIONS } from './model.js';
 
 const PREFERRED_REGION_WAIT_MS = 20_000;
 
-export function findAvailableBars(rooms, preferredRegion, elapsed, excluded = []) {
+export function findAvailableBars(rooms, preferredRegion, elapsed) {
   function availableIn(region) {
     return (rooms[region] || [])
-      .filter(room => room.count > 0 && room.count < CAPACITY && !room.hasReportedGuest &&
-        !excluded.includes(`${region}:${room.number}`))
+      .filter(room => room.count > 0 && room.count < CAPACITY && !room.hasReportedGuest)
       .sort((a, b) => Math.abs(a.count - 7) - Math.abs(b.count - 7))
       .map(room => ({ ...room, region }));
   }

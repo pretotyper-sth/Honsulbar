@@ -247,10 +247,12 @@ const DEFAULT_ICE = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.goog
 
 const QuickRegionOptions = React.lazy(() => import('./QuickRegionOptions.jsx'));
 
-function App() {
-  const [quickRoom, setQuickRoom] = useState(null);
-  const [skippedQuickRooms, setSkippedQuickRooms] = useState([]);
+function App({qaControls} = {}) {
+  const [quickResultRegion, setQuickResultRegion] = useState(null);
   const [quickSearchStarted, setQuickSearchStarted] = useState(0);
+  const [quickOffer, setQuickOffer] = useState(null);
+  const [quickOfferEnded, setQuickOfferEnded] = useState(false);
+  const quickSearchRequest = useRef(Promise.resolve());
   const [config, setConfig] = useState(null);
   const [server, setServer] = useState(null);
   const [syncedAt, setSyncedAt] = useState(Date.now());
@@ -420,7 +422,7 @@ function App() {
   const neighbors = guests.filter(g => adjacent(seat, g.seat));
   const soloPaused = inside && visit?.soloPaused === true;
   const seconds = visit ? tick(visit.seconds, inside && (visit.seat === 11 || soloPaused)) : 0;
-  const voice = useVoice(screen === 'bar', setToast, seconds > 0 || seat === 11);
+  const voice = useVoice(import.meta.env.VITE_QUICK_SEARCH_QA !== '1' && screen === 'bar', setToast, seconds > 0 || seat === 11);
   const pendingRequests = server?.requests || [];
   const incomingRequest = pendingRequests.find(r => r.receiver === me && r.kind === 'swap');
   const incoming = incomingRequest ? { id: incomingRequest.id, guestId: incomingRequest.sender, expiresAt: Date.parse(incomingRequest.expires_at) } : null;
@@ -436,6 +438,10 @@ function App() {
   const price = chosen.price;
   const previewKey = previewRoom ? `${previewRoom.region}:${previewRoom.number}` : null;
   const purchasedPreview = previews[previewKey];
+  const previewOffer = previewRoom?.quickOfferId === quickOffer?.id ? quickOffer : null;
+  const previewGuests = previewRoom?.quickOfferId
+    ? (previewOffer ? [{...previewOffer.guest, photo:assetUrl(previewOffer.guest.photo)}] : null)
+    : purchasedPreview?.guests;
   const dailySwapRewards = server?.swapRewardsToday ?? 0;
   const dailySwapRequests = server?.swapRequestsToday ?? 0;
   const seatRequestCounts = useMemo(() => Object.fromEntries((server?.requestedSeats || []).map(key => [key, 1])), [server?.requestedSeats]);
@@ -457,7 +463,7 @@ function App() {
   })), [guests, soundOn, mutedGuests, partners, seat, audioFacing]);
   const iceServers = useMemo(() => config?.iceServers?.length ? config.iceServers : DEFAULT_ICE, [config]);
   const sending = voice.mic && (seconds > 0 || seat === 11) ? voice.stream : null;
-  const mesh = useMesh({ enabled: (!config?.fullVoiceReady || recordingBlocked.current !== visit?.id) && screen === 'bar' && !!me && !!member?.photoChecked && !server?.safetyPaused && hasVoiceConsent, evidenceEnabled: !!config?.voiceEvidenceReady && hasVoiceConsent, recordingEnabled: !!config?.fullVoiceReady, selfId: me, peerIds: voicePeerIds(guests,partners,reportedIds), stream: sending, iceServers, gains });
+  const mesh = useMesh({ enabled: import.meta.env.VITE_QUICK_SEARCH_QA !== '1' && (!config?.fullVoiceReady || recordingBlocked.current !== visit?.id) && screen === 'bar' && !!me && !!member?.photoChecked && !server?.safetyPaused && hasVoiceConsent, evidenceEnabled: !!config?.voiceEvidenceReady && hasVoiceConsent, recordingEnabled: !!config?.fullVoiceReady, selfId: me, peerIds: voicePeerIds(guests,partners,reportedIds), stream: sending, iceServers, gains });
   useFullVoiceRecording({
     enabled: !!config?.fullVoiceReady && hasVoiceConsent && screen === 'bar' &&
       recordingBlocked.current !== visit?.id && guests.some(person => gains[person.id] > 0),
@@ -967,6 +973,7 @@ function App() {
     } catch { done(); setToast('결제를 시작하지 못했어요.'); }
   }
   function requestPreview(target) {
+    if (target.quickOfferId) { setPreviewRoom(target); open('preview'); return; }
     if (rooms[target.region || region]?.find(r => r.number === target.number)?.hasReportedGuest) { setToast('이용자 보호를 위해 현재 이용할 수 없는 바예요.'); return; }
     const current = rooms[target.region || region]?.find(room => room.number === target.number) || target;
     if (!(current.count > 0)) return;
@@ -1125,7 +1132,7 @@ function App() {
   }
   function proceedEntry(target, { confirm, consented } = {}) {
     if(!hasVoiceConsent && !consented) { setPendingEntry(target); setVoiceConsentChecked(false); open('voice-consent'); return; }
-    setEntryRoom({ region: target.region || region, number: target.number, count: target.count, firstGuest: target.firstGuest });
+    setEntryRoom({ region: target.region || region, number: target.number, count: target.count, firstGuest: target.firstGuest, quickOfferId: target.quickOfferId });
     const requirement = entryRequirement(member);
     if (requirement === 'adult') {
       clearSession();setSheet(null);setScreen('onboarding');
@@ -1133,7 +1140,7 @@ function App() {
     }
     if (requirement) { setPendingEntry(target);openProfileEditor(); return; }
     setPendingEntry(null);
-    if (!target.firstGuest && leftoverFor(target)) {
+    if (!target.firstGuest && !target.quickOfferId && leftoverFor(target)) {
       if (confirm) open('rejoin');
       else rejoinRoom(target);
       return;
@@ -1146,6 +1153,10 @@ function App() {
 
   function requestEntry(target, { confirm } = {}) {
     if (!target) return;
+    if (target.quickOfferId) {
+      if (quickOffer?.id === target.quickOfferId) proceedEntry(target, {confirm});
+      return;
+    }
     const regionKey = target.region || region;
     target = rooms[regionKey]?.find(r => r.number === target.number) || { ...target, region: regionKey };
     if ((target.count ?? 0) >= CAPACITY) return;
@@ -1159,7 +1170,7 @@ function App() {
     if (welcome) entering.current = true;
     try {
       if (welcome) {
-        await run('enter', { region: room.region, number: room.number, drinkId: selection, ...(room.firstGuest ? {firstGuest:true} : {}) });
+        await run('enter', { region: room.region, number: room.number, drinkId: selection, ...(room.firstGuest ? {firstGuest:true} : {}), ...(room.quickOfferId ? {quickOfferId:room.quickOfferId} : {}) });
         resetConversation();setWaveSent([]);setSpeaker(false);setSoundOn(true);setMutedGuests([]);
         // Playback readiness cannot turn a committed entry into a failed purchase.
         try { mesh.resume(); } catch {}
@@ -1304,20 +1315,78 @@ function App() {
   const time = `${String(Math.floor(seconds / 60)).padStart(2,'0')}:${String(seconds % 60).padStart(2,'0')}`;
   const localRooms = rooms[region];
   const recommended = localRooms.filter(r => r.count < CAPACITY && !r.hasReportedGuest).sort((a,b) => Math.abs(a.count - 7) - Math.abs(b.count - 7))[0];
-  function findQuickRoom(excluded) {
-    setSkippedQuickRooms(excluded);
-    setQuickSearchStarted(Date.now());
-    setQuickRoom(null);
-  }
-  const quickTarget = quickRoom && rooms[quickRoom.region]?.some(r =>
-    r.number === quickRoom.number && r.count > 0 && r.count < CAPACITY && !r.hasReportedGuest
-  ) ? quickRoom : null;
-  const quickWaiting = !!quickSearchStarted && !quickTarget;
+  const quickRooms = quickSearchStarted ? findAvailableBars(rooms, region, now - quickSearchStarted) : [];
+  const resultRooms = quickOffer
+    ? [{region:quickOffer.region, number:quickOffer.number, quickOfferId:quickOffer.id},
+      ...quickRooms.filter(room => room.region !== quickOffer.region || room.number !== quickOffer.number)]
+    : quickRooms;
+  const quickRegions = [...new Set(resultRooms.map(room => room.region))];
+  const activeQuickRegion = quickRegions.includes(quickResultRegion) ? quickResultRegion : quickRegions[0];
+  const quickWaiting = !!quickSearchStarted && !resultRooms.length;
+  const canAutoMatch = !entryRequirement(member);
+  const searchingForMatch = screen === 'lobby' && !browseRooms && !!quickSearchStarted &&
+    (quickWaiting || !!quickOffer) && canAutoMatch && !quickOfferEnded && !server?.safetyPaused;
+
   useEffect(() => {
-    if (!quickWaiting || screen !== 'lobby' || browseRooms || server?.safetyPaused) return;
-    const [match] = findAvailableBars(rooms, region, now - quickSearchStarted, skippedQuickRooms);
-    if (match) setQuickRoom(match);
-  }, [quickWaiting, screen, browseRooms, server?.safetyPaused, rooms, region, now, quickSearchStarted, skippedQuickRooms]);
+    if (!searchingForMatch) return;
+    let stopped = false, timer, found = false, started = false;
+    async function search() {
+      if (stopped) return;
+      if (!document.hidden) {
+        const command = started ? 'poll' : 'start';
+        started = true;
+        const request = call('quick-search', { command, region });
+        quickSearchRequest.current = request.catch(() => {});
+        try {
+          const { result } = await request;
+          if (stopped) return;
+          if (found && !result) {
+            setQuickOffer(null);
+            setQuickOfferEnded(true);
+            return;
+          }
+          if (result) {
+            found = true;
+            setQuickOffer(result);
+          }
+        } catch {
+          if (command === 'start') started = false;
+        }
+      } else if (!found) {
+        started = false;
+      }
+      if (!stopped) timer = setTimeout(search, 3000);
+    }
+    quickSearchRequest.current.then(search);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      if (started) quickSearchRequest.current = quickSearchRequest.current
+        .then(() => call('quick-search', { command:'cancel', region })).catch(() => {});
+    };
+  }, [searchingForMatch, region, quickSearchStarted]);
+
+  const quickOfferExpiresAt = quickOffer?.expiresAt;
+  useEffect(() => {
+    if (!quickOfferExpiresAt || screen !== 'lobby') return;
+    const timer = setTimeout(() => {
+      setQuickOffer(null);
+      setQuickOfferEnded(true);
+    }, Math.max(0, Date.parse(quickOfferExpiresAt) - Date.now()));
+    return () => clearTimeout(timer);
+  }, [quickOfferExpiresAt, screen]);
+
+  function startQuickSearch() {
+    setQuickOffer(null);
+    setQuickOfferEnded(false);
+    setQuickResultRegion(null);
+    setQuickSearchStarted(Date.now());
+  }
+  function cancelQuickSearch() {
+    setQuickSearchStarted(0);
+    setQuickOffer(null);
+    setQuickOfferEnded(false);
+  }
   const guestsTalking = !!guest;
   const audible = guest && gains[guest.id] > 0;
   const selected = selectedRoom?.region === region ? localRooms.find(r=>r.number===selectedRoom.number) : null;
@@ -1392,40 +1461,52 @@ function App() {
   <main className="app">
     <header>
       {screen === 'bar' ? <button className="icon-button" aria-label="바 나가기" onClick={()=>open('leave')}><ArrowLeft size={21}/></button> : <button className="point-entry" aria-label={`포인트 상점, ${wallet.balance.toLocaleString()}P`} onClick={()=>open('shop')}><Coins size={17}/><span>{wallet.balance.toLocaleString()}<small> P</small></span></button>}
-      <div className="header-actions"><button className="header-icon-button" aria-label="설정" onClick={()=>open('settings')}><Settings size={18}/></button><button className="notification-button" aria-label={`알림 ${notifications.length}개`} onClick={openNotifications}><Bell size={18}/>{notifications.some(item=>item.unread)&&<i/>}</button><button className="profile-button" aria-label="내 프로필" onClick={()=>openProfileEditor()}>{myPhoto ? <img src={myPhoto} alt="내 프로필"/> : <UserRound size={18}/>}</button></div>
+      <div className="header-actions">{qaControls}<button className="header-icon-button" aria-label="설정" onClick={()=>open('settings')}><Settings size={18}/></button><button className="notification-button" aria-label={`알림 ${notifications.length}개`} onClick={openNotifications}><Bell size={18}/>{notifications.some(item=>item.unread)&&<i/>}</button><button className="profile-button" aria-label="내 프로필" onClick={()=>openProfileEditor()}>{myPhoto ? <img src={myPhoto} alt="내 프로필"/> : <UserRound size={18}/>}</button></div>
     </header>
     {screen === 'lobby' && !browseRooms ? <section className="lobby quick-home-preview">
-      {quickWaiting ? <>
+      {quickSearchStarted && quickOfferEnded && !resultRooms.length ? <>
+        <div className="quick-home-hero quick-result-hero" role="status"><h1>입장 가능한 자리가 없어졌어요</h1></div>
+        <div className="lobby-footer">
+          <Button size="xlarge" display="block" onClick={startQuickSearch}>다시 찾기</Button>
+          <Button variant="weak" display="block" onClick={cancelQuickSearch}>홈으로</Button>
+        </div>
+      </> : quickWaiting ? <>
         <div className="quick-home-hero quick-result-hero" role="status">
           <div className="app-spinner quick-wait-spinner" aria-hidden="true"/>
           <h1>대화할 자리를 찾고 있어요</h1>
-          <p>이용 가능한 바가 생기면 여기서 보여드려요.</p>
+          <p>{canAutoMatch?'입장 가능한 혼술바가 생기면 알려드려요.':'프로필을 확인하면 더 많은 혼술바를 찾을 수 있어요.'}</p>
+          {!canAutoMatch && <Button variant="weak" onClick={()=>openProfileEditor()}>프로필 확인하기</Button>}
         </div>
         <div className="lobby-footer">
           <p className="entry-benefit">먼저 입장하면 혼자 있는 동안 이용 시간이 멈춰요.</p>
           <Button size="xlarge" display="block" disabled={server?.safetyPaused} onClick={()=>proceedEntry({region,firstGuest:true})}>첫 손님으로 기다리기</Button>
-          <Button size="large" variant="weak" display="block" onClick={()=>setQuickSearchStarted(0)}>대기 취소</Button>
+          <Button size="large" variant="weak" display="block" onClick={cancelQuickSearch}>대기 취소</Button>
         </div>
-      </> : quickTarget && quickSearchStarted ? <>
-        <div className="quick-home-hero quick-result-hero">
-          <DoorOpen size={38} aria-hidden="true"/>
-          <h1>{quickTarget.region} {quickTarget.number}호점에 자리가 있어요</h1>
-        </div>
-        <div className="quick-home-card">
-          <strong>손님 미리보기</strong>
-          <Button size="small" variant="weak" onClick={()=>requestPreview(quickTarget)}><Eye size={16}/>{previews[`${quickTarget.region}:${quickTarget.number}`]?'구매한 미리보기':subscription?'구독으로 미리보기':'미리보기 · 500P'}</Button>
+      </> : quickSearchStarted ? <>
+        <div className="lobby-heading"><h1>지금 열려 있는 혼술바</h1><p className="sheet-description">미리 보고 마음에 드는 곳을 골라보세요.</p></div>
+        <div className="regions" role="group" aria-label="열려 있는 지역">{quickRegions.map(name=>
+          <Button key={name} size="small" variant="weak" color={name===activeQuickRegion?'primary':'dark'} aria-pressed={name===activeQuickRegion} onClick={()=>setQuickResultRegion(name)}>{name}</Button>
+        )}</div>
+        <div className="quick-results-list">
+          {resultRooms.filter(room=>room.region===activeQuickRegion).map(room=><section className="quick-result-card" key={room.number}>
+            <div className="quick-result-title"><strong>{room.region} {room.number}호점</strong><span>입장 가능</span></div>
+            <div className="quick-result-actions">
+              <Button size="small" variant="weak" disabled={server?.safetyPaused} onClick={()=>requestPreview(room)}><Eye size={16}/>{room.quickOfferId?'미리보기':previews[`${room.region}:${room.number}`]?'구매한 미리보기':subscription?'구독으로 미리보기':'미리보기 · 500P'}</Button>
+              <Button size="small" disabled={server?.safetyPaused} onClick={()=>requestEntry(room)}>입장하기</Button>
+            </div>
+          </section>)}
         </div>
         <div className="lobby-footer">
-          <Button size="xlarge" display="block" disabled={server?.safetyPaused} onClick={()=>requestEntry(quickTarget)}>이 바에 입장하기</Button>
-          <Button size="large" variant="weak" display="block" onClick={()=>findQuickRoom([...skippedQuickRooms,`${quickTarget.region}:${quickTarget.number}`])}>다른 장소 찾기</Button>
+          <Button variant="weak" display="block" disabled={server?.safetyPaused} onClick={()=>proceedEntry({region,firstGuest:true})}>내가 만들고 기다리기</Button>
+          <Button color="dark" variant="weak" display="block" onClick={cancelQuickSearch}>홈으로</Button>
         </div>
       </> : <>
-        <div className="quick-home-hero"><img src="/honsulbar-logo.png" alt=""/><h1>마음 가는 곳에서 잠시 머물러요</h1><p>선호 지역에서 대화할 자리를 먼저 찾아요.</p></div>
+        <div className="quick-home-hero"><img src="/honsulbar-logo.png" alt=""/><h1>마음 가는 곳에서 잠시 머물러요</h1><p>선호 지역에서 대화할 자리를 먼저 찾아요.</p><p>찾기 결과에서 서로의 프로필을 볼 수 있어요.</p></div>
         <div className="quick-home-card"><strong>선호 지역</strong><Button size="small" variant="weak" onClick={()=>open('quick-region')}>{region}<ChevronDown size={16}/></Button></div>
         <Button className="quick-guide" size="small" variant="weak" onClick={()=>open('quick-safety')}>안전한 대화 가이드</Button>
         <div className="lobby-footer">
           <p className="entry-benefit">입장 시 포인트가 차감돼요.</p>
-          <Button size="xlarge" display="block" disabled={server?.safetyPaused} onClick={()=>findQuickRoom([])}>혼술바 입장하기</Button>
+          <Button size="xlarge" display="block" disabled={server?.safetyPaused} onClick={startQuickSearch}>혼술바 입장하기</Button>
           <Button variant="weak" display="block" onClick={()=>setBrowseRooms(true)}>전체 바 보기</Button>
         </div>
       </>}
@@ -1487,7 +1568,7 @@ function App() {
       {screen === 'bar' && voiceVersion && hasVoiceConsent && <p className="voice-safety-notice">{config?.fullVoiceReady ? '신고 보호 · 들리는 대화 음성 보관 중' : '신고 보호 · 최근 20초 기기 임시 보관 · 신고 시 선택 제출'}</p>}
       <BottomSheet open={!!sheet} onClose={closeSheet} ariaLabelledBy="sheet-title" className="app-bottom-sheet">
       <div className={`sheet sheet-compact ${sheet === 'guest' ? 'sheet-guest' : ''} ${sheet === 'profile' ? 'sheet-profile' : ''} ${sheet === 'verify-profile' ? 'sheet-camera' : ''} ${sheet === 'region-request' ? 'sheet-region-request' : ''}`}><button className="close icon-button" aria-label="닫기" onClick={closeSheet}><X size={22}/></button>
-      {sheet==='quick-region'&&<><h2 id="sheet-title">선호 지역</h2><React.Suspense fallback={<p className="sheet-description" role="status">지역을 불러오는 중이에요.</p>}><QuickRegionOptions region={region} onSelect={name=>{setRegion(name);setQuickRoom(null);setQuickSearchStarted(0);closeSheet();}}/></React.Suspense></>}
+      {sheet==='quick-region'&&<><h2 id="sheet-title">선호 지역</h2><React.Suspense fallback={<p className="sheet-description" role="status">지역을 불러오는 중이에요.</p>}><QuickRegionOptions region={region} onSelect={name=>{setRegion(name);setQuickSearchStarted(0);closeSheet();}}/></React.Suspense></>}
       {sheet==='quick-safety'&&<>
         <h2 id="sheet-title">안전한 대화 가이드</h2>
         <div className="quick-safety-rules">
@@ -1499,7 +1580,7 @@ function App() {
         <div className="sheet-inline-cta"><Button display="block" onClick={closeSheet}>확인</Button></div>
       </>}
       {(sheet === 'welcome' || sheet === 'menu') && <><p className="eyebrow">{isWelcome ? (room?.firstGuest ? `${room.region} · 첫 손님으로 입장` : `${room?.region} ${room?.number}호점 입장`) : '메뉴판'}</p><h2 id="sheet-title">{isWelcome ? '어떤 음료로 시작할까요?' : '한 잔 더 하고 갈까요?'}</h2><p className="sheet-description">{isWelcome ? (subscription ? '구독 중이면 입장에 포인트가 차감되지 않아요.' : '입장 시 포인트가 차감돼요.') : '주문한 잔은 내 사진 옆에 놓여요.'}</p><div className="menu">{DRINKS.filter(item => !isWelcome || item.minutes === 30).map(item => <button className={selection === item.id ? 'chosen' : ''} key={item.id} aria-pressed={selection === item.id} onClick={() => {setSelection(item.id);setError('');}}><div className="drink-illustration"><Glass id={item.id}/></div><span><strong>{item.name}</strong><small>{item.note}</small><em>{`+${item.minutes}분`}</em></span><span className="menu-price">{isWelcome ? `입장 ${item.price.toLocaleString()}P` : `${item.price.toLocaleString()} P`}{selection === item.id && <Check size={16}/>}</span></button>)}</div><div className="order-summary"><span>보유 포인트<b>{wallet.balance.toLocaleString()} P</b></span><span>{subscription ? '구독 이용' : (isWelcome ? '입장 후 남는 포인트' : '주문 후 남는 포인트')}<strong>{subscription ? '0 P' : `${Math.max(0,wallet.balance-price).toLocaleString()} P`}</strong></span></div><p className="digital-note">음료는 취향을 표현하는 아이템이에요.</p>{!subscription && wallet.balance<price?<><div className="insufficient-state"><strong>{(price-wallet.balance).toLocaleString()}P가 더 필요해요</strong><span>충전 후 {isWelcome ? '입장' : '주문'}할 수 있어요.</span></div><Button className="sheet-recharge-cta" size="xlarge" display="block" onClick={()=>open('shop')}>포인트 충전하기</Button><p className="footnote">충전 후 선택한 음료로 이용해요.</p></>:<div className="sheet-inline-cta"><Button size="xlarge" display="block" disabled={busy} onClick={confirmOrder}>{subscription ? (isWelcome ? `${chosen.minutes}분 입장하기` : `주문 · ${chosen.minutes}분 연장`) : (isWelcome ? `${price.toLocaleString()} 포인트로 ${chosen.minutes}분 입장하기` : `${price.toLocaleString()} 포인트로 주문 · ${chosen.minutes}분 연장`)}</Button><p className="footnote">{subscription ? '구독 기간에는 입장·연장에 포인트가 차감되지 않아요.' : (isWelcome ? (leftover ? '다른 호점에 입장하면 남은 이용시간은 끝나요.' : '바를 나가도 이 호점 이용시간은 이어져요.') : '주문을 누르면 포인트가 차감되고 이용시간이 늘어나요.')}</p></div>}</>}
-      {sheet === 'preview' && previewRoom && <><p className="eyebrow">{previewRoom.region} {previewRoom.number}호점</p><h2 id="sheet-title">{purchasedPreview ? '지금 이 바의 손님들' : '들어가기 전에 살짝 볼까요?'}</h2>{purchasedPreview ? <><p className="sheet-description">미리보기 당시 이 바에 있던 손님들이에요. 입장할 때는 달라질 수 있어요.</p><div className="preview-portraits">{purchasedPreview.guests.map(g => <div key={g.id} className={g.gender}><img src={g.photo} alt="미리보기 손님"/></div>)}</div>{rooms[previewRoom.region].find(r => r.number === previewRoom.number)?.count === CAPACITY ? <Button size="xlarge" display="block" disabled>만석이에요</Button> : <Button size="xlarge" display="block" onClick={() => requestEntry(previewRoom)}>이 바에 입장하기</Button>}</> : <><div className="locked-preview"><LockKeyhole size={29}/><span>사진은 미리보기 구매 후 공개돼요.</span></div><p className="sheet-description">{subscription ? '구독 중이면 미리보기에 포인트가 차감되지 않아요.' : '500P로 현재 손님들의 프로필 사진을 확인해요.'}<br/>입장·자리 예약은 포함되지 않아요.</p><div className="order-summary"><span>보유 포인트<b>{wallet.balance.toLocaleString()} P</b></span><span>{subscription ? '구독 이용' : '구매 후 남는 포인트'}<strong>{subscription ? '0 P' : `${Math.max(0,wallet.balance-500).toLocaleString()} P`}</strong></span></div><Button size="xlarge" display="block" disabled={!subscription && wallet.balance < 500} onClick={buyPreview}>{subscription ? '구독으로 미리보기' : '500P로 미리보기'}</Button></>}</>}
+      {sheet === 'preview' && previewRoom && <><p className="eyebrow">{previewRoom.region} {previewRoom.number}호점</p><h2 id="sheet-title">{previewGuests ? '지금 이 바의 손님들' : previewRoom.quickOfferId ? '입장 가능한 자리가 없어졌어요' : '들어가기 전에 살짝 볼까요?'}</h2>{previewGuests ? <><p className="sheet-description">{previewOffer ? '이 호점에 함께 입장할 수 있는 손님이에요.' : '미리보기 당시 이 바에 있던 손님들이에요. 입장할 때는 달라질 수 있어요.'}</p><div className="preview-portraits">{previewGuests.map(g => <div key={g.id} className={g.gender}><img src={g.photo} alt={previewOffer ? g.nickname : '미리보기 손님'}/></div>)}</div>{previewOffer && <p className="sheet-description">{previewOffer.guest.nickname}</p>}{rooms[previewRoom.region].find(r => r.number === previewRoom.number)?.count === CAPACITY ? <Button size="xlarge" display="block" disabled>만석이에요</Button> : <Button size="xlarge" display="block" onClick={() => requestEntry(previewRoom)}>이 바에 입장하기</Button>}</> : previewRoom.quickOfferId ? <Button display="block" onClick={closeSheet}>닫기</Button> : <><div className="locked-preview"><LockKeyhole size={29}/><span>사진은 미리보기 구매 후 공개돼요.</span></div><p className="sheet-description">{subscription ? '구독 중이면 미리보기에 포인트가 차감되지 않아요.' : '500P로 현재 손님들의 프로필 사진을 확인해요.'}<br/>입장·자리 예약은 포함되지 않아요.</p><div className="order-summary"><span>보유 포인트<b>{wallet.balance.toLocaleString()} P</b></span><span>{subscription ? '구독 이용' : '구매 후 남는 포인트'}<strong>{subscription ? '0 P' : `${Math.max(0,wallet.balance-500).toLocaleString()} P`}</strong></span></div><Button size="xlarge" display="block" disabled={!subscription && wallet.balance < 500} onClick={buyPreview}>{subscription ? '구독으로 미리보기' : '500P로 미리보기'}</Button></>}</>}
       {sheet === 'incoming' && incoming && <><p className="eyebrow">자리 양보 요청</p><h2 id="sheet-title">자리 바꿔주실래요?</h2><p className="sheet-description">다른 손님이 지금 내 자리를 부탁했어요.<br/>{incomingSeconds}초 안에 수락하면 500P를 받아요.<br/>오늘 남은 보상 {Math.max(0,DAILY_SWAP_REWARD_LIMIT-dailySwapRewards)}회</p><div className="swap-reward"><ArrowLeftRight size={24}/><strong>+500 P</strong><span>수락과 동시에 적립</span></div><div className="actions"><Button color="dark" variant="weak" onClick={() => respondSwap(false)}>거절하기</Button><Button size="xlarge" disabled={dailySwapRewards >= DAILY_SWAP_REWARD_LIMIT} onClick={() => respondSwap(true)}>{dailySwapRewards >= DAILY_SWAP_REWARD_LIMIT ? '오늘 보상 한도에 도달했어요' : '양보하고 500P 받기'}</Button></div></>}
       {sheet === 'seat-request' && selectedGuest && <><p className="eyebrow">자리 양보 부탁</p><h2 id="sheet-title">자리 양보를 부탁할까요?</h2><p className="sheet-description">상대가 수락하면 500P를 보내고 서로 자리를 바꿔요.<br/>거절하거나 취소하면 포인트는 사용되지 않아요.<br/>같은 자리에는 한 번만 부탁할 수 있어요.<br/>오늘 남은 요청 {Math.max(0,DAILY_SWAP_REQUEST_LIMIT-dailySwapRequests)}회</p><div className="order-summary"><span>보유 포인트<b>{wallet.balance.toLocaleString()} P</b></span><span>수락 후 남는 포인트<strong>{Math.max(0,wallet.balance-500).toLocaleString()} P</strong></span></div><Button size="xlarge" display="block" disabled={wallet.balance < 500 || !!outgoing || dailySwapRequests >= DAILY_SWAP_REQUEST_LIMIT || (seatRequestCounts[`${selectedGuest.id}:${selectedGuest.seat}`] || 0) >= 1} onClick={sendSeatRequest}>{dailySwapRequests >= DAILY_SWAP_REQUEST_LIMIT ? '오늘 요청 한도에 도달했어요' : (seatRequestCounts[`${selectedGuest.id}:${selectedGuest.seat}`] || 0) >= 1 ? '이미 요청했어요' : '500 포인트로 자리 양보 부탁하기'}</Button></>}
       {sheet==='shop'&&<><h2 id="sheet-title">내 포인트</h2><div className="point-balance"><Coins size={24}/><strong>{wallet.balance.toLocaleString()}<small> P</small></strong></div>
@@ -1554,4 +1635,10 @@ function App() {
     {toast && <div className="toast" role="status">{toast}</div>}
   </>;
 }
-createRoot(document.getElementById('root')).render(new URLSearchParams(location.search).has('admin') ? <AdminPage/> : <App/>);
+const root = createRoot(document.getElementById('root'));
+if (import.meta.env.VITE_QUICK_SEARCH_QA === '1') {
+  const QuickSearchQa = React.lazy(() => import('./qa/QuickSearchQa'));
+  root.render(<React.Suspense fallback={null}><QuickSearchQa App={App}/></React.Suspense>);
+} else {
+  root.render(new URLSearchParams(location.search).has('admin') ? <AdminPage/> : <App/>);
+}
