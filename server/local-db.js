@@ -36,6 +36,7 @@ const MIGRATIONS = [
   '20261110_full_voice_recordings.sql',
   '20261111_toss_quick_match.sql',
   '20261112_departure_credit.sql',
+  '20261112_z_fix_departure_credit.sql',
 ];
 const TABLES = new Set([
   'hb_safety_ops', 'hb_voice_evidence', 'hb_voice_consents', 'hb_push_devices', 'hb_android_ad_claims', 'hb_account_transfers', 'hb_auth_cleanup',
