@@ -522,6 +522,11 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .quick-home-hero p{color:#4e5968;font-size:14px}
 .quick-home-card{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;margin:10px 0;border:1px solid #e5edf7;border-radius:16px}
 .quick-home-card button{flex-shrink:0}
+.leftover-card { background:#f7faff; }
+.leftover-card small { display:flex; align-items:center; gap:5px; margin-top:6px; color:#4e5968; }
+.leftover-card small b { color:#3182f6; font-variant-numeric:tabular-nums; }
+.leftover-card-title { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+.leftover-card .leftover-result-time { margin:0 16px 12px; }
 .quick-guide{align-self:flex-start;margin:4px 0 16px}
 .quick-home-preview .lobby-footer button+button{margin-top:8px}
 .quick-safety-rules .sheet-description{padding:10px 12px;margin-bottom:8px;background:#f2f6fc;border-radius:12px}

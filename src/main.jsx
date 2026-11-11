@@ -405,7 +405,6 @@ function App({qaControls} = {}) {
   const myPhoto = assetUrl(member?.photo) || null;
   const visit = server?.visit || null;
   const inside = !!(visit && !visit.away);
-  const leftover = visit?.away && visit.seconds > 0 ? visit : null;
   const elapsed = Math.max(0, Math.floor((now - syncedAt) / 1000));
   const tick = (value, host) => host ? value : Math.max(0, value - elapsed);
   const seat = visit?.seat ?? 0;
@@ -427,6 +426,7 @@ function App({qaControls} = {}) {
   const soloPaused = inside && visit?.soloPaused === true;
   const unlimitedSeat = seat === 11 && !server?.seatNeutralClock;
   const seconds = visit ? tick(visit.seconds, inside && (unlimitedSeat || soloPaused)) : 0;
+  const leftover = visit?.away && seconds > 0 ? visit : null;
   const voice = useVoice(import.meta.env.VITE_QUICK_SEARCH_QA !== '1' && screen === 'bar', setToast, seconds > 0 || unlimitedSeat);
   const pendingRequests = server?.requests || [];
   const incomingRequest = pendingRequests.find(r => r.receiver === me && r.kind === 'swap');
@@ -1211,6 +1211,11 @@ function App({qaControls} = {}) {
   }
   async function rejoinRoom(target) {
     if (orderLock.current || busy) return;
+    if (!leftoverFor(target)) {
+      setSheet(null);
+      setToast('남은 이용시간이 끝났어요.');
+      return;
+    }
     orderLock.current=true;entering.current=true;setBusy(true);
     try {
       await run('enter', {region:target.region || region,number:target.number});
@@ -1402,7 +1407,6 @@ function App({qaControls} = {}) {
     resetConversation();
     voice.stop(); setSpeaker(false); setSoundOn(true); setSheet(null);
     setTimeWarningOpen(false);
-    setServer(s => s?.visit ? { ...s, visit: { ...s.visit, away: true } } : s);
     setScreen('lobby');
     setEntryRoom(null);
     cancelQuickSearch();
@@ -1414,7 +1418,6 @@ function App({qaControls} = {}) {
     catch (e) {
       if (e.status === 401) { fail(e); return; }
       if (expired) return;
-      setServer(s => s?.visit ? { ...s, visit: { ...s.visit, away: false } } : s);
       setScreen('bar');
       setToast(e.message);
     }
@@ -1435,6 +1438,10 @@ function App({qaControls} = {}) {
     setSpeaker(next);
   }
   const time = `${String(Math.floor(seconds / 60)).padStart(2,'0')}:${String(seconds % 60).padStart(2,'0')}`;
+  const previousBranch = leftover && rooms[leftover.region]?.find(room => room.number === leftover.number);
+  const returnRoom = previousBranch && !previousBranch.hasReportedGuest && {
+    ...previousBranch, region: leftover.region,
+  };
   const quickRooms = quickSearchStarted ? findAvailableBars(rooms, region, now - quickSearchStarted) : [];
   const alertedBranch = notifiedRoom && rooms[notifiedRoom.region]?.find(room => room.number === notifiedRoom.number);
   if (alertedBranch && !alertedBranch.hasReportedGuest &&
@@ -1447,6 +1454,9 @@ function App({qaControls} = {}) {
     : quickRooms).sort((a,b) => a.region === b.region ? a.number - b.number :
       Number(b.region === region) - Number(a.region === region) || a.region.localeCompare(b.region, 'ko'));
   const quickWaiting = !!quickSearchStarted && !resultRooms.length;
+  const displayedRooms = returnRoom
+    ? [returnRoom, ...resultRooms.filter(room => !leftoverFor(room))]
+    : resultRooms;
   const canAutoMatch = !entryRequirement(member);
   const searchingForMatch = screen === 'lobby' && !!quickSearchStarted &&
     (!quickRooms.some(room => room.count < CAPACITY) || !!quickOffer) && canAutoMatch && !server?.safetyPaused;
@@ -1615,20 +1625,22 @@ function App({qaControls} = {}) {
         </div>
       </> : quickSearchStarted ? <>
         <div className="lobby-heading">
-          <h1>{resultRooms.every(room => room.count >= CAPACITY) ? '지금 열려 있는 혼술바' : resultRooms.length > 1 ? '어느 혼술바에 갈까요?' : '대화할 자리를 찾았어요'}</h1>
+          <h1>{displayedRooms.every(room => room.count >= CAPACITY) ? '지금 열려 있는 혼술바' : displayedRooms.length > 1 ? '어느 혼술바에 갈까요?' : '대화할 자리를 찾았어요'}</h1>
         </div>
         <div className="quick-results-list">
-          {resultRooms.map(room => <section className="room-row quick-result-card" key={`${room.region}:${room.number}`}>
+          {displayedRooms.map(room => <section className={`room-row quick-result-card${room === returnRoom ? ' leftover-card' : ''}`} key={`${room.region}:${room.number}`}>
             <div className="room-select">
               <strong>{room.region} {room.number}호점</strong>
               <Badge size="small" variant="weak" color={room.count >= CAPACITY ? 'elephant' : 'blue'}>{room.count >= CAPACITY ? '만석' : '입장 가능'}</Badge>
               <span className="room-count">{room.quickOfferId ? '입장 대기 중' : <><b>{room.count}</b> / {CAPACITY}</>}</span>
             </div>
+            {room === returnRoom && <small className="leftover-result-time"><Clock3 size={14} aria-hidden="true"/> 남은 시간 <b>{time}</b></small>}
             <div className="quick-result-actions">
               <Button size="small" variant="weak" disabled={server?.safetyPaused || room.count === 0} onClick={()=>requestPreview(room)}><Eye size={16}/>{room.quickOfferId?'미리보기':previews[`${room.region}:${room.number}`]?'구매한 미리보기':subscription?'구독으로 미리보기':'미리보기 · 500P'}</Button>
               {room.count >= CAPACITY
                 ? <Button size="small" disabled={server?.safetyPaused} onClick={()=>requestWaitlist(room)}>{waitlistLabel(room)}</Button>
-                : <Button size="small" disabled={server?.safetyPaused} onClick={()=>requestEntry(room)}>입장하기</Button>}
+                : <Button size="small" disabled={server?.safetyPaused || busy}
+                    onClick={() => requestEntry(room, { confirm: room === returnRoom })}>{room === returnRoom ? '다시 입장' : '입장하기'}</Button>}
             </div>
           </section>)}
         </div>
@@ -1639,6 +1651,19 @@ function App({qaControls} = {}) {
       </> : <>
         <div className="quick-home-hero"><img src="/honsulbar-logo.png" alt=""/><h1>마음 가는 곳에서 잠시 머물러요</h1><p>선호 지역에서 대화할 자리를 먼저 찾아요.</p></div>
         <div className="quick-home-card"><strong>선호 지역</strong><Button size="small" variant="weak" onClick={()=>open('quick-region')}>{region}<ChevronDown size={16}/></Button></div>
+        {returnRoom && <div className="quick-home-card leftover-card">
+          <div>
+            <div className="leftover-card-title">
+              <strong>{returnRoom.region} {returnRoom.number}호점</strong>
+              <span className="room-count"><b>{returnRoom.count}</b> / {CAPACITY}</span>
+            </div>
+            <small><Clock3 size={14} aria-hidden="true"/> 남은 시간 <b>{time}</b></small>
+          </div>
+          {returnRoom.count >= CAPACITY
+            ? <Button size="small" variant="weak" disabled={server?.safetyPaused} onClick={() => requestWaitlist(returnRoom)}>{waitlistLabel(returnRoom)}</Button>
+            : <Button size="small" variant="weak" disabled={server?.safetyPaused || busy}
+                onClick={() => requestEntry(returnRoom, { confirm: true })}>다시 입장</Button>}
+        </div>}
         <Button className="quick-guide" size="small" variant="weak" onClick={()=>open('quick-safety')}>안전한 대화 가이드</Button>
         <div className="lobby-footer">
           <p className="entry-benefit">{server?.safetyPaused ? '안전 점검 중이에요. 잠시 후 다시 이용해 주세요.' : '입장 시 포인트가 차감돼요.'}</p>
@@ -1756,7 +1781,7 @@ function App({qaControls} = {}) {
       {sheet === 'report' && <><p className="eyebrow">신고하기</p><h2 id="sheet-title">어떤 일이 있었나요?</h2><p className="sheet-description">상황 설명과 이용 기록을 확인해요. 신고만으로 위반이 확정되지는 않아요.</p>{config?.fullVoiceReady ? <label className="sheet-description"><input type="checkbox" checked={attachVoice} onChange={e=>setAttachVoice(e.target.checked)}/> 보관 중인 이 방문의 음성을 신고에 첨부해요.</label> : reportAudio ? <label className="sheet-description"><input type="checkbox" checked={attachVoice} onChange={e=>setAttachVoice(e.target.checked)}/> 상대 음성 최근 {Math.ceil(reportAudio.seconds)}초를 증거로 제출해요. 운영자 검토용으로 최대 7일 보관해요.</label> : null}<div className="form-choice report-choice">{['미성년자 이용 의심','조건만남·성매매·성적 착취','성희롱·협박·스토킹','사진 도용·허위 프로필','욕설·불쾌한 발언','광고·금전 요구','기타'].map(reason=><button key={reason} className={reportReason===reason?'selected':''} onClick={()=>setReportReason(reason)}>{reason}</button>)}</div><textarea className="support-textarea" value={reportMessage} onChange={e=>setReportMessage(e.target.value)} placeholder="기억나는 말·상황을 적어 주세요. (선택)" maxLength={500}/><div className="form-footer"><span>{reportMessage.length}/500</span><Button size="large" disabled={!reportReason || busy} onClick={submitReport}>신고 접수하기</Button></div></>}
       {sheet === 'rejoin' && entryRoom && <><p className="eyebrow">{entryRoom.region} {entryRoom.number}호점</p><h2 id="sheet-title">남은 시간으로 다시 입장할까요?</h2><p className="sheet-description">이전에 쓰던 이용시간으로 들어가요. 음료를 다시 고르지 않아도 돼요.</p><div className="actions"><Button color="dark" variant="weak" onClick={() => setSheet(null)}>나중에</Button><Button size="xlarge" onClick={() => rejoinRoom(entryRoom)}>다시 입장하기</Button></div></>}
       {sheet === 'leave' && <><DoorOpen size={28}/><h2 id="sheet-title">오늘은 여기까지 할까요?</h2><p className="sheet-description">{visit?.departureCredit > 0
-        ? `나가면 이용이 끝나고 입장 포인트 ${visit.departureCredit.toLocaleString()}P가 돌아와요.`
+        ? `${visit.departureMetGuest === false ? '이번 방문에서는 다른 손님을 만나지 않았어요. ' : ''}지금 나가면 ${visit.departureOrderCredit > 0 ? '입장과 추가 주문에' : '입장에'} 쓴 ${visit.departureCredit.toLocaleString()}P를 돌려드리고, 남은 이용시간은 종료돼요.`
         : '자리가 있으면 남은 시간 안에 같은 호점에 다시 들어갈 수 있어요.'}</p><div className="actions"><Button color="dark" variant="weak" onClick={() => setSheet(null)}>더 머무르기</Button><Button size="xlarge" onClick={leave}>바 나가기</Button></div></>}
       {error && <p className="error" role="alert">{error}</p>}
     </div></BottomSheet>
