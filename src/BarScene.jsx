@@ -198,7 +198,10 @@ export function BarScene({ view, seat, memberId, gender, facing, partners, drink
         turning ||= progress < 1;
         const chairAngle = -turn.value * Math.PI / 180;
         const pose = avatarPose(person.seat, move?.walk, elapsed, chairAngle, move?.fromAngle);
-        if (person.mine && view === 'first' && camera && elapsed < move.walk.duration) pose.yaw = camera.yaw;
+        if (person.mine && view === 'first' && camera && elapsed < move.walk.duration) {
+          pose.yaw = camera.yaw;
+          if (camera.position) pose.position = camera.position;
+        }
         return { ...person, chairAngle, pose };
       });
       const points = paintBar(context, width, height, view, poses, poses[0].pose, pitch, depth.current);

@@ -23,6 +23,57 @@
   font-weight:600;
   line-height:1;
 }
+.bar-view-trigger.is-guided span {
+  color:#ffedcc;
+  background:#5c4231;
+  border-color:#f3cc91;
+  box-shadow:0 0 0 3px #f3cc9138;
+}
+.bar-stage.has-view-guide { z-index:8; }
+.bar-view-guide-backdrop {
+  position:fixed;
+  inset:var(--ait-chrome-top) 0 0;
+  z-index:5;
+  background:#100c0a85;
+  touch-action:none;
+}
+.bar-view-guide {
+  position:absolute;
+  z-index:7;
+  top:5px;
+  right:calc(var(--bar-control-height) + 24px);
+  display:flex;
+  align-items:center;
+  gap:4px;
+  padding:0 11px 0 2px;
+  border:1px solid #ab815c;
+  border-radius:12px;
+  color:#f9e4c7;
+  background:#403027;
+  box-shadow:0 4px 16px #1b100e80;
+  font-size:13px;
+  font-weight:600;
+}
+.bar-view-guide::after {
+  position:absolute;
+  right:-5px;
+  top:calc(50% - 4px);
+  width:8px;
+  height:8px;
+  border-top:inherit;
+  border-right:inherit;
+  background:inherit;
+  transform:rotate(45deg);
+  content:'';
+}
+.bar-view-guide button {
+  width:38px;
+  height:38px;
+  display:grid;
+  place-items:center;
+  color:#dac6ae;
+  border-radius:10px;
+}
 .bar-scene { isolation:isolate; background:linear-gradient(#252c2b,#33211e); }
 .bar-scene-depth,.bar-scene-canvas,.bar-scene-markers { position:absolute; inset:0; width:100%; height:100%; }
 .bar-scene-depth,.bar-scene-markers { pointer-events:none; }
@@ -49,6 +100,10 @@
   background:#271d17d1;
   border:1px solid #f4daa883;
 }
+.bar-scene-third .host-wrap .seat.empty {
+  left:50%;
+  transform:translateX(-50%);
+}
 .bar-scene .seat.empty svg { width:15px; height:15px; }
 .bar-scene .seat:not(:disabled):active { filter:brightness(1.2); }
 .bar-scene .facing-indicator { inset:-5px; border-width:1px; }
@@ -62,6 +117,17 @@
 .bar-scene .host-wrap:has(.me-label) .host-label { top:calc(100% + 8px); }
 .bar-scene-first .bar-scene-canvas { touch-action:none; cursor:grab; }
 .bar-scene-first .bar-scene-canvas:active { cursor:grabbing; }
+.bar-scene-first::after {
+  position:absolute;
+  inset:0;
+  z-index:2;
+  pointer-events:none;
+  content:'';
+  background:radial-gradient(ellipse at center, transparent 44%, #15100dc2 100%);
+  opacity:0;
+  transition:opacity .25s ease;
+}
+.bar-scene-first.is-moving::after { opacity:1; }
 .bar-first-controls { display:flex; align-items:center; gap:8px; margin:10px 4px 0; }
 .bar-first-controls button {
   min-height:var(--bar-control-height);

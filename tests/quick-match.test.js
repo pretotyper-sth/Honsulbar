@@ -79,3 +79,12 @@ test('open and full branches are listed in branch order with their real counts',
  assert.deepEqual(findAvailableBars(rooms,'서울',0).map(({number,count})=>[number,count]),
   [[1,3],[2,12],[5,7]]);
 });
+
+test('other regions appear after ten seconds only when the preferred region has no open room', () => {
+ const fallback = {number:1,count:3};
+ const rooms = {서울:[{number:1,count:12},{number:2,count:3,hasReportedGuest:true}], 경기:[fallback]};
+ assert.deepEqual(findAvailableBars(rooms,'서울',9999).map(room=>room.region),['서울']);
+ assert.deepEqual(findAvailableBars(rooms,'서울',10000).map(room=>room.region),['서울','경기']);
+ rooms.서울.push({number:3,count:2});
+ assert.deepEqual(findAvailableBars(rooms,'서울',10000).map(room=>room.region),['서울','서울']);
+});

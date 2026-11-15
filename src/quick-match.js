@@ -1,6 +1,6 @@
 import { CAPACITY, REGIONS } from './model.js';
 
-const PREFERRED_REGION_WAIT_MS = 20_000;
+const PREFERRED_REGION_WAIT_MS = 10_000;
 
 export function findAvailableBars(rooms, preferredRegion, elapsed) {
   function availableIn(region) {

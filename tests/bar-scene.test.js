@@ -67,8 +67,8 @@ test('third-person rows stay aligned with equal spacing whether their seats are 
   }
 });
 
-test('both 1:1 chairs turn 45 degrees toward the other seat', () => {
-  for (let seat = 0; seat < 10; seat++) {
+test('chairs away from the far end turn 45 degrees toward their 1:1 partner', () => {
+  for (let seat = 1; seat < 9; seat++) {
     for (const [listener, partner] of [[seat, seat + 1], [seat + 1, seat]]) {
       const [x,z] = barSeats[listener];
       const toward = Math.atan2(barSeats[partner][0] - x, barSeats[partner][1] - z);
@@ -78,6 +78,14 @@ test('both 1:1 chairs turn 45 degrees toward the other seat', () => {
       assert.equal(Math.abs(angle), 45);
       assert.ok(Math.cos(turnedYaw - toward) > Math.cos(baseYaw - toward));
     }
+  }
+});
+
+test('both far-end pairs face inward on absolute diagonals during 1:1', () => {
+  for (const [seat, partner, diagonal] of [[0,1,45],[1,0,135],[9,10,-135],[10,9,-45]]) {
+    const angle = partnerFacing(seat,partner);
+    const yaw = avatarPose(seat, undefined, 0, -angle * Math.PI / 180).yaw * 180 / Math.PI;
+    assert.ok(Math.abs(yaw - diagonal) < .5, `seat ${seat + 1} should face ${diagonal}°, got ${yaw}°`);
   }
 });
 
@@ -97,15 +105,15 @@ test('the renderer gets all world objects across rotations and the carried drink
   assert.equal(render(0,0).height,0);
 });
 
-test('the first-person camera turns in place and faces forward while walking or swapping', () => {
+test('the first-person camera faces forward on straights and rounded chair approaches', () => {
   for (let from = 0; from < 12; from++) for (let to = 0; to < 12; to++) {
     if (from === to) continue;
     const [first, yielding] = swapWalk(to, from);
-    for (const [walk, other] of [[seatWalk(from, to)], [yielding, first]]) {
+    const [starts, waits] = swapWalk(from, to);
+    for (const [walk, other] of [[seatWalk(from, to)], [yielding, first], [starts, waits]]) {
       const timeline = firstPersonWalk(to, walk, avatarPose(from).yaw, 0);
       const cameraAt = time => {
-        const {elapsed, yaw} = timeline.at(time);
-        const {position} = avatarPose(to, walk, elapsed);
+        const {elapsed, yaw, position=avatarPose(to, walk, elapsed).position} = timeline.at(time);
         if (other) {
           const [x,z] = avatarPose(from, other, elapsed).position;
           assert.ok(Math.hypot(position[0] - x, position[1] - z) >= .93);
@@ -119,8 +127,8 @@ test('the first-person camera turns in place and faces forward while walking or 
         const pose = cameraAt(now);
         const dx = pose.position[0] - last.position[0], dz = pose.position[1] - last.position[1];
         const distance = Math.hypot(dx, dz);
-        assert.ok(Math.abs(wrapFacing((pose.yaw - last.yaw) * 180 / Math.PI)) < 2.2);
-        assert.ok(distance <= .048, `seats ${from} to ${to} at ${now}ms`);
+        assert.ok(Math.abs(wrapFacing((pose.yaw - last.yaw) * 180 / Math.PI)) < 3.0, `rotation from ${from} to ${to} at ${now}ms`);
+        assert.ok(distance <= .052, `seats ${from} to ${to} at ${now}ms`);
         if (distance > 1e-5) assert.ok((dx * Math.sin(pose.yaw) + dz * Math.cos(pose.yaw)) / distance > .998);
         last = pose;
       }

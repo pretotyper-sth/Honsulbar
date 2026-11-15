@@ -55,7 +55,9 @@ function setToken(value) {
   token = value;
   try { value ? localStorage.setItem(TOKEN_KEY, value) : localStorage.removeItem(TOKEN_KEY); } catch {}
 }
-export const clearSession = () => setToken(null);
+export const clearSession = () => {
+  if (import.meta.env.VITE_QUICK_SEARCH_QA !== '1') setToken(null);
+};
 
 const serviceRequest = import.meta.env.VITE_QUICK_SEARCH_QA === '1'
   ? async (body, method) => (await import('./qa/quick-search')).qaRequest(body, method)
@@ -93,6 +95,7 @@ export const getConfig = () => serviceRequest(null, 'GET');
 export const call = (action, data, extra = {}, options = {}) => serviceRequest({ action, data, ...extra }, 'POST', options);
 
 export async function login(config, accountTransferCode) {
+  if (import.meta.env.VITE_QUICK_SEARCH_QA === '1') return (await call('login')).state;
   let result;
   if (insideToss()) {
     let authorizationCode, referrer;

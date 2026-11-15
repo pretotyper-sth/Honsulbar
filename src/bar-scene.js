@@ -23,11 +23,14 @@ const STEP_MS = 160;
 const mix = (a, b, t) => a + (b - a) * t;
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 const turnDelta = (from, to) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
-const walkProgress = t => {
+const walkProgress = (t, entersMoving, exitsMoving) => {
   const ramp = .2;
-  if (t < ramp) return t * t / (2 * ramp * (1 - ramp));
-  if (t > 1 - ramp) return 1 - (1 - t) ** 2 / (2 * ramp * (1 - ramp));
-  return (t - ramp / 2) / (1 - ramp);
+  const start = entersMoving ? .35 : 0;
+  const end = exitsMoving ? .35 : 0;
+  const area = 1 - ramp * (2 - start - end) / 2;
+  if (t < ramp) return (start * t + (1 - start) * t * t / (2 * ramp)) / area;
+  if (t > 1 - ramp) return 1 - (end * (1 - t) + (1 - end) * (1 - t) ** 2 / (2 * ramp)) / area;
+  return (t - ramp * (1 - start) / 2) / area;
 };
 const facingBar = ([x, z]) => Math.atan2(-x, -.5 - z);
 export const FIRST_PERSON_PITCH = -.23;
@@ -38,6 +41,11 @@ const facingYaw = (position, degrees) => facingBar(position) - degrees * Math.PI
 export function partnerFacing(seat, otherSeat) {
   const from = barSeats[seat], to = barSeats[otherSeat];
   if (!from || !to || seat === otherSeat) return 0;
+  const pairStart = Math.min(seat, otherSeat);
+  if (Math.abs(seat - otherSeat) === 1 && (pairStart === 0 || pairStart === 9)) {
+    const diagonal = Math.atan2(-Math.sign(from[0]), Math.sign(to[1] - from[1]));
+    return Math.round(wrapFacing((facingBar(from) - diagonal) * 180 / Math.PI));
+  }
   const toward = Math.atan2(to[0] - from[0], to[1] - from[1]);
   return 45 * Math.sign(wrapFacing((facingBar(from) - toward) * 180 / Math.PI));
 }
@@ -161,11 +169,11 @@ export function avatarPose(seat, walk, elapsed, angle = 0, startAngle = angle) {
 export function firstPersonWalk(seat, walk, startYaw, endAngle) {
   const phases = [];
   let duration = 0, elapsed = 0, yaw = startYaw;
-  function phase(to, nextYaw, length = 0) {
+  function phase(to, nextYaw, length = 0, corner = null) {
     const delta = turnDelta(yaw, nextYaw);
-    const ms = Math.max((to - elapsed) * 1.65, length * 220, Math.abs(delta) * 320);
+    const ms = Math.max((to - elapsed) * 1.65, length * 198, Math.abs(delta) * (corner ? 420 : 320));
     if (!ms) return;
-    phases.push({start:duration, end:duration + ms, from:elapsed, to, yaw, delta, walking:length > 0});
+    phases.push({start:duration, end:duration + ms, from:elapsed, to, yaw, delta, walking:length > 0, corner});
     duration += ms;
     elapsed = to;
     yaw += delta;
@@ -179,14 +187,23 @@ export function firstPersonWalk(seat, walk, startYaw, endAngle) {
       const heading = Math.atan2(nextX - x, nextZ - z);
       const previous = runs.at(-1);
       if (previous && Math.abs(turnDelta(previous.heading, heading)) < 1e-8) previous.length += length;
-      else runs.push({heading, length});
+      else runs.push({heading, length, start:leg.path[i]});
     });
     if (leg !== walk.legs[0]) phase(leg.start, yaw);
     let end = leg.start;
+    const msPerUnit = (leg.end - leg.start) / leg.total;
+    const incoming = runs.at(-2), approach = runs.at(-1);
+    const round = leg === walk.legs.at(-1) && incoming
+      ? Math.min(.48, incoming.length / 3, approach.length / 2)
+      : 0;
     for (const [index, {heading, length}] of runs.entries()) {
-      phase(end, heading);
-      end = index === runs.length - 1 ? leg.end : end + (leg.end - leg.start) * length / leg.total;
-      phase(end, heading, length);
+      const last = index === runs.length - 1;
+      if (last && round) phase(end + round * msPerUnit, heading, round * 2, {point:approach.start, radius:round});
+      else phase(end, heading);
+      end = last ? leg.end : end + msPerUnit * length;
+      const trim = round && (last || index === runs.length - 2) ? round : 0;
+      phase(last ? end : end - trim * msPerUnit, heading, length - trim);
+      if (trim) phases.at(-1)[last ? 'entersMoving' : 'exitsMoving'] = true;
     }
   }
   const endYaw = avatarPose(seat, undefined, 0, endAngle).yaw;
@@ -196,10 +213,20 @@ export function firstPersonWalk(seat, walk, startYaw, endAngle) {
     at(time) {
       if (time <= 0) return {elapsed:time, yaw:startYaw};
       if (time >= duration) return {elapsed:walk.duration + (time - duration), yaw:endYaw};
-      const {start, end, from, to, yaw, delta, walking} = phases.find(({end}) => time < end);
+      const {start, end, from, to, yaw, delta, walking, corner, entersMoving, exitsMoving} = phases.find(({end}) => time < end);
       const t = (time - start) / (end - start);
       const smooth = t * t * (3 - 2 * t);
-      return {elapsed:mix(from, to, walking ? walkProgress(t) : smooth), yaw:yaw + delta * smooth};
+      if (corner) {
+        const before = [Math.sin(yaw), Math.cos(yaw)];
+        const after = [Math.sin(yaw + delta), Math.cos(yaw + delta)];
+        const tangent = before.map((value, i) => mix(value, after[i], t));
+        return {
+          elapsed:mix(from, to, t),
+          yaw:Math.atan2(...tangent),
+          position:corner.point.map((value, i) => value + corner.radius * (after[i] * t ** 2 - before[i] * (1 - t) ** 2)),
+        };
+      }
+      return {elapsed:mix(from, to, walking ? walkProgress(t, entersMoving, exitsMoving) : smooth), yaw:yaw + delta * smooth};
     },
   };
 }
@@ -421,7 +448,7 @@ export function paintBar(context, width, height, view, people, ownPose, pitch = 
   const first = view === 'first';
   const [x,z] = ownPose.position;
   const {camera, screen, focal, lens} = first
-    ? projection(width, height, [x, 1.76 + ownPose.rise * .10, z], ownPose.yaw, pitch, .67)
+    ? projection(width, height, [x, 1.76 + ownPose.rise * .05, z], ownPose.yaw, pitch, .67)
     : projection(width, height, THIRD_EYE, Math.PI, THIRD_PITCH, 1.39);
 
   const faces = [...room];
