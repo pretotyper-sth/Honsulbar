@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {visibleCheck,captureFacePair,profileCanSave} from '../src/photo-verification.js';
 const source=readFileSync(new URL('../src/main.jsx',import.meta.url),'utf8');
-const helpers=source.slice(source.indexOf('function faceBox('),source.indexOf('function faceRegionLooksLikeSkin('));
+const helpers=source.slice(source.indexOf('function faceBox('),source.indexOf('function resizePhoto('));
 const face={topLeft:[120,100],bottomRight:[320,360],probability:[.99],landmarks:[[175,190],[265,190],[220,245],[220,290]]};
 test('photo screening rejects missing landmarks, tiny faces and low confidence',()=>{
  const env={};vm.createContext(env);vm.runInContext(helpers,env);
@@ -90,10 +90,12 @@ test('framing allows clipped outlines but requires visible eye, nose and mouth l
  assert.equal(env.faceIsWellFramed({...close,landmarks:[]},480,480),false);
 });
 
-test('profile upload accepts moderate detection confidence while capture retains its threshold',()=>{
- const env={};vm.createContext(env);vm.runInContext(helpers,env);
- const candidate={...face,probability:[.78]};
- assert.equal(env.isLikelyRealFace(candidate,480,480,{profilePhoto:true}),true);
- assert.equal(env.isLikelyRealFace(candidate,480,480),false);
- assert.equal(env.isLikelyRealFace({...candidate,probability:[.4]},480,480,{profilePhoto:true}),false);
+test('profile upload preserves the chosen photograph for server verification',async()=>{
+ const drafts=[],checks=[];
+ const env={photoInspect:{current:0},verificationAttempt:{current:0},setPhotoProof(){},changeFaceConsent(){},setError(){},setDraftVerified(){},setPhotoDraft:value=>drafts.push(value),setPhotoCheck:value=>checks.push(value),setProfile(){},resizePhoto:async()=> 'photo'};
+ vm.createContext(env);
+ vm.runInContext(source.slice(source.indexOf('  async function choosePhoto('),source.indexOf('  function seatsAreLocked(')),env);
+ await env.choosePhoto({target:{files:[{type:'image/jpeg',size:500}]}});
+ assert.deepEqual(drafts,[null,'photo']);
+ assert.deepEqual(checks,['checking','ok']);
 });

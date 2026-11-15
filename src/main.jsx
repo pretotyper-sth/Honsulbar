@@ -102,11 +102,11 @@ function faceProbability(face) {
   } catch {}
   return NaN;
 }
-function isLikelyRealFace(face, width, height, {profilePhoto=false}={}) {
+function isLikelyRealFace(face, width, height) {
   const box = faceBox(face);
   const probability = faceProbability(face);
-  if (!Number.isFinite(probability) || probability < (profilePhoto ? 0.75 : 0.85)) return false;
-  if (box.width / width < (profilePhoto ? 0.15 : 0.18) || box.height / height < (profilePhoto ? 0.18 : 0.22)) return false;
+  if (!Number.isFinite(probability) || probability < 0.85) return false;
+  if (box.width / width < 0.18 || box.height / height < 0.22) return false;
   if (box.width / box.height < 0.5 || box.width / box.height > 1.5) return false;
   const [rightEye, leftEye, nose, mouth] = face.landmarks || [];
   if (![rightEye, leftEye, nose, mouth].every(point => Array.isArray(point) && point.every(Number.isFinite))) return false;
@@ -115,133 +115,27 @@ function isLikelyRealFace(face, width, height, {profilePhoto=false}={}) {
   return eyeDistance > box.width * 0.2 && eyeDistance < box.width * 0.75
     && nose[1] > eyeY && mouth[1] > nose[1] && mouth[1] - eyeY > box.height * 0.15;
 }
-function faceRegionLooksLikeSkin(canvas, face) {
-  const stats = regionStats(canvas, cheekRect(face)) || regionStats(canvas, innerFaceRect(face));
-  if (!stats) return false;
-  const mean = (stats.meanR + stats.meanG + stats.meanB) / 3;
-  if (mean < 18 || mean > 250) return false;
-  if (stats.meanB > stats.meanR + 28) return false;
-  return true;
-}
-function innerFaceRect(face) {
-  const box = faceBox(face);
-  const landmarks = face.landmarks || [];
-  const [rightEye, leftEye, , mouth] = landmarks;
-  if (rightEye && leftEye && mouth) {
-    const eyeY = (rightEye[1] + leftEye[1]) / 2;
-    return {
-      x: Math.min(rightEye[0], leftEye[0]) - box.width * 0.14,
-      y: eyeY - box.height * 0.2,
-      w: Math.abs(leftEye[0] - rightEye[0]) + box.width * 0.28,
-      h: (mouth[1] - eyeY) + box.height * 0.22,
-    };
-  }
-  return { x: box.left + box.width * 0.16, y: box.top + box.height * 0.08, w: box.width * 0.68, h: box.height * 0.48 };
-}
-function regionStats(canvas, rect) {
-  const x = Math.max(0, Math.floor(rect.x));
-  const y = Math.max(0, Math.floor(rect.y));
-  const w = Math.max(8, Math.min(canvas.width - x, Math.floor(rect.w)));
-  const h = Math.max(8, Math.min(canvas.height - y, Math.floor(rect.h)));
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  let pixels;
-  try { pixels = ctx.getImageData(x, y, w, h).data; } catch { return null; }
-  const step = Math.max(1, Math.floor(Math.min(w, h) / 64));
-  let samples = 0, flat = 0, exact = 0, ink = 0, graySum = 0, graySq = 0, rSum = 0, gSum = 0, bSum = 0, lapSum = 0;
-  const colors = new Set();
-  for (let row = 1; row < h - 1; row += step) {
-    for (let col = 1; col < w - 1; col += step) {
-      const i = (row * w + col) * 4;
-      const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
-      const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-      const rightI = i + 4, downI = i + w * 4;
-      const colorDelta = Math.abs(r - pixels[rightI]) + Math.abs(g - pixels[rightI + 1]) + Math.abs(b - pixels[rightI + 2]);
-      const grayRight = 0.299 * pixels[rightI] + 0.587 * pixels[rightI + 1] + 0.114 * pixels[rightI + 2];
-      const grayDown = 0.299 * pixels[downI] + 0.587 * pixels[downI + 1] + 0.114 * pixels[downI + 2];
-      const left = 0.299 * pixels[i - 4] + 0.587 * pixels[i - 3] + 0.114 * pixels[i - 2];
-      const up = 0.299 * pixels[i - w * 4] + 0.587 * pixels[i - w * 4 + 1] + 0.114 * pixels[i - w * 4 + 2];
-      const lap = Math.abs(4 * gray - left - grayRight - up - grayDown);
-      rSum += r; gSum += g; bSum += b;
-      graySum += gray; graySq += gray * gray;
-      lapSum += lap;
-      colors.add(((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4));
-      if (Math.abs(gray - grayRight) + Math.abs(gray - grayDown) < 6) flat += 1;
-      if (colorDelta <= 3) exact += 1;
-      if (gray < 70 && lap > 40) ink += 1;
-      samples += 1;
-    }
-  }
-  if (samples < 30) return null;
-  return {
-    samples,
-    flatRatio: flat / samples,
-    exactRatio: exact / samples,
-    colorDensity: colors.size / samples,
-    inkRatio: ink / samples,
-    lapMean: lapSum / samples,
-    std: Math.sqrt(Math.max(0, graySq / samples - (graySum / samples) ** 2)),
-    meanR: rSum / samples,
-    meanG: gSum / samples,
-    meanB: bSum / samples,
-  };
-}
-function cheekRect(face) {
-  const box = faceBox(face);
-  const landmarks = face.landmarks || [];
-  const [, , nose, mouth] = landmarks;
-  if (nose && mouth) {
-    return {
-      x: nose[0] - box.width * 0.2,
-      y: nose[1] + box.height * 0.04,
-      w: box.width * 0.4,
-      h: Math.max(8, mouth[1] - nose[1] + box.height * 0.04),
-    };
-  }
-  return { x: box.left + box.width * 0.28, y: box.top + box.height * 0.42, w: box.width * 0.44, h: box.height * 0.16 };
-}
-function cornerBackgroundStats(canvas) {
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  const n = Math.max(10, Math.floor(Math.min(canvas.width, canvas.height) / 12));
-  const spots = [[0, 0], [canvas.width - n, 0], [0, canvas.height - n], [canvas.width - n, canvas.height - n]];
-  const stds = [];
-  for (const [x, y] of spots) {
-    let pixels;
-    try { pixels = ctx.getImageData(Math.max(0, x), Math.max(0, y), n, n).data; } catch { continue; }
-    let sum = 0, sq = 0, count = 0;
-    for (let i = 0; i < pixels.length; i += 16) {
-      const gray = 0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2];
-      sum += gray; sq += gray * gray; count += 1;
-    }
-    if (count) {
-      const mean = sum / count;
-      stds.push(Math.sqrt(Math.max(0, sq / count - mean * mean)));
-    }
-  }
-  if (!stds.length) return { minStd: 99 };
-  return { minStd: Math.min(...stds) };
-}
-function looksLikeIllustration(canvas, face) {
-  const box = faceBox(face);
-  const faceStats = regionStats(canvas, innerFaceRect(face));
-  const cheekStats = regionStats(canvas, cheekRect(face)) || faceStats;
-  const outlineStats = regionStats(canvas, { x: box.left - box.width * 0.06, y: box.top - box.height * 0.06, w: box.width * 1.12, h: box.height * 1.12 });
-  if (!faceStats || !cheekStats) return false;
-  const ink = Math.max(faceStats.inkRatio || 0, outlineStats?.inkRatio || 0);
-  const lineArt = ink >= 0.03 && cheekStats.flatRatio >= 0.48 && cheekStats.colorDensity < 0.055;
-  const celShade = ink >= 0.028 && cheekStats.exactRatio >= 0.32 && cheekStats.colorDensity < 0.05 && cornerBackgroundStats(canvas).minStd < 2.5;
-  return lineArt || celShade;
-}
 function resizePhoto(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const image = new Image();
     image.onload = () => {
-      const scale = Math.min(1, 480 / Math.max(image.width, image.height));
       const canvas = document.createElement('canvas');
-      canvas.width = Math.round(image.width * scale); canvas.height = Math.round(image.height * scale);
-      canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
-      URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL('image/jpeg', 0.85));
+      try {
+        for (const [size, quality] of [[720, 0.85], [720, 0.72], [480, 0.72]]) {
+          const scale = Math.min(1, size / Math.max(image.width, image.height));
+          canvas.width = Math.max(1, Math.round(image.width * scale));
+          canvas.height = Math.max(1, Math.round(image.height * scale));
+          canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+          const photo = canvas.toDataURL('image/jpeg', quality);
+          if (photo.length <= 400000) { resolve(photo); return; }
+        }
+        reject(new Error('사진을 줄이지 못했어요. 다시 골라 주세요.'));
+      } catch (error) {
+        reject(error);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
     };
     image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('사진을 읽지 못했어요. 다시 골라 주세요.')); };
     image.src = url;
@@ -1454,28 +1348,6 @@ function App({qaControls, qaView, qaStart, qaViewGuide} = {}) {
       orderLock.current = false;entering.current = false;setBusy(false);
     }
   }
-  async function inspectProfilePhoto(dataUrl) {
-    const image = new Image();
-    image.src = dataUrl;
-    await image.decode();
-    const canvas = document.createElement('canvas');
-    canvas.width = image.naturalWidth || image.width;
-    canvas.height = image.naturalHeight || image.height;
-    canvas.getContext('2d').drawImage(image, 0, 0);
-    const detect = async () => {
-      const model = await loadFaceModel();
-      return model.estimateFaces(canvas, false);
-    };
-    let faces;
-    try {
-      faces = await detect();
-    } catch {
-      faceModel.current = null;
-      faceModelLoading.current = null;
-      faces = await detect();
-    }
-    return faces?.length === 1 && isLikelyRealFace(faces[0], canvas.width, canvas.height, {profilePhoto:true}) && !looksLikeIllustration(canvas, faces[0]);
-  }
   async function choosePhoto(event) {
     const file = event.target.files?.[0]; event.target.value = ''; if (!file) return;
     if (!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024) { setError('10MB 이하의 JPG, PNG, WebP 사진을 골라주세요.'); return; }
@@ -1489,17 +1361,6 @@ function App({qaControls, qaView, qaStart, qaViewGuide} = {}) {
       const photo = await resizePhoto(file);
       if (requestId !== photoInspect.current) return;
       setProfile(v => ({ ...v, photo }));
-      await new Promise(resolve => requestAnimationFrame(() => resolve()));
-      const ok = await visibleCheck(() => inspectProfilePhoto(photo));
-      if (requestId !== photoInspect.current) return;
-      if (!ok) {
-        setPhotoCheck('fail');
-        setPhotoDraft(null);
-        setDraftVerified(false);
-        setProfile(v => ({ ...v, photo: null }));
-        setError('얼굴이 잘 보이는 사진을 등록해 주세요.');
-        return;
-      }
       setPhotoDraft(photo);
       setPhotoCheck('ok');
     } catch (e) {
@@ -1971,7 +1832,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide} = {}) {
       {sheet==='subscription-confirm'&&<><p className="eyebrow">정기 구독</p><h2 id="sheet-title">정기 구독을 시작할까요?</h2><p className="sheet-description">{`매월 ${SUBSCRIPTIONS[0].price.toLocaleString()}원이 자동 결제되고, 입장·연장·미리보기를 제한 없이 이용할 수 있어요.`}</p><div className="actions"><Button color="dark" variant="weak" onClick={()=>setSheet('shop')}>취소</Button><Button size="xlarge" onClick={confirmSubscriptionChange}>구독 시작하기</Button></div></>}
       {sheet==='subscription-cancel-guide'&&<><p className="eyebrow">정기 구독</p><h2 id="sheet-title">해지는 토스에서 할 수 있어요</h2><p className="sheet-description">토스 결제 내역에서 구독을 해지해 주세요. 해지 후에도 남은 기간은 이용할 수 있어요. 같은 화면에서 자동 결제를 다시 켤 수 있어요.</p><Button size="xlarge" display="block" onClick={()=>setSheet('shop')}>확인</Button></>}
       {sheet==='notifications'&&<><h2 id="sheet-title">알림</h2>{notifications.length===0?<p className="sheet-description">새로운 알림이 없어요.</p>:<div className="notification-list">{notifications.map(item=><button key={item.id} onClick={()=>openNotification(item)}><Bell size={17}/><span><strong>{item.title}</strong><small>{item.body}</small></span><ArrowRight size={16}/></button>)}</div>}</>}
-      {sheet === 'profile' && <><div className="sheet-heading-row"><div><p className="eyebrow">내 프로필</p><h2 id="sheet-title">프로필을 설정해 주세요</h2></div></div><p className="sheet-description">사진과 닉네임은 다른 손님에게 보여요.</p><input ref={upload} hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={choosePhoto}/><button className="upload" onClick={() => upload.current.click()}>{profile.photo ? <img src={profile.photo} alt="선택한 내 사진"/> : <Camera size={30}/>}<span>{profile.photo ? '사진 바꾸기' : '사진 등록하기'}</span></button><p className={`photo-note${photoCheck==='ok' || (profileVerified && photoCheck!=='checking') ? ' is-ok' : ''}`}>{photoCheck==='checking' ? '얼굴 사진을 검사하고 있어요.' : photoCheck==='ok' ? '이 사진으로 진행할 수 있어요.' : profileVerified ? '확인된 사진이에요. 변경 시 다시 검사해요.' : '본인 얼굴 사진을 사용해 주세요.'}</p><label className="profile-field"><span>닉네임</span><input value={profile.nickname} maxLength={16} aria-invalid={!!nicknameError} onChange={e=>setProfile(v=>({...v,nickname:e.target.value}))} placeholder="닉네임을 입력해 주세요"/>{nicknameError&&<small className="field-error">{nicknameError}</small>}</label><div className="gender-choice">{[['male','남성'],['female','여성']].map(([value,label]) => <button key={value} aria-pressed={profile.gender === value} className={profile.gender === value ? `selected ${value}` : ''} onClick={() => setProfile(v => ({...v,gender:value}))}>{label}{profile.gender === value && <Check size={17}/>}</button>)}</div><p className="profile-save-note">{profileVerified ? '변경한 내용을 저장해 주세요.' : '사진을 저장하려면 얼굴 확인이 필요해요.'}</p><Button size="xlarge" display="block" disabled={!profile.photo || !profile.gender || !!nicknameError || photoCheck==='checking' || (!profileVerified && photoCheck!=='ok')} onClick={() => profileVerified ? saveProfile() : open('verify-profile')}>{profileVerified ? '프로필 저장하기' : '얼굴 확인하기'}</Button></>}
+      {sheet === 'profile' && <><div className="sheet-heading-row"><div><p className="eyebrow">내 프로필</p><h2 id="sheet-title">프로필을 설정해 주세요</h2></div></div><p className="sheet-description">사진과 닉네임은 다른 손님에게 보여요.</p><input ref={upload} hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={choosePhoto}/><button className="upload" onClick={() => upload.current.click()}>{profile.photo ? <img src={profile.photo} alt="선택한 내 사진"/> : <Camera size={30}/>}<span>{profile.photo ? '사진 바꾸기' : '사진 등록하기'}</span></button><p className={`photo-note${photoCheck==='ok' || (profileVerified && photoCheck!=='checking') ? ' is-ok' : ''}`}>{photoCheck==='checking' ? '사진을 불러오고 있어요.' : photoCheck==='ok' ? '촬영으로 얼굴을 확인해 주세요.' : profileVerified ? '확인된 사진이에요. 변경 시 다시 검사해요.' : '본인 얼굴 사진을 사용해 주세요.'}</p><label className="profile-field"><span>닉네임</span><input value={profile.nickname} maxLength={16} aria-invalid={!!nicknameError} onChange={e=>setProfile(v=>({...v,nickname:e.target.value}))} placeholder="닉네임을 입력해 주세요"/>{nicknameError&&<small className="field-error">{nicknameError}</small>}</label><div className="gender-choice">{[['male','남성'],['female','여성']].map(([value,label]) => <button key={value} aria-pressed={profile.gender === value} className={profile.gender === value ? `selected ${value}` : ''} onClick={() => setProfile(v => ({...v,gender:value}))}>{label}{profile.gender === value && <Check size={17}/>}</button>)}</div><p className="profile-save-note">{profileVerified ? '변경한 내용을 저장해 주세요.' : '사진을 저장하려면 얼굴 확인이 필요해요.'}</p><Button size="xlarge" display="block" disabled={!profile.photo || !profile.gender || !!nicknameError || photoCheck==='checking' || (!profileVerified && photoCheck!=='ok')} onClick={() => profileVerified ? saveProfile() : open('verify-profile')}>{profileVerified ? '프로필 저장하기' : '얼굴 확인하기'}</Button></>}
       {sheet === 'verify-profile' && <><p className="eyebrow">본인 얼굴 확인</p><h2 id="sheet-title">실제 얼굴을 촬영해 주세요</h2>{verificationState==='ready' && <FaceCaptureNotice/>}<div className={`camera-preview verification-camera is-${verificationGuide.stage}`}><video ref={cameraVideo} className="camera-video-hidden" muted playsInline disablePictureInPicture controls={false} webkit-playsinline="true" x-webkit-airplay="deny" tabIndex={-1} aria-hidden="true"/><canvas ref={cameraView} className="camera-view" aria-label="본인 얼굴 촬영 화면"/><i className={`camera-guide motion-${verificationGuide.motion || 'none'}`} aria-hidden="true"/><canvas ref={cameraCanvas} hidden/><CameraVerificationStatus guide={verificationGuide} message={verificationMessage} state={verificationState} elapsed={Math.max(0,Math.floor((now-verificationStartedAt)/1000))}/></div><div className="camera-actions">{verificationState==='verified'?<Button size="xlarge" display="block" disabled={!faceConsent||!photoProof||busy} onClick={saveProfile}>프로필 저장하기</Button>:verificationState==='unavailable'?<Button size="xlarge" display="block" onClick={() => { setSheetState(null); setTimeout(() => setSheetState('verify-profile'), 0); }}>권한 다시 요청하기</Button>:verificationState==='ready'?<FaceCaptureConsent retry={verificationGuide.stage==='error'} onCapture={() => {changeFaceConsent(true);captureVerification();}}/>:<Button size="xlarge" display="block" disabled>{verificationState==='checking'?'얼굴 확인 중…':'카메라 준비 중…'}</Button>}{verificationState==='checking'&&<button type="button" className="camera-cancel" onClick={cancelVerification}>검사 중단</button>}</div></>}
       {sheet === 'account-transfer'&&<AccountTransferCode info={accountTransfer} now={now} onCopy={copyAccountTransfer} onRenew={createAccountTransfer} busy={busy}/>}
       {sheet === 'settings' && <><p className="eyebrow">설정</p><h2 id="sheet-title">도움이 필요하신가요?</h2><p className="sheet-description">서비스 이용과 계정을 관리할 수 있어요.</p><div className="settings-group"><span>도움말</span><div className="settings-list"><button onClick={()=>open('support')}>고객센터<ArrowRight size={16}/></button><button onClick={()=>open('inquiry')}>신고·문의<ArrowRight size={16}/></button><button onClick={()=>open('legal')}>약관 및 정책<ArrowRight size={16}/></button>{voiceVersion&&<button disabled={busy} onClick={revokeVoiceConsent}>음성 안전 처리 동의 철회<ArrowRight size={16}/></button>}</div></div><div className="settings-group"><span>알림</span><div className="settings-list"><div className="settings-toggle"><span><strong>빈자리 알림</strong><small>신청한 곳에서 자리가 나면 알려드려요.</small></span><button type="button" role="switch" aria-label="빈자리 알림" aria-checked={waitlistAlerts||waitlist.length>0} className={`alert-switch${waitlistAlerts||waitlist.length>0?' is-on':''}`} onClick={()=>setWaitlistAlertEnabled(!(waitlistAlerts||waitlist.length>0))}><i/></button></div></div></div><div className="settings-group"><span>계정 및 결제</span><div className="settings-list">{ANDROID_ACCOUNT_LINK_VISIBLE&&config?.accountTransferReady&&insideToss()&&<button disabled={busy} onClick={createAccountTransfer}>Android 계정 연결<ArrowRight size={16}/></button>}<button onClick={openSubscriptionManager}>결제·정기 구독 관리<ArrowRight size={16}/></button><button onClick={requestWithdrawal} className="danger-link">회원탈퇴<ArrowRight size={16}/></button></div></div></>}

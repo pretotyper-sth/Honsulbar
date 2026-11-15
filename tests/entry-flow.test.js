@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import { entryRequirement } from '../src/entry-check.js';
 
 const source = readFileSync(new URL('../src/main.jsx', import.meta.url),'utf8');
-const orderSource = source.slice(source.indexOf('  async function confirmOrder() {'),source.indexOf('  async function inspectProfilePhoto'));
+const orderSource = source.slice(source.indexOf('  async function confirmOrder() {'),source.indexOf('  async function choosePhoto'));
 
 test('a registered picture is not treated as a verified picture; adult and profile requirements stay distinct',()=>{
  const member={adult:true,photo:'/existing-picture',gender:'male',photoChecked:false};

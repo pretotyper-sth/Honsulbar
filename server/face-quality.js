@@ -12,11 +12,11 @@ export function faceQualityError(result,image,{capture=false}={}){
  if(!Array.isArray(result?.face)||result.face.length===0)return '얼굴을 찾지 못했어요.';
  if(result.face.length!==1)return '혼자 화면에 맞춰 주세요.';
  const face=result.face[0],box=face.box;
- const quality=capture ? FACE_RULES : {...FACE_RULES,boxScore:0.75,meshScore:0.8,minSize:0.16,maxYaw:0.55,maxPitch:0.5};
+ const quality=capture ? FACE_RULES : {...FACE_RULES,boxScore:0.75,meshScore:0.8,minSize:0.07,maxYaw:0.55,maxPitch:0.5};
  if(!box||box.length!==4||!box.every(Number.isFinite)||box[2]<=0||box[3]<=0)return '얼굴 위치를 맞춰 다시 찍어 주세요.';
  if(!(face.boxScore>=quality.boxScore&&face.faceScore>=quality.meshScore)||!Array.isArray(face.mesh)||face.mesh.length<468)return '눈·코·입이 보이게 해주세요.';
  const [x,y,w,h]=box;
- if(Math.min(w/image.width,h/image.height)<quality.minSize||Math.min(w,h)<64)return '얼굴을 조금 더 가까이 보여 주세요.';
+ if(Math.min(w/image.width,h/image.height)<quality.minSize||Math.min(w,h)<(capture?64:40))return '얼굴을 조금 더 가까이 보여 주세요.';
  const points=[33,133,362,263,1,61,291,13].map(i=>face.mesh[i]);
  if(!points.every(finitePoint)||points.some(p=>p[0]<1||p[1]<1||p[0]>=image.width-1||p[1]>=image.height-1))return '눈·코·입이 보이게 해주세요.';
  const angle=face.rotation?.angle;

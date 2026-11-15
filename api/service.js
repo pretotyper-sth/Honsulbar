@@ -292,7 +292,12 @@ export default async function handler(req,res) {
    return res.json({result,state:withPhotos(await snapshot({p_member:member}),member)});
   }
   if(action==='photo-prepare'){await warmPhotoVerifier();return res.json({result:{ready:true}});}
-  if(action==='photo-challenge'){ await warmPhotoVerifier(); return res.json({result:await newPhotoChallenge(member,{database,rpc})}); }
+  if(action==='photo-challenge'){
+   await warmPhotoVerifier();
+   const [session]=await database(`hb_sessions?token_hash=eq.${hash(req.headers.authorization.slice(7))}&select=platform`);
+   // Remove the Toss test exception when the current test round ends.
+   return res.json({result:await newPhotoChallenge(member,{database,rpc,unlimited:session?.platform==='toss'})});
+  }
   if(action==='photo-verify'){
    const data=body.data||{};
    if(data.consent!==true||!Array.isArray(data.frames)||data.frames.length!==2||typeof data.photo!=='string'||data.frames.some(frame=>typeof frame!=='string'))throw new AppError('얼굴 비교 처리에 동의한 뒤 다시 촬영해 주세요.');

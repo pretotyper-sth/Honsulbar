@@ -87,6 +87,16 @@ test('profile accepts moderate confidence and angle without loosening capture ga
  assert.equal(faceQualityError(result,image),null);
  assert.ok(faceQualityError(result,image,{capture:true}));
 });
+test('a smaller face in a full-body profile is accepted when facial detail is present',()=>{
+ const {image,result}=fixture();
+ const face=result.face[0];
+ face.box=[136,132,48,54];
+ face.mesh=face.mesh.map(([x,y,z])=>[160+(x-160)*.27,160+(y-160)*.27,z]);
+ assert.equal(faceQualityError(result,image),null);
+ assert.match(faceQualityError(result,image,{capture:true}),/가까이/);
+ face.box[2]=39;
+ assert.match(faceQualityError(result,image),/가까이/);
+});
 
 test('relaxed profile matching accepts lower scores with consistent live identity, but not zero similarity',()=>{
  const frames=[{embedding:[1],scale:.4},{embedding:[2],scale:.4},{embedding:[3],scale:.5}];
