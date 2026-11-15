@@ -35,14 +35,14 @@ export function BottomSheet({ open, onClose, children, className = '', ariaLabel
   </div>;
 }
 
+export function FaceCaptureNotice() {
+  return <p id="face-capture-notice" className="face-capture-notice">사진 도용 확인에 촬영본과 얼굴 비교 정보(민감정보)를 사용하고 검사 후 바로 삭제해요. 동의하지 않으면 사진 등록과 입장이 어려워요.</p>;
+}
+
 export function FaceCaptureConsent({ retry, onCapture }) {
-  const descriptionId = React.useId();
-  return <>
-    <p id={descriptionId} className="face-capture-notice">사진 도용 방지를 위해 촬영본과 얼굴 비교 정보(민감정보)를 처리하고, 검사 후 바로 삭제해요. 동의하지 않으면 사진을 등록하거나 입장할 수 없어요.</p>
-    <Button size="xlarge" display="block" aria-describedby={descriptionId} onClick={onCapture}>
-      {retry ? '동의하고 다시 촬영하기' : '동의하고 촬영하기'}
-    </Button>
-  </>;
+  return <Button size="xlarge" display="block" aria-describedby="face-capture-notice" onClick={onCapture}>
+    {retry ? '동의하고 다시 촬영하기' : '동의하고 촬영하기'}
+  </Button>;
 }
 
 export function CameraVerificationStatus({ guide, message, state, elapsed }) {
