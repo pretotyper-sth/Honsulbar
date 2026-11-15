@@ -1,4 +1,4 @@
-export const FACE_RULES = Object.freeze({boxScore:0.8,meshScore:0.9,profileSimilarity:0.32,profileMean:0.40,liveSimilarity:0.62,live:0.5,minSize:0.2,maxYaw:0.4,maxPitch:0.4});
+export const FACE_RULES = Object.freeze({boxScore:0.8,meshScore:0.9,profileSimilarity:0.16,profileMean:0.37,liveSimilarity:0.62,live:0.5,minSize:0.2,maxYaw:0.4,maxPitch:0.4});
 const finitePoint = p => Array.isArray(p) && p.length>=2 && p.every(Number.isFinite);
 function patch(image,cx,cy,w,h){
  let sum=0,sq=0,edge=0,n=0;
@@ -42,7 +42,7 @@ export function comparisonError(results,similarity,motion,alternateProfile=null)
  const continuous=similarity(first.embedding,last.embedding);
  if(!Number.isFinite(continuous))return '잘 안 보여요. 밝은 곳에서 찍어 주세요.';
  if(continuous<FACE_RULES.liveSimilarity)return '촬영본이 달라요. 정면으로 찍어 주세요.';
- // Allow moderate profile variation from makeup, lighting and retouching.
+ // Profile photos can vary more than consecutive live frames.
  // Both live frames must still match the same reference orientation and each other.
  let invalidScores=false;
  const matched=[photo,alternateProfile].filter(Boolean).some(reference=>{
