@@ -9,11 +9,7 @@ begin
  if not exists(select 1 from hb_members where id=p_member and adult and (banned_until is null or banned_until<=now())) then
   raise exception '로그인이 필요해요.';
  end if;
- if not exists(
-  select 1 from hb_events
-  where name='photo-retry-window' and member_id is null
-   and created_at > now()-interval '30 minutes' and created_at <= now()
- ) and (select count(*) from hb_photo_challenges where member_id=p_member and created_at>now()-interval '1 hour')>=6 then
+ if (select count(*) from hb_photo_challenges where member_id=p_member and created_at>now()-interval '3 minutes')>=10 then
   raise exception '얼굴 확인 시도가 많아요. 잠시 후 다시 시도해 주세요.';
  end if;
  insert into hb_photo_challenges(member_id,motion)

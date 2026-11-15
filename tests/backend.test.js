@@ -388,20 +388,23 @@ test('capture challenges expire, belong to their member and cannot be reused', a
   await db.close();
 });
 
-test('the temporary photo retry window expires and preserves single-use challenges', async () => {
+test('photo capture allows ten attempts per account and frees a slot after three minutes', async () => {
   const {db,login,one}=await setup();
   try {
     await db.exec(sql('20261115_zz_photo_retry_window.sql'));
     const member=await login('84003');
+    const otherMember=await login('84004');
     const next=async()=>(await one('select hb_new_photo_challenge($1) as challenge',[member])).challenge;
-    for(let i=0;i<6;i++)await next();
+    const first=await next();
+    for(let i=1;i<10;i++)await next();
     await assert.rejects(next(),/시도가 많아요/);
-    await db.exec("insert into hb_events(name) values('photo-retry-window')");
+    assert.ok((await one('select hb_new_photo_challenge($1) as challenge',[otherMember])).challenge.id);
+    await db.query("update hb_photo_challenges set created_at=now()-interval '2 minutes 55 seconds' where id=$1",[first.id]);
+    await assert.rejects(next(),/시도가 많아요/);
+    await db.query("update hb_photo_challenges set created_at=now()-interval '3 minutes 5 seconds' where id=$1",[first.id]);
     const challenge=await next();
-    await next();
     assert.equal((await one('select hb_use_photo_challenge($1,$2) as motion',[member,challenge.id])).motion,challenge.motion);
     await assert.rejects(one('select hb_use_photo_challenge($1,$2)',[member,challenge.id]),/다시 시작/);
-    await db.exec("update hb_events set created_at=now()-interval '31 minutes' where name='photo-retry-window'");
     await assert.rejects(next(),/시도가 많아요/);
   } finally { await db.close(); }
 });
