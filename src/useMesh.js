@@ -17,19 +17,21 @@ function waitForIce(pc) {
 
 // Full-mesh voice between guests in the same room. The member with the smaller id always offers,
 // so both sides never create competing offers for the same pair.
-export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains, evidenceEnabled = false, recordingEnabled = false }) {
+export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains, pans = {}, evidenceEnabled = false, recordingEnabled = false }) {
   const peers = useRef(new Map());
   const context = useRef(null);
   const recording = useRef(null);
   const [recordingStream,setRecordingStream] = useState(null);
   const track = useRef(null);
   const gainValues = useRef({});
+  const panValues = useRef({});
   const active = useRef(enabled);
   const wantedPeers = useRef(new Set(peerIds));
   wantedPeers.current = new Set(peerIds);
   const [talking, setTalking] = useState([]);
   track.current = stream?.getAudioTracks()[0] || null;
   gainValues.current = gains;
+  panValues.current = pans;
   active.current = enabled;
 
   const audio = useCallback(() => {
@@ -54,7 +56,7 @@ export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains, e
     peer.pc.close();
     if (peer.capture) { peer.capture.onaudioprocess = null; peer.capture.disconnect(); }
     peer.evidence?.clear();
-    peer.source?.disconnect(); peer.gain?.disconnect();
+    peer.source?.disconnect(); peer.gain?.disconnect(); peer.pan?.disconnect();
     if (peer.element) { peer.element.srcObject = null; }
     peers.current.delete(id);
   }, []);
@@ -77,7 +79,12 @@ export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains, e
       peer.analyser.fftSize = 512;
       peer.source.connect(peer.analyser);
       peer.source.connect(peer.gain);
-      peer.gain.connect(ctx.destination);
+      if (ctx.createStereoPanner) {
+        peer.pan = ctx.createStereoPanner();
+        peer.pan.pan.value = panValues.current[id] ?? 0;
+        peer.gain.connect(peer.pan);
+        peer.pan.connect(ctx.destination);
+      } else peer.gain.connect(ctx.destination);
       if (recording.current) peer.gain.connect(recording.current);
       if (evidenceEnabled) {
         peer.evidence = createVoiceBuffer();
@@ -167,8 +174,9 @@ export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains, e
     for (const [id, peer] of peers.current) {
       if (!(gains[id] > 0)) peer.evidence?.clear();
       if (peer.gain && ctx) peer.gain.gain.setTargetAtTime(gains[id] ?? 0, ctx.currentTime, 0.08);
+      if (peer.pan && ctx) peer.pan.pan.setTargetAtTime(pans[id] ?? 0, ctx.currentTime, 0.08);
     }
-  }, [JSON.stringify(gains)]);
+  }, [JSON.stringify(gains), JSON.stringify(pans)]);
 
   useEffect(() => {
     if (!enabled) { setTalking([]); return undefined; }

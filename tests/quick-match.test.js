@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
+import { findAvailableBars } from '../src/quick-match.js';
 
 test('two simultaneous searchers get one private offer and can enter the same branch', async () => {
  const db = await PGlite.create();
@@ -46,7 +47,35 @@ test('two simultaneous searchers get one private offer and can enter the same br
   assert.equal(await query('select count(distinct room_id)::int as value from hb_visits'),1);
   assert.equal(await query('select count(*)::int as value from hb_visits'),2);
   assert.equal(await photo(a,b),false);
+  const snapshot=id=>query('select hb_snapshot($1) as value',[id]);
+  const action=(id,name,body={})=>query('select hb_action($1,$2,$3) as value',[id,name,JSON.stringify(body)]);
+  const visit=(await snapshot(a)).visit;
+  await action(a,'heartbeat',{visitId:visit.id,seat:visit.seat,facing:75});
+  assert.equal((await snapshot(b)).guests.find(g=>g.id===a).facing,75);
+  await action(a,'move',{seat:3});
+  await action(a,'heartbeat',{visitId:visit.id,seat:visit.seat,facing:90});
+  assert.equal((await snapshot(b)).guests.find(g=>g.id===a).facing,0);
+  await action(a,'heartbeat',{visitId:visit.id,seat:3,facing:-175});
+  assert.equal((await snapshot(b)).guests.find(g=>g.id===a).facing,-175);
+  const swap=await action(b,'request',{kind:'swap',targetId:a});
+  await action(a,'respond',{id:swap.id,accept:false});
+  assert.deepEqual((await snapshot(b)).declinedSwapIds,[swap.id]);
+  assert.deepEqual((await snapshot(a)).declinedSwapIds,[]);
+  await db.query('update hb_visits set first_guest_charge=null where member_id=$1',[a]);
+  await action(a,'leave');
+  assert.ok(!(await snapshot(b)).guests.some(g=>g.id===a));
+  await enter(a,{region:'서울',number:offer.number});
+  assert.equal((await snapshot(b)).guests.find(g=>g.id===a).facing,0);
  } finally {
   await db.close();
  }
+});
+
+test('open and full branches are listed in branch order with their real counts', () => {
+ const rooms = {'서울':[
+  {number:5,count:7}, {number:2,count:12}, {number:1,count:3},
+  {number:3,count:4,hasReportedGuest:true}, {number:4,count:0},
+ ]};
+ assert.deepEqual(findAvailableBars(rooms,'서울',0).map(({number,count})=>[number,count]),
+  [[1,3],[2,12],[5,7]]);
 });

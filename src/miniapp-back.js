@@ -26,8 +26,7 @@ export function subscribeMiniappBack({ window, graniteEvent, onBack, insideToss,
   return () => window.removeEventListener('popstate', onPop);
 }
 
-export function navigationBarOptions() {
-  // Web chrome and its backdrop paint the same white surface. Keep native
-  // layout mode constant: switching transparency moves the WebView on iOS.
-  return { transparentBackground: true, backgroundColor: null, theme: 'light' };
+export function navigationBarOptions(inBar = false) {
+  // Switching transparency moves the WebView on iOS.
+  return { transparentBackground: true, backgroundColor: null, theme: inBar ? 'dark' : 'light' };
 }

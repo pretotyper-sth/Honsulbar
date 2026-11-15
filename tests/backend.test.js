@@ -6,7 +6,7 @@ import { PGlite } from '@electric-sql/pglite';
 
 const sql = name => readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8');
 
-async function setup() {
+async function setup({ soloClock = false } = {}) {
   const db = new PGlite();
   await db.exec(`create role anon; create role authenticated; create role service_role;`);
   await db.exec(sql('20260924_toss_login_disconnect.sql'));
@@ -17,6 +17,10 @@ async function setup() {
   await db.exec(sql('20261014_report_triage.sql'));
   await db.exec(sql('20261016_face_verification.sql'));
   await db.exec(sql('20261025_scoped_safety_cleanup.sql'));
+  if (soloClock) {
+    await db.exec(sql('20261108_solo_visit_clock.sql'));
+    await db.exec(sql('20261115_preserve_solo_seat_time.sql'));
+  }
   const one = async (query, params) => (await db.query(query, params)).rows[0];
   const action = async (member, name, data = {}) => (await one('select hb_action($1,$2,$3::jsonb) as r', [member, name, JSON.stringify(data)])).r;
   const snapshot = async member => (await one('select hb_snapshot($1) as s', [member])).s;
@@ -473,4 +477,48 @@ test('restricted members can read their action notice and appeal without regaini
  await assert.rejects(action(member,'enter',{region:'서울',number:1,drinkId:'beer'}),/제한/);
  await assert.rejects(action(member,'ticket',{kind:'report',targetId:member,category:'기타',message:'test'}),/제한/);
  await db.close();
+});
+
+test('a solo guest keeps exactly 30 minutes when changing seats after five seconds', async () => {
+  const {action, db, login, ready, snapshot} = await setup({soloClock:true});
+  try {
+    const me = await login('700001');
+    const guest = await login('700002');
+    await ready(me, '느긋한 토끼');
+    await ready(guest, '조용한 여우');
+    const entry = {region:'서울', number:1, drinkId:'highball'};
+    await action(me, 'enter', entry);
+    assert.equal((await snapshot(me)).visit.seconds, 1800);
+
+    // Simulate five seconds passing while the clock is paused.
+    await db.query(`update hb_visits set solo_since=now()-interval '5 seconds',
+      expires_at=now()+interval '1795 seconds' where member_id=$1`, [me]);
+    await action(me, 'move', {seat:3});
+    let {visit} = await snapshot(me);
+    assert.equal(visit.seat, 3);
+    assert.equal(visit.soloPaused, true);
+    assert.equal(visit.seconds, 1800);
+
+    await action(guest, 'enter', entry);
+    ({visit} = await snapshot(me));
+    assert.equal(visit.soloPaused, false);
+    assert.equal(visit.seconds, 1800);
+    await db.query("update hb_visits set expires_at=expires_at-interval '5 seconds' where member_id=$1", [me]);
+    const expiry = async () => (await db.query(
+      'select expires_at::text as expiry from hb_visits where member_id=$1', [me]
+    )).rows[0].expiry;
+    const beforeMove = await expiry();
+    await action(me, 'move', {seat:4});
+    assert.equal(await expiry(), beforeMove);
+    ({visit} = await snapshot(me));
+    assert.equal(visit.seconds, 1795);
+
+    await action(guest, 'leave');
+    assert.equal((await snapshot(me)).visit.soloPaused, true);
+    await action(me, 'order', {drinkId:'highball'});
+    ({visit} = await snapshot(me));
+    assert.equal(visit.seconds, 3595);
+  } finally {
+    await db.close();
+  }
 });

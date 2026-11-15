@@ -1,10 +1,10 @@
 import {entryRequirement} from './entry-check';
 import {AccountTransferCode,AccountTransferEntry} from './AccountTransferCode';
 import {visibleCheck,captureFacePair,profileCanSave} from './photo-verification';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { IAP, loadFullScreenAd, showFullScreenAd, SafeAreaInsets, NavigationBar, graniteEvent, Screen } from '@apps-in-toss/web-framework';
-import { Button, BottomSheet, Badge, FaceConsent, CameraVerificationStatus } from './ui';
+import { Button, BottomSheet, Badge, FaceCaptureConsent, CameraVerificationStatus } from './ui';
 import { ArrowLeft, ArrowRight, Bell, Camera, Check, ChevronDown, Clock3, DoorOpen, Coins, MessageCircleMore, Mic, MicOff, Plus, Volume2, VolumeX, Speaker, Wine, X, Flag, Wallet, Eye, LockKeyhole, ArrowLeftRight, Settings, UserRound } from 'lucide-react';
 import { REGIONS, CAPACITY, DRINKS } from './model';
 import { findAvailableBars } from './quick-match';
@@ -17,11 +17,14 @@ import { call, getConfig, login, clearSession, hasSession, assetUrl, insideToss,
 import { handleMiniappBack, subscribeMiniappBack, navigationBarOptions } from './miniapp-back';
 import { ExitConfirm } from './ExitConfirm';
 import { Glass } from './Glass';
+import { BarScene, BarViewOptions } from './BarScene';
+import { firstPersonVoice, partnerFacing } from './bar-scene';
 import { SEATS as positions, POINT_PACKS, SUBSCRIPTIONS, adjacent, audioGain } from './social';
 import { AdminPage } from './admin';
 import './style.css';
 
 const ANDROID_ACCOUNT_LINK_VISIBLE = false;
+const BAR_SHEETS = new Set(['bar-view', 'bar-seats', 'menu', 'guest', 'move', 'leave', 'incoming', 'seat-request']);
 
 const IAP_PACK_SKU = {
   1000: 'ait.0000078228.10e9c057.abb16a92b7.0232936136',
@@ -250,7 +253,7 @@ const PUSH_AGREED_KEY = 'honsulbar:push-agreed:v1';
 function storageFlag(key) { try { return localStorage.getItem(key) === '1'; } catch { return false; } }
 function setStorageFlag(key, on) { try { on ? localStorage.setItem(key, '1') : localStorage.removeItem(key); } catch {} }
 
-function App({qaControls} = {}) {
+function App({qaControls, qaView, qaStart} = {}) {
   const [waitlistAlerts, setWaitlistAlerts] = useState(() => storageFlag(WAITLIST_ALERT_KEY));
   const [pushAgreed, setPushAgreed] = useState(() => storageFlag(PUSH_AGREED_KEY));
   const waitlistAction = useRef(false);
@@ -273,6 +276,8 @@ function App({qaControls} = {}) {
   historyLimitRef.current = historyLimit;
   const [facing, setFacing] = useState(0);
   const [audioFacing, setAudioFacing] = useState(0);
+  const latestFacing = useRef(facing);
+  latestFacing.current = facing;
   const [waveSent, setWaveSent] = useState([]);
   const [focusSubscription, setFocusSubscription] = useState(false);
   const [region, setRegion] = useState('서울');
@@ -297,7 +302,7 @@ function App({qaControls} = {}) {
       verificationAttempt.current++; verificationController.current?.abort(); captureLock.current=false; setPhotoProof(null); setDraftVerified(false); setVerificationGuide({stage:'ready',progress:0});
       if (verificationState==='checking') setVerificationState('ready');
       setVerificationMessage('동의 해제 시 다시 촬영해야 해요.');
-    } else if (verificationState==='verified' && !photoProof) { setVerificationState('ready'); setVerificationGuide({stage:'ready',progress:0}); setVerificationMessage('준비되면 촬영을 시작해 주세요.'); }
+    } else if (verificationState==='verified' && !photoProof) { setVerificationState('ready'); setVerificationGuide({stage:'ready',progress:0}); setVerificationMessage('얼굴을 원 안에 맞춰 주세요.'); }
   }
   const [photoCheck, setPhotoCheck] = useState('idle');
   const [devSubscription, setDevSubscription] = useState(null);
@@ -307,6 +312,11 @@ function App({qaControls} = {}) {
   const [verificationStartedAt, setVerificationStartedAt] = useState(0);
   const verificationController = useRef(null);
   const [now, setNow] = useState(Date.now());
+  const [barView, setBarView] = useState(qaView || 'third');
+  const viewTrigger = useRef(null);
+  const seatPickerTrigger = useRef(null);
+  const [sceneMoving, setSceneMoving] = useState(false);
+  const qaOpened = useRef(false);
   const [selection, setSelection] = useState('highball');
   const [speaker, setSpeaker] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
@@ -399,6 +409,11 @@ function App({qaControls} = {}) {
     setSheetState(() => sheetStack.current.pop() ?? null);
   }
 
+  useEffect(() => {
+    const trigger = sheet === 'bar-view' ? viewTrigger : sheet === 'bar-seats' ? seatPickerTrigger : null;
+    if (trigger) return () => trigger.current?.focus({preventScroll:true});
+  }, [sheet]);
+
   const member = server?.member || null;
   const me = member?.id;
   useEffect(()=>{setVoiceAgreed(null);setReportAudio(null);},[me]);
@@ -431,6 +446,16 @@ function App({qaControls} = {}) {
   const pendingRequests = server?.requests || [];
   const incomingRequest = pendingRequests.find(r => r.receiver === me && r.kind === 'swap');
   const incoming = incomingRequest ? { id: incomingRequest.id, guestId: incomingRequest.sender, expiresAt: Date.parse(incomingRequest.expires_at) } : null;
+  useEffect(() => {
+    if (!qaStart || !member || qaOpened.current) return;
+    if (qaStart === 'incoming' && !incoming) return;
+    qaOpened.current = true;
+    if (qaStart === 'profile') openProfileEditor();
+    else open('incoming');
+  }, [qaStart, member, incoming?.id]);
+  useEffect(() => {
+    if (sheet === 'incoming' && !incoming) setSheet(null);
+  }, [sheet, incoming?.id]);
   const incomingFocus = pendingRequests.find(r => r.receiver === me && r.kind === 'focus') || null;
   const outgoing = pendingRequests.find(r => r.sender === me && r.kind === 'swap') || null;
   const focusRequest = pendingRequests.find(r => r.sender === me && r.kind === 'focus') || null;
@@ -461,14 +486,26 @@ function App({qaControls} = {}) {
   const subscriptionCancelAt = member?.subscribed
     ? (member.subAutoRenew === false ? (member.subExpiresAt || null) : null)
     : (devSubscription?.cancelAt ? (devSubscription.expiresAt || null) : null);
-  const gains = useMemo(() => Object.fromEntries(guests.map(g => {
-    if (!soundOn || mutedGuests.includes(g.id)) return [g.id, 0];
-    const broadcast = g.speaker && !partners.me && !partners[g.id];
-    return [g.id, broadcast ? 1 : audioGain({ id: 'me', seat }, g, audioFacing, partners, mutedGuests)];
-  })), [guests, soundOn, mutedGuests, partners, seat, audioFacing]);
+  const firstPerson = barView === 'first';
+  const facingLimit = firstPerson ? 180 : 90;
+  const heardAngle = firstPerson ? facing : audioFacing;
+  const {gains, pans} = useMemo(() => {
+    const gains = {}, pans = {};
+    for (const guest of guests) {
+      if (!soundOn || reportedIds.has(guest.id) || mutedGuests.includes(guest.id)) { gains[guest.id] = 0; continue; }
+      const broadcast = guest.speaker && !partners.me && !partners[guest.id];
+      const gain = broadcast ? 1 : audioGain({id:'me', seat}, guest, firstPerson ? 0 : heardAngle, partners, mutedGuests);
+      if (firstPerson && gain > 0 && !broadcast && !partners.me) {
+        const spatial = firstPersonVoice(seat, guest.seat, heardAngle);
+        gains[guest.id] = spatial.gain;
+        pans[guest.id] = spatial.pan;
+      } else gains[guest.id] = gain;
+    }
+    return {gains,pans};
+  }, [guests, soundOn, reportedIds, mutedGuests, partners, seat, firstPerson, heardAngle]);
   const iceServers = useMemo(() => config?.iceServers?.length ? config.iceServers : DEFAULT_ICE, [config]);
   const sending = voice.mic && (seconds > 0 || unlimitedSeat) ? voice.stream : null;
-  const mesh = useMesh({ enabled: import.meta.env.VITE_QUICK_SEARCH_QA !== '1' && (!config?.fullVoiceReady || recordingBlocked.current !== visit?.id) && screen === 'bar' && !!me && !!member?.photoChecked && !server?.safetyPaused && hasVoiceConsent, evidenceEnabled: !!config?.voiceEvidenceReady && hasVoiceConsent, recordingEnabled: !!config?.fullVoiceReady, selfId: me, peerIds: voicePeerIds(guests,partners,reportedIds), stream: sending, iceServers, gains });
+  const mesh = useMesh({ enabled: import.meta.env.VITE_QUICK_SEARCH_QA !== '1' && (!config?.fullVoiceReady || recordingBlocked.current !== visit?.id) && screen === 'bar' && !!me && !!member?.photoChecked && !server?.safetyPaused && hasVoiceConsent, evidenceEnabled: !!config?.voiceEvidenceReady && hasVoiceConsent, recordingEnabled: !!config?.fullVoiceReady, selfId: me, peerIds: voicePeerIds(guests,partners,reportedIds), stream: sending, iceServers, gains, pans });
   useFullVoiceRecording({
     enabled: !!config?.fullVoiceReady && hasVoiceConsent && screen === 'bar' &&
       recordingBlocked.current !== visit?.id && guests.some(person => gains[person.id] > 0),
@@ -507,6 +544,13 @@ function App({qaControls} = {}) {
       const seen = new Set(incoming.map(item => item.id));
       state = { ...state, ledger: [...incoming, ...existing.filter(item => !seen.has(item.id))].slice(0, wanted) };
     }
+    if (state.visit && !state.visit.away && (state.visit.id !== before?.visit?.id || before?.visit?.away)) setBarView(!before && qaView ? qaView : 'third');
+    const partnerBefore = before?.partners?.[state.member?.id];
+    const partnerNow = state.partners?.[state.member?.id];
+    if (partnerNow && partnerNow !== partnerBefore && state.visit && !state.visit.away) {
+      const partnerSeat = state.guests?.find(person => person.id === partnerNow)?.seat;
+      setFacing(partnerFacing(state.visit.seat, partnerSeat));
+    }
     previousState.current = state;
     setServer(state); setSyncedAt(Date.now()); setNow(Date.now());
     setScreen(current => {
@@ -528,10 +572,15 @@ function App({qaControls} = {}) {
     if ((state.requests || []).some(r => r.receiver === state.member?.id && !incomingBefore.has(r.id))) playCue('request');
     const sent = (before.requests || []).find(r => r.sender === state.member?.id && r.kind === 'swap');
     if (sent && !(state.requests || []).some(r => r.id === sent.id)) {
-      setToast(state.visit && before.visit && state.visit.seat !== before.visit.seat ? '500P를 쓰고 자리를 바꿨어요.' : '요청이 거절돼 포인트는 그대로예요.');
+      if (state.declinedSwapIds?.includes(sent.id)) {
+        setToast('요청이 거절돼 포인트는 그대로예요.');
+        playCue('declined');
+      } else if (inside && state.visit && !state.visit.away && state.visit.seat === sent.receiver_seat) {
+        setToast('500P를 쓰고 자리를 바꿨어요.');
+      } else if (inside && state.visit && !state.visit.away && Date.parse(sent.expires_at) <= Date.now()) {
+        setToast('자리 양보 요청 시간이 끝났어요.');
+      } else if (inside && state.visit && !state.visit.away) setToast('자리 양보 요청이 끝났어요.');
     }
-    const partnerBefore = Object.keys(before.partners || {}).includes(state.member?.id);
-    const partnerNow = Object.keys(state.partners || {}).includes(state.member?.id);
     if (!partnerBefore && partnerNow) setToast('옆자리와 대화를 시작했어요.');
     if (partnerBefore && !partnerNow) setToast('전체 대화로 돌아왔어요.');
   };
@@ -581,8 +630,8 @@ function App({qaControls} = {}) {
   }), [!!sheet, screen === 'bar']);
   useEffect(() => {
     if (!insideToss() || typeof NavigationBar?.setOptions !== 'function') return;
-    NavigationBar.setOptions(navigationBarOptions()).catch(() => {});
-  }, []);
+    NavigationBar.setOptions(navigationBarOptions(screen === 'bar')).catch(() => {});
+  }, [screen === 'bar']);
   useEffect(() => { getConfig().then(setConfig).catch(() => setConfig({})); }, []);
   useEffect(() => {
     if(screen==='bar' && !hasVoiceConsent) { setPendingEntry(null);setSheetState('voice-consent'); }
@@ -598,14 +647,14 @@ function App({qaControls} = {}) {
       if (stopped) return;
       if (!document.hidden && !polling.current && !entering.current && !leaving.current) {
         polling.current = true;
-        try { await run(screen === 'bar' ? 'heartbeat' : 'state', screen === 'bar' ? { speaker, mic: voice.mic } : undefined); } catch (e) { if (e.status === 401) fail(e); }
+        try { await run(screen === 'bar' ? 'heartbeat' : 'state', screen === 'bar' ? { speaker, mic: voice.mic, facing:Math.round(latestFacing.current), seat:visit?.seat, visitId:visit?.id } : undefined); } catch (e) { if (e.status === 401) fail(e); }
         polling.current = false;
       }
       timer = setTimeout(loop, screen === 'bar' ? 1000 : 6000);
     };
     timer = setTimeout(loop, screen === 'bar' ? 400 : 6000);
     return () => { stopped = true; clearTimeout(timer); };
-  }, [screen, speaker, voice.mic]);
+  }, [screen, speaker, voice.mic, visit?.id, visit?.seat]);
   useEffect(() => { if (['lobby', 'bar'].includes(screen)) run('state').catch(() => {}); }, [historyLimit]);
 
   const faceModel = useRef(null);
@@ -634,25 +683,59 @@ function App({qaControls} = {}) {
     }
   }, [sheet]);
 
-  function playCue(kind) {
-    if (!soundOn || typeof window === 'undefined') return;
+  const prepareCueAudio = useCallback(() => {
+    if (!soundOn) return null;
     const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContext) return;
-    const context = cueContext.current || (cueContext.current = new AudioContext());
-    context.resume?.();
-    const tones = kind === 'request' ? [392, 523] : [523, 659, 784];
+    if (!AudioContext) return null;
+    try {
+      const context = cueContext.current || (cueContext.current = new AudioContext());
+      if (context.state === 'suspended') context.resume().catch(() => {});
+      return context;
+    } catch {
+      return null;
+    }
+  }, [soundOn]);
+
+  const playCue = useCallback(kind => {
+    const context = prepareCueAudio();
+    if (!context) return;
+    if (kind === 'step' || kind === 'sit') {
+      if (context.state !== 'running') return;
+      const sitting = kind === 'sit';
+      const length = sitting ? .17 : .09;
+      const start = context.currentTime;
+      const noise = context.createBuffer(1, Math.ceil(context.sampleRate * length), context.sampleRate);
+      const samples = noise.getChannelData(0);
+      for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
+      const surface = context.createBufferSource();
+      const filter = context.createBiquadFilter();
+      const gain = context.createGain();
+      const impact = context.createOscillator();
+      surface.buffer = noise;
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(sitting ? 440 : 1050, start);
+      impact.frequency.setValueAtTime(sitting ? 126 : 148, start);
+      impact.frequency.exponentialRampToValueAtTime(sitting ? 52 : 75, start + length);
+      gain.gain.setValueAtTime(sitting ? .10 : .055, start);
+      gain.gain.exponentialRampToValueAtTime(.0001, start + length);
+      surface.connect(filter); filter.connect(gain); impact.connect(gain); gain.connect(context.destination);
+      surface.start(start); impact.start(start); impact.stop(start + length);
+      return;
+    }
+    const declined = kind === 'declined';
+    const tones = declined ? [440, 392] : kind === 'request' ? [392, 523] : [523, 659, 784];
     tones.forEach((frequency, index) => {
-      const start = context.currentTime + index * .09;
+      const start = context.currentTime + index * (declined ? .07 : .09);
       const oscillator = context.createOscillator();
       const gain = context.createGain();
       oscillator.type = 'sine'; oscillator.frequency.value = frequency;
       gain.gain.setValueAtTime(.0001, start);
-      gain.gain.exponentialRampToValueAtTime(.08, start + .015);
+      gain.gain.exponentialRampToValueAtTime(declined ? .028 : .08, start + .015);
       gain.gain.exponentialRampToValueAtTime(.0001, start + .16);
       oscillator.connect(gain); gain.connect(context.destination);
       oscillator.start(start); oscillator.stop(start + .18);
     });
-  }
+  }, [prepareCueAudio]);
 
   useEffect(() => { const timer=setTimeout(()=>setAudioFacing(facing),150); return ()=>clearTimeout(timer); },[facing]);
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [screen]);
@@ -760,7 +843,7 @@ function App({qaControls} = {}) {
       cancelAnimationFrame(cameraDraw.current);
       cameraDraw.current = requestAnimationFrame(paintPreview);
       loadFaceModel().then(() => {
-        if (!cancelled) { setVerificationState('ready'); setVerificationGuide({stage:'ready',progress:0}); setVerificationMessage('준비되면 촬영을 시작해 주세요.'); }
+        if (!cancelled) { setVerificationState('ready'); setVerificationGuide({stage:'ready',progress:0}); setVerificationMessage('얼굴을 원 안에 맞춰 주세요.'); }
       }).catch(() => {
         if (!cancelled) { setVerificationState('unavailable'); setVerificationMessage('준비하지 못했어요. 다시 열어 주세요.'); }
       });
@@ -1098,16 +1181,19 @@ function App({qaControls} = {}) {
   }
   async function respondSwap(accept) {
     if (!incoming) return;
+    prepareCueAudio();
     try {
       await run('respond', { id: incoming.id, accept });
       setSheet(null);
       setToast(accept ? '자리를 양보하고 500P를 받았어요' : '요청을 거절했어요.');
+      if (!accept) playCue('declined');
     } catch (e) { setSheet(null); setToast(e.message); }
   }
   async function sendSeatRequest() {
     if (outgoing || !selectedGuest || wallet.balance < 500) return;
     if (dailySwapRequests >= DAILY_SWAP_REQUEST_LIMIT) { setToast('오늘은 자리 양보 요청을 더 보낼 수 없어요.'); return; }
     if (seatRequestCounts[`${selectedGuest.id}:${selectedGuest.seat}`]) { setToast('같은 자리에는 한 번만 부탁할 수 있어요.'); return; }
+    prepareCueAudio();
     try { await run('request', { targetId: selectedGuest.id, kind: 'swap' }); setSheet(null); setToast('부탁했고 수락 시 500P가 사용돼요.'); }
     catch (e) { setError(e.message); }
   }
@@ -1354,7 +1440,7 @@ function App({qaControls} = {}) {
     }
   }
   function seatsAreLocked() {
-    return pendingMove.current != null || Date.now() < moveLockUntil.current;
+    return sceneMoving || pendingMove.current != null || Date.now() < moveLockUntil.current;
   }
   function freezeSeats() {
     moveLockUntil.current = Date.now() + 1600;
@@ -1366,6 +1452,7 @@ function App({qaControls} = {}) {
   }
   async function commitMove(index) {
     if (index == null || index === seat || seatsAreLocked()) return;
+    if (barView !== 'flat') prepareCueAudio();
     const previous = seat;
     pendingMove.current = index;
     setServer(s => s?.visit ? { ...s, visit: { ...s.visit, seat: index } } : s);
@@ -1453,10 +1540,10 @@ function App({qaControls} = {}) {
       ...quickRooms.filter(room => room.region !== quickOffer.region || room.number !== quickOffer.number)]
     : quickRooms).sort((a,b) => a.region === b.region ? a.number - b.number :
       Number(b.region === region) - Number(a.region === region) || a.region.localeCompare(b.region, 'ko'));
-  const quickWaiting = !!quickSearchStarted && !resultRooms.length;
   const displayedRooms = returnRoom
     ? [returnRoom, ...resultRooms.filter(room => !leftoverFor(room))]
     : resultRooms;
+  const quickWaiting = !!quickSearchStarted && !displayedRooms.length;
   const canAutoMatch = !entryRequirement(member);
   const searchingForMatch = screen === 'lobby' && !!quickSearchStarted &&
     (!quickRooms.some(room => room.count < CAPACITY) || !!quickOffer) && canAutoMatch && !server?.safetyPaused;
@@ -1538,6 +1625,45 @@ function App({qaControls} = {}) {
   const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(new Date(now));
   const guestSeconds = person => tick(person.seconds, person.seat === 11 && !server?.seatNeutralClock);
 
+  const selectBarView = useCallback(view => {
+    if (view !== 'first' && !activeFocus) setFacing(angle => Math.max(-90, Math.min(90, angle)));
+    setBarView(view);
+  }, [activeFocus]);
+
+  function handleBarSheetKeys(event) {
+    if (event.key === 'Escape') { closeSheet(); return; }
+    if (event.key !== 'Tab') return;
+    const buttons = event.currentTarget.querySelectorAll('button:not(:disabled)');
+    const first = buttons[0], last = buttons[buttons.length - 1];
+    if (event.shiftKey && event.target === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && event.target === last) { event.preventDefault(); first.focus(); }
+  }
+
+  function selectBarSeat(index) {
+    if (seat === index) { openProfileEditor(); return; }
+    const person = guests.find(g => g.seat === index);
+    if (person) { setSelectedGuest(person); open('guest'); }
+    else requestMove(index);
+  }
+
+  function renderBarSeat(i, flat = false, moving = false) {
+    const [x,y] = positions[i];
+    const person = guests.find(g => g.seat === i);
+    const mine = seat === i;
+    const occupied = mine || !!person;
+    const talking = mine ? voice.mic && voice.level > .06 : speakingGuest === person?.id;
+    const personDrink = mine ? wallet.drinkId : person?.drinkId;
+    const leftTime=mine?seconds:person?guestSeconds(person):0;
+    const paired=partners[mine?'me':person?.id];
+    const rotation=(i===11?180:Math.atan2(50-y,50-x)*180/Math.PI+90)+(mine?facing:0);
+    return <div key={i} className={`seat-wrap ${i === 11 ? 'host-wrap' : ''} ${talking ? 'is-speaking' : ''} ${mine ? 'my-wrap' : ''} ${paired?'paired-seat':''}`} style={{...(flat ? {left:`${x}%`,top:`${y}%`} : {}),'--voice':mine ? voice.level : .7,'--facing':`${rotation}deg`}}>
+      {mine&&<span className="facing-indicator" aria-hidden="true"/>}
+      <button className={`seat ${occupied ? `occupied ${mine ? profile.gender : person.gender}` : 'empty'} ${mine ? 'mine' : ''} ${talking ? 'speaking' : ''}`} aria-label={mine ? '내 자리' : person ? `${i+1}번 손님 프로필` : i === 11 ? '빈 사장 자리로 이동' : `${i+1}번 빈자리로 이동`} disabled={!occupied && (seatFrozen || moving)} onClick={() => selectBarSeat(i)}>{occupied ? <img src={mine ? myPhoto : person.photo} alt={mine ? '내 얼굴' : '손님 얼굴'}/> : <Plus size={18}/>}</button>
+      {occupied && <span className="seat-drink" title={DRINKS.find(d => d.id === personDrink)?.name}><Glass id={personDrink} seconds={leftTime} host={i===11&&!server?.seatNeutralClock}/><span className="sr-only">{DRINKS.find(d => d.id === personDrink)?.name}, {i===11&&!server?.seatNeutralClock?'시간 제한 없음':`${Math.ceil(leftTime/60)}분 남음`}</span></span>}
+      {paired&&<span className="pair-marker" title="서로 속삭이는 중"><MessageCircleMore size={12} style={{transform:'scaleX(-1)'}}/><span className="sr-only">서로 속삭이는 중</span></span>}{!mine&&person&&mutedGuests.includes(person.id)?<span className="muted-marker" title={reportedIds.has(person.id)?'이용자 보호로 연결되지 않아요':'음소거됨'}><VolumeX size={12}/><span className="sr-only">{reportedIds.has(person.id)?'이용자 보호로 연결되지 않아요':'음소거됨'}</span></span>:!mine&&person&&person.mic===false?<span className="muted-marker mic-off-marker" title="마이크 꺼짐"><MicOff size={12}/><span className="sr-only">마이크 꺼짐</span></span>:null}{talking && <Waves/>}{mine && <span className="me-label">나</span>}{i === 11 && <span className="host-label">{occupied ? '사장' : '사장 자리'}</span>}
+    </div>;
+  }
+
   const exitConfirm = <ExitConfirm open={exitOpen} onClose={() => setExitOpen(false)} onConfirm={async () => {
     try { await Screen.close(); } catch { setToast('종료하지 못했어요. 다시 시도해 주세요.'); }
   }}/>;
@@ -1606,7 +1732,7 @@ function App({qaControls} = {}) {
     title="조금 더 머물까요?" description="이용시간이 1분 남았어요. 괜찮아요를 누르면 남은 시간이 끝날 때 자동으로 홈으로 돌아가요."
     cancelLabel="괜찮아요" confirmLabel="한 잔 더" centered/>
   <div className="ait-gnb-fill" aria-hidden="true"/>
-  <main className="app">
+  <main className={`app${screen === 'bar' ? ' bar-active' : ' lobby-active'}`}>
     <header>
       {screen === 'bar' ? <button className="icon-button" aria-label="바 나가기" onClick={()=>open('leave')}><ArrowLeft size={21}/></button> : <button className="point-entry" aria-label={`포인트 상점, ${wallet.balance.toLocaleString()}P`} onClick={()=>open('shop')}><Coins size={17}/><span>{wallet.balance.toLocaleString()}<small> P</small></span></button>}
       <div className="header-actions">{qaControls}<button className="header-icon-button" aria-label="설정" onClick={()=>open('settings')}><Settings size={18}/></button><button className="notification-button" aria-label={`알림 ${notifications.length}개`} onClick={openNotifications}><Bell size={18}/>{notifications.some(item=>item.unread)&&<i/>}</button><button className="profile-button" aria-label="내 프로필" onClick={()=>openProfileEditor()}>{myPhoto ? <img src={myPhoto} alt="내 프로필"/> : <UserRound size={18}/>}</button></div>
@@ -1673,29 +1799,23 @@ function App({qaControls} = {}) {
     </section> : <section className="bar-screen">
       <div className="room-heading"><div><button className="room-title" aria-label={`${room.region} ${room.number}호점 나가기`} onClick={() => open('leave')}>{room.region} {room.number}호점 <DoorOpen size={18}/></button></div><span className="occupancy"><i className="green-dot"/>{guests.length+1}<span> / 12</span></span></div>
       <div className={`time-strip ${seconds < 300 && !unlimitedSeat ? 'time-low' : ''}`}><Clock3 size={16}/><span>{unlimitedSeat ? '사장 자리' : soloPaused ? '혼자 대기 중 · 시간 일시정지' : '남은 시간'}</span><strong>{unlimitedSeat ? '시간 제한 없음' : time}</strong><button aria-label="메뉴판 열고 시간 연장" onClick={() => {setSelection(wallet.drinkId || 'highball'); open('menu');}}><Plus size={18}/></button></div>
-      <div className="bar-space"><div className={`bar-floor${seatFrozen ? ' is-frozen' : ''}`}><div className="bar-rug"/><div className="wood-bar"><i className="table-lamp lamp-one"/><i className="table-lamp lamp-two"/><i className="table-lamp lamp-three"/></div>
-        {positions.map(([x,y], i) => {
-          const person = guests.find(g => g.seat === i);
-          const mine = seat === i;
-          const occupied = mine || !!person;
-          const talking = mine ? voice.mic && voice.level > .06 : speakingGuest === person?.id;
-          const personDrink = mine ? wallet.drinkId : person?.drinkId;
-          const leftTime=mine?seconds:person?guestSeconds(person):0;
-          const paired=partners[mine?'me':person?.id];
-          const rotation=(i===11?180:Math.atan2(50-y,50-x)*180/Math.PI+90)+(mine?facing:0);
-          return <div key={i} className={`seat-wrap ${i === 11 ? 'host-wrap' : ''} ${talking ? 'is-speaking' : ''} ${mine ? 'my-wrap' : ''} ${paired?'paired-seat':''}`} style={{left:`${x}%`,top:`${y}%`,'--voice':mine ? voice.level : .7,'--facing':`${rotation}deg`}}>
-            {mine&&<span className="facing-indicator" aria-hidden="true"/>}
-            <button className={`seat ${occupied ? `occupied ${mine ? profile.gender : person.gender}` : 'empty'} ${mine ? 'mine' : ''} ${talking ? 'speaking' : ''}`} aria-label={mine ? '내 자리' : person ? `${i+1}번 손님 프로필` : i === 11 ? '빈 사장 자리로 이동' : `${i+1}번 빈자리로 이동`} disabled={!occupied && seatFrozen} onClick={() => mine ? openProfileEditor() : person ? (setSelectedGuest(person), open('guest')) : requestMove(i)}>{occupied ? <img src={mine ? myPhoto : person.photo} alt={mine ? '내 얼굴' : '손님 얼굴'}/> : <Plus size={18}/>}</button>
-            {occupied && <span className="seat-drink" title={DRINKS.find(d => d.id === personDrink)?.name}><Glass id={personDrink} seconds={leftTime} host={i===11&&!server?.seatNeutralClock}/><span className="sr-only">{DRINKS.find(d => d.id === personDrink)?.name}, {i===11&&!server?.seatNeutralClock?'시간 제한 없음':`${Math.ceil(leftTime/60)}분 남음`}</span></span>}
-            {paired&&<span className="pair-marker" title="서로 속삭이는 중"><MessageCircleMore size={12} style={{transform:'scaleX(-1)'}}/><span className="sr-only">서로 속삭이는 중</span></span>}{!mine&&person&&mutedGuests.includes(person.id)?<span className="muted-marker" title={reportedIds.has(person.id)?'이용자 보호로 연결되지 않아요':'음소거됨'}><VolumeX size={12}/><span className="sr-only">{reportedIds.has(person.id)?'이용자 보호로 연결되지 않아요':'음소거됨'}</span></span>:!mine&&person&&person.mic===false?<span className="muted-marker mic-off-marker" title="마이크 꺼짐"><MicOff size={12}/><span className="sr-only">마이크 꺼짐</span></span>:null}{talking && <Waves/>}{mine && <span className="me-label">나</span>}{i === 11 && <span className="host-label">{occupied ? '사장' : '사장 자리'}</span>}
-          </div>;
-        })}
-      </div></div>
+      <div className="bar-stage">
+        <button ref={viewTrigger} type="button" className="bar-view-trigger" aria-label="View · 바 시점 변경" aria-haspopup="dialog" aria-expanded={sheet === 'bar-view'} onClick={() => open('bar-view')}>
+          <span>View</span>
+        </button>
+        {barView === 'flat' ? <div className="bar-space bar-flat"><div className={`bar-floor${seatFrozen ? ' is-frozen' : ''}`}><div className="bar-rug"/><div className="wood-bar"><i className="table-lamp lamp-one"/><i className="table-lamp lamp-two"/><i className="table-lamp lamp-three"/></div>
+          {positions.map((_, i) => renderBarSeat(i, true))}
+        </div></div> : <BarScene key={visit?.id} view={barView} seat={seat} memberId={member?.id} gender={member?.gender} facing={facing}
+          partners={partners} drinkId={ wallet.drinkId } seconds={seconds} elapsed={elapsed} seatNeutralClock={server?.seatNeutralClock}
+          guests={guests} renderSeat={renderBarSeat} onUnavailable={selectBarView}
+          onOpenSeats={() => open('bar-seats')} onFacingChange={setFacing} moving={sceneMoving}
+          onMotionChange={setSceneMoving} seatPickerRef={seatPickerTrigger} onCue={playCue}/>}
+      </div>
       <div className="conversation-status">{activeFocus?'1:1 대화 중 · 다른 사람에게는 들리지 않아요':voice.mic&&voice.level>.06?'지금 이야기하고 있어요':guestsTalking&&partners[guest?.id]?'두 손님이 1:1로 대화하고 있어요':guestsTalking?(audible?'가까운 자리에서 이야기하고 있어요':'저쪽 자리에서 이야기하고 있어요'):'빈자리를 누르면 옮길 수 있어요'}</div>
       <div className="direction-control">
         {activeFocus?<div className="focus-active"><MessageCircleMore size={17}/><span>1:1 대화 중 · 다른 사람에게는 들리지 않아요</span><button onClick={endFocus}>전체 대화로</button></div>:focusRequest?<div className="focus-active"><span>대화 요청에 답을 기다려요</span><button onClick={cancelFocus}>취소</button></div>:incomingFocus?<div className="focus-active"><MessageCircleMore size={17}/><span>옆자리 손님이 둘만의 대화를 요청했어요</span><button onClick={()=>respondFocus(false)}>거절</button><button onClick={()=>respondFocus(true)}>수락</button></div>:<>
-          <div className="direction-label"><span>소리 집중 방향</span><output>{facing===0?'양쪽 고르게':`${facing<0?'왼쪽':'오른쪽'}으로 ${Math.abs(facing)}°`}</output></div>
-          <div className="direction-presets"><button className={facing < -15 ? 'active' : ''} onClick={()=>setFacing(-60)}>왼쪽</button><button className={Math.abs(facing) <= 15 ? 'active' : ''} onClick={()=>setFacing(0)}>양쪽</button><button className={facing > 15 ? 'active' : ''} onClick={()=>setFacing(60)}>오른쪽</button></div><div className="direction-slider"><span aria-hidden="true">왼쪽</span><input type="range" aria-label="대화 방향 각도" min="-90" max="90" step="15" value={facing} style={{'--range-progress':`${((facing + 90) / 180) * 100}%`}} onChange={e=>setFacing(Number(e.target.value))}/><span aria-hidden="true">오른쪽</span></div>
+          <div className="direction-label"><span>소리 집중 방향</span><output>{Math.round(facing)===0?'양쪽 고르게':`${facing<0?'왼쪽':'오른쪽'}으로 ${Math.round(Math.abs(facing))}°`}</output></div>
+          <div className="direction-presets"><button className={facing < -15 ? 'active' : ''} onClick={()=>setFacing(-60)}>왼쪽</button><button className={Math.abs(facing) <= 15 ? 'active' : ''} onClick={()=>setFacing(0)}>양쪽</button><button className={facing > 15 ? 'active' : ''} onClick={()=>setFacing(60)}>오른쪽</button></div><div className="direction-slider"><span aria-hidden="true">왼쪽</span><input type="range" aria-label="대화 방향 각도" min={-facingLimit} max={facingLimit} step={firstPerson ? 1 : 15} value={Math.round(facing)} style={{'--range-progress':`${((facing + facingLimit) / (2 * facingLimit)) * 100}%`}} onChange={e=>setFacing(Number(e.target.value))}/><span aria-hidden="true">오른쪽</span></div>
           {neighbors.length>0&&<div className="neighbor-actions">{neighbors.map(g=><button key={g.id} onClick={()=>{setSelectedGuest(g);open('guest');}}><ArrowLeftRight size={13}/>{g.seat<seat?'왼쪽':'오른쪽'} 옆자리{partners[g.id]?' · 대화 중':'와만 대화'}</button>)}</div>}
         </>}
       </div>
@@ -1706,8 +1826,21 @@ function App({qaControls} = {}) {
     </section>}
   </main>
       {screen === 'bar' && voiceVersion && hasVoiceConsent && <p className="voice-safety-notice">{config?.fullVoiceReady ? '신고 보호 · 들리는 대화 음성 보관 중' : '신고 보호 · 최근 20초 기기 임시 보관 · 신고 시 선택 제출'}</p>}
-      <BottomSheet open={!!sheet} onClose={closeSheet} ariaLabelledBy="sheet-title" className="app-bottom-sheet">
-      <div className={`sheet sheet-compact ${sheet === 'guest' ? 'sheet-guest' : ''} ${sheet === 'profile' ? 'sheet-profile' : ''} ${sheet === 'verify-profile' ? 'sheet-camera' : ''} ${sheet === 'region-request' ? 'sheet-region-request' : ''}`}><button className="close icon-button" aria-label="닫기" onClick={closeSheet}><X size={22}/></button>
+      <BottomSheet open={!!sheet} onClose={closeSheet} ariaLabelledBy="sheet-title" className={`app-bottom-sheet${screen === 'bar' && BAR_SHEETS.has(sheet) ? ' bar-bottom-sheet' : ''}`}>
+      <div className={`sheet sheet-compact ${sheet === 'guest' ? 'sheet-guest' : ''} ${sheet === 'profile' ? 'sheet-profile' : ''} ${sheet === 'verify-profile' ? 'sheet-camera' : ''} ${sheet === 'region-request' ? 'sheet-region-request' : ''}`} onKeyDown={sheet === 'bar-view' || sheet === 'bar-seats' ? handleBarSheetKeys : undefined}><button className="close icon-button" aria-label="닫기" onClick={closeSheet}><X size={22}/></button>
+      {sheet === 'bar-view' && <><h2 id="sheet-title">바 시점</h2><BarViewOptions view={barView} onChange={view => {selectBarView(view); closeSheet();}}/></>}
+      {sheet === 'bar-seats' && <><h2 id="sheet-title">자리 선택</h2><div className="bar-seat-options">
+        {positions.map((_, index) => {
+          const person = guests.find(guest => guest.seat === index);
+          const mine = index === seat;
+          const name = mine ? '내 자리' : person?.nickname || '빈자리';
+          return <button key={index} type="button" autoFocus={mine} disabled={!mine && !person && (seatFrozen || sceneMoving)}
+            onClick={() => {setSheet(null);selectBarSeat(index);}}>
+            <span>{index === 11 ? '사장 자리' : `${index + 1}번`}</span><strong>{name}</strong>
+            {mine ? <Check size={16} aria-hidden="true"/> : person ? <UserRound size={16} aria-hidden="true"/> : <Plus size={16} aria-hidden="true"/>}
+          </button>;
+        })}
+      </div></>}
       {sheet === 'quick-region' && <>
         <h2 id="sheet-title">선호 지역</h2>
         <div className="quick-region-options" role="group" aria-label="지역 선택">
@@ -1748,7 +1881,7 @@ function App({qaControls} = {}) {
       {sheet==='subscription-cancel-guide'&&<><p className="eyebrow">정기 구독</p><h2 id="sheet-title">해지는 토스에서 할 수 있어요</h2><p className="sheet-description">토스 결제 내역에서 구독을 해지해 주세요. 해지 후에도 남은 기간은 이용할 수 있어요. 같은 화면에서 자동 결제를 다시 켤 수 있어요.</p><Button size="xlarge" display="block" onClick={()=>setSheet('shop')}>확인</Button></>}
       {sheet==='notifications'&&<><h2 id="sheet-title">알림</h2>{notifications.length===0?<p className="sheet-description">새로운 알림이 없어요.</p>:<div className="notification-list">{notifications.map(item=><button key={item.id} onClick={()=>openNotification(item)}><Bell size={17}/><span><strong>{item.title}</strong><small>{item.body}</small></span><ArrowRight size={16}/></button>)}</div>}</>}
       {sheet === 'profile' && <><div className="sheet-heading-row"><div><p className="eyebrow">내 프로필</p><h2 id="sheet-title">프로필을 설정해 주세요</h2></div></div><p className="sheet-description">사진과 닉네임은 다른 손님에게 보여요.</p><input ref={upload} hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={choosePhoto}/><button className="upload" onClick={() => upload.current.click()}>{profile.photo ? <img src={profile.photo} alt="선택한 내 사진"/> : <Camera size={30}/>}<span>{profile.photo ? '사진 바꾸기' : '사진 등록하기'}</span></button><p className={`photo-note${photoCheck==='ok' || (profileVerified && photoCheck!=='checking') ? ' is-ok' : ''}`}>{photoCheck==='checking' ? '얼굴 사진을 검사하고 있어요.' : photoCheck==='ok' ? '이 사진으로 진행할 수 있어요.' : profileVerified ? '확인된 사진이에요. 변경 시 다시 검사해요.' : '본인 얼굴 사진을 사용해 주세요.'}</p><label className="profile-field"><span>닉네임</span><input value={profile.nickname} maxLength={16} aria-invalid={!!nicknameError} onChange={e=>setProfile(v=>({...v,nickname:e.target.value}))} placeholder="닉네임을 입력해 주세요"/>{nicknameError&&<small className="field-error">{nicknameError}</small>}</label><div className="gender-choice">{[['male','남성'],['female','여성']].map(([value,label]) => <button key={value} aria-pressed={profile.gender === value} className={profile.gender === value ? `selected ${value}` : ''} onClick={() => setProfile(v => ({...v,gender:value}))}>{label}{profile.gender === value && <Check size={17}/>}</button>)}</div><p className="profile-save-note">{profileVerified ? '변경한 내용을 저장해 주세요.' : '사진을 저장하려면 얼굴 확인이 필요해요.'}</p><Button size="xlarge" display="block" disabled={!profile.photo || !profile.gender || !!nicknameError || photoCheck==='checking' || (!profileVerified && photoCheck!=='ok')} onClick={() => profileVerified ? saveProfile() : open('verify-profile')}>{profileVerified ? '프로필 저장하기' : '얼굴 확인하기'}</Button></>}
-      {sheet === 'verify-profile' && <><p className="eyebrow">본인 얼굴 확인</p><h2 id="sheet-title">실제 얼굴을 촬영해 주세요</h2><FaceConsent checked={faceConsent} onChange={changeFaceConsent}/><div className={`camera-preview verification-camera is-${verificationGuide.stage}`}><video ref={cameraVideo} className="camera-video-hidden" muted playsInline disablePictureInPicture controls={false} webkit-playsinline="true" x-webkit-airplay="deny" tabIndex={-1} aria-hidden="true"/><canvas ref={cameraView} className="camera-view" aria-label="본인 얼굴 촬영 화면"/><i className={`camera-guide motion-${verificationGuide.motion || 'none'}`} aria-hidden="true"/><canvas ref={cameraCanvas} hidden/><CameraVerificationStatus guide={verificationGuide} message={verificationMessage} state={verificationState} elapsed={Math.max(0,Math.floor((now-verificationStartedAt)/1000))}/></div><div className="camera-actions">{verificationState==='verified'?<Button size="xlarge" display="block" disabled={!faceConsent||!photoProof||busy} onClick={saveProfile}>프로필 저장하기</Button>:verificationState==='unavailable'?<Button size="xlarge" display="block" onClick={() => { setSheetState(null); setTimeout(() => setSheetState('verify-profile'), 0); }}>권한 다시 요청하기</Button>:<Button size="xlarge" display="block" disabled={verificationState!=='ready'||!faceConsent} onClick={captureVerification}>{verificationState==='checking'?'얼굴 확인 중…':verificationState==='starting'?'카메라 준비 중…':verificationGuide.stage==='error'?'다시 촬영하기':'촬영 시작'}</Button>}{verificationState==='checking'&&<button type="button" className="camera-cancel" onClick={cancelVerification}>검사 중단</button>}</div></>}
+      {sheet === 'verify-profile' && <><p className="eyebrow">본인 얼굴 확인</p><h2 id="sheet-title">실제 얼굴을 촬영해 주세요</h2><div className={`camera-preview verification-camera is-${verificationGuide.stage}`}><video ref={cameraVideo} className="camera-video-hidden" muted playsInline disablePictureInPicture controls={false} webkit-playsinline="true" x-webkit-airplay="deny" tabIndex={-1} aria-hidden="true"/><canvas ref={cameraView} className="camera-view" aria-label="본인 얼굴 촬영 화면"/><i className={`camera-guide motion-${verificationGuide.motion || 'none'}`} aria-hidden="true"/><canvas ref={cameraCanvas} hidden/><CameraVerificationStatus guide={verificationGuide} message={verificationMessage} state={verificationState} elapsed={Math.max(0,Math.floor((now-verificationStartedAt)/1000))}/></div><div className="camera-actions">{verificationState==='verified'?<Button size="xlarge" display="block" disabled={!faceConsent||!photoProof||busy} onClick={saveProfile}>프로필 저장하기</Button>:verificationState==='unavailable'?<Button size="xlarge" display="block" onClick={() => { setSheetState(null); setTimeout(() => setSheetState('verify-profile'), 0); }}>권한 다시 요청하기</Button>:verificationState==='ready'?<FaceCaptureConsent retry={verificationGuide.stage==='error'} onCapture={() => {changeFaceConsent(true);captureVerification();}}/>:<Button size="xlarge" display="block" disabled>{verificationState==='checking'?'얼굴 확인 중…':'카메라 준비 중…'}</Button>}{verificationState==='checking'&&<button type="button" className="camera-cancel" onClick={cancelVerification}>검사 중단</button>}</div></>}
       {sheet === 'account-transfer'&&<AccountTransferCode info={accountTransfer} now={now} onCopy={copyAccountTransfer} onRenew={createAccountTransfer} busy={busy}/>}
       {sheet === 'settings' && <><p className="eyebrow">설정</p><h2 id="sheet-title">도움이 필요하신가요?</h2><p className="sheet-description">서비스 이용과 계정을 관리할 수 있어요.</p><div className="settings-group"><span>도움말</span><div className="settings-list"><button onClick={()=>open('support')}>고객센터<ArrowRight size={16}/></button><button onClick={()=>open('inquiry')}>신고·문의<ArrowRight size={16}/></button><button onClick={()=>open('legal')}>약관 및 정책<ArrowRight size={16}/></button>{voiceVersion&&<button disabled={busy} onClick={revokeVoiceConsent}>음성 안전 처리 동의 철회<ArrowRight size={16}/></button>}</div></div><div className="settings-group"><span>알림</span><div className="settings-list"><div className="settings-toggle"><span><strong>빈자리 알림</strong><small>신청한 곳에서 자리가 나면 알려드려요.</small></span><button type="button" role="switch" aria-label="빈자리 알림" aria-checked={waitlistAlerts||waitlist.length>0} className={`alert-switch${waitlistAlerts||waitlist.length>0?' is-on':''}`} onClick={()=>setWaitlistAlertEnabled(!(waitlistAlerts||waitlist.length>0))}><i/></button></div></div></div><div className="settings-group"><span>계정 및 결제</span><div className="settings-list">{ANDROID_ACCOUNT_LINK_VISIBLE&&config?.accountTransferReady&&insideToss()&&<button disabled={busy} onClick={createAccountTransfer}>Android 계정 연결<ArrowRight size={16}/></button>}<button onClick={openSubscriptionManager}>결제·정기 구독 관리<ArrowRight size={16}/></button><button onClick={requestWithdrawal} className="danger-link">회원탈퇴<ArrowRight size={16}/></button></div></div></>}
       {sheet === 'region-request' && <><p className="eyebrow">지역 추가 요청</p><h2 id="sheet-title">어디에서 만나고 싶나요?</h2><p className="sheet-description">원하는 지역을 골라 주세요.</p>{REGION_REQUEST_GROUPS.map(group=><div className="region-request-section" key={group.title}><span>{group.title}</span><div className="region-request-grid">{group.options.map(item=><button key={item} className={requestedRegion===item?'selected':''} onClick={()=>{setRequestedRegion(item);setShowCustomRegion(false);}}>{item}</button>)}{group.title==='주요 도시'&&<button style={{borderStyle:'dashed',borderWidth:'1.5px',borderColor:'#b7c0cb'}} className={`custom-region-toggle ${showCustomRegion?'selected':''}`} onClick={()=>{setShowCustomRegion(v=>!v);setRequestedRegion('');}}>직접 입력</button>}</div></div>)}{showCustomRegion&&<input className="custom-region-input" value={customRegion} onChange={e=>setCustomRegion(e.target.value)} placeholder="지역명을 입력해 주세요" maxLength={20}/>}<Button display="block" disabled={!requestedRegion && !(showCustomRegion&&customRegion.trim())} onClick={submitRegion}>이 지역 추가 요청하기</Button><p className="digital-note">요청 건수와 우선순위에 따라 지역을 추가해요.</p></>}

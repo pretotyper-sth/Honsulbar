@@ -35,37 +35,13 @@ export function BottomSheet({ open, onClose, children, className = '', ariaLabel
   </div>;
 }
 
-export function FaceConsent({ checked, onChange }) {
-  const dialog = React.useRef(null);
-  const titleId = React.useId();
+export function FaceCaptureConsent({ retry, onCapture }) {
   const descriptionId = React.useId();
-  const showDetails = () => dialog.current?.showModal();
-  const closeDetails = () => dialog.current?.close();
   return <>
-    <div className="face-consent-row">
-      <label className="face-consent">
-        <input type="checkbox" checked={checked} aria-haspopup="dialog" onChange={() => checked ? onChange(false) : showDetails()}/>
-        <span>[필수] 촬영본·얼굴정보 처리 동의</span>
-      </label>
-      <button type="button" className="face-consent-more" aria-label="얼굴 정보 처리 동의 내용 보기" aria-haspopup="dialog" onClick={showDetails}>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
-      </button>
-    </div>
-    <dialog ref={dialog} className="face-consent-dialog" aria-labelledby={titleId} aria-describedby={descriptionId}>
-      <h2 id={titleId}>얼굴 정보 처리 동의</h2>
-      <div id={descriptionId}>
-        <p className="face-consent-intro">사진 도용을 막기 위해 얼굴을 비교해요.</p>
-        <dl>
-          <div><dt>처리 항목</dt><dd>촬영본·얼굴 비교 정보(민감정보)</dd></div>
-          <div><dt>이용 기간</dt><dd>검사 중에만 처리하고 즉시 삭제해요.</dd></div>
-        </dl>
-        <p className="face-consent-refusal">동의 거부 시 사진 등록·입장이 제한돼요.</p>
-      </div>
-      <div className="face-consent-actions">
-        <Button variant="weak" onClick={closeDetails}>{checked ? '닫기' : '나중에'}</Button>
-        {!checked && <Button onClick={() => { onChange(true); closeDetails(); }}>동의하기</Button>}
-      </div>
-    </dialog>
+    <p id={descriptionId} className="face-capture-notice">사진 도용 방지를 위해 촬영본과 얼굴 비교 정보(민감정보)를 처리하고, 검사 후 바로 삭제해요. 동의하지 않으면 사진을 등록하거나 입장할 수 없어요.</p>
+    <Button size="xlarge" display="block" aria-describedby={descriptionId} onClick={onCapture}>
+      {retry ? '동의하고 다시 촬영하기' : '동의하고 촬영하기'}
+    </Button>
   </>;
 }
 

@@ -13,8 +13,8 @@ export const adjacent = (a,b) => a !== 11 && b !== 11 && Math.abs(a-b) === 1;
 export function voicePeerIds(guests, partners, blocked = new Set()) {
   return guests.filter(g => !blocked.has(g.id) && (!partners.me || partners.me === g.id) && (!partners[g.id] || partners[g.id] === 'me')).map(g => g.id);
 }
-export function drinkLevel(seconds, host = false) {
-  return { fill:host ? 1 : Math.max(0,Math.min(1,seconds/1800)), low:!host && seconds > 0 && seconds <= 60 };
+export function drinkLevel(seconds, host = false, duration = 1800) {
+  return { fill:host ? 1 : Math.max(0,Math.min(1,seconds/duration)), low:!host && seconds > 0 && seconds <= 60 };
 }
 export function directionGain(listener, speaker, angle) {
   const base = proximity(listener,speaker);

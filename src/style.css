@@ -117,7 +117,7 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .time-strip strong { margin-left:auto; color:#333d4b; font-size:17px; font-weight:600; font-variant-numeric:tabular-nums; }
 .time-strip button { width:36px; height:36px; border-radius:10px; background:#e8f3ff; color:#3182f6; display:grid; place-items:center; }
 .time-low strong { color:#d22030; }
-.bar-space { height:clamp(280px,calc(100dvh - 510px),400px); position:relative; margin:16px -4px 0; border-radius:24px; overflow:hidden; background:radial-gradient(ellipse at 50% 65%,#80653c30,transparent 70%),#20261f; }
+.bar-space { height:clamp(280px,calc(100dvh - 510px),400px); position:relative; margin:16px -4px 0; border-radius:var(--bar-radius,24px); overflow:hidden; background:radial-gradient(ellipse at 50% 65%,#80653c30,transparent 70%),#20261f; }
 .bar-floor { position:absolute; inset:28px 32px 36px; }
 .back-wall { position:absolute; top:17px; text-align:center; width:100%; color:#c0aa77; }
 .back-wall span { font-family:MaruBuri,serif; font-size:22px; letter-spacing:2px; }
@@ -257,7 +257,7 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .camera-preview { position:relative; width:min(100%,280px); aspect-ratio:1; margin:18px auto 10px; overflow:hidden; border-radius:24px; background:#191f28; }
 .camera-video-hidden { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; left:-40px; top:-40px; }
 .camera-view { width:100%; height:100%; display:block; object-fit:cover; transform:scaleX(-1); background:#191f28; }
-.camera-guide { position:absolute; inset:14%; border:2px dashed #ffffffb8; border-radius:50%; pointer-events:none; box-shadow:0 0 0 80px #191f2840; }
+.camera-guide { position:absolute; left:50%; top:44%; width:min(60%,200px,25dvh); aspect-ratio:1; translate:-50% -50%; border:1px solid #ffffffa6; border-radius:50%; pointer-events:none; box-shadow:0 0 0 200px #10182730; }
 .verification-message { min-height:22px; margin:10px auto 16px; padding:0 4px; line-height:1.5; word-break:keep-all; white-space:pre-line; text-align:center; }
 .verification-message.is-verified { color:#3182f6; }
 .gender-choice { display:flex; gap:10px; margin:24px 0; }
@@ -458,28 +458,11 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 
 .protected-room .room-select{opacity:.45}.protected-room-note{margin:0 20px 14px;font-size:12px;color:#6b7684}
 
-.face-consent-row { display:flex; align-items:center; gap:4px; margin:4px 0 12px; }
-.face-consent { display:flex; flex:1; align-items:flex-start; gap:8px; min-width:0; padding:8px 0; color:#4e5968; font-size:12px; line-height:1.5; word-break:keep-all; cursor:pointer; }
-.face-consent input { flex-shrink:0; width:16px; height:16px; margin:1px 0 0; accent-color:#3182f6; }
-.face-consent-more { display:grid; place-items:center; flex:0 0 40px; width:40px; height:44px; padding:0; border:0; background:none; color:#8b95a1; cursor:pointer; }
-.face-consent-dialog { box-sizing:border-box; width:calc(100% - 40px); max-width:360px; max-height:82dvh; overflow:auto; overscroll-behavior:contain; padding:24px; border:0; border-radius:24px; color:#333d4b; background:#fff; box-shadow:0 12px 40px #0002; }
-.face-consent-dialog::backdrop { background:rgb(0 0 0 / 45%); }
-.face-consent-dialog h2 { margin:0 0 12px; font-size:20px; line-height:1.4; }
-.face-consent-dialog p,.face-consent-dialog dl { font-size:13px; line-height:1.6; word-break:keep-all; }
-.face-consent-intro { margin:0 0 18px; }
-.face-consent-dialog dl { display:grid; gap:4px; margin:0; }
-.face-consent-dialog dl>div { display:grid; grid-template-columns:62px 1fr; gap:8px; }
-.face-consent-dialog dt { color:#6b7684; }
-.face-consent-dialog dd { margin:0; }
-.face-consent-refusal { margin:18px 0 22px; color:#6b7684; }
-.face-consent-actions { display:flex; gap:8px; }
-.face-consent-actions>button { flex:1; }
+.face-capture-notice { margin:2px 0 9px; color:#4e5968; font-size:12px; line-height:1.5; word-break:keep-all; }
 
 .sheet-camera { padding-top:16px; }
 .sheet-camera h2 { font-size:22px; margin-bottom:8px; }
-.sheet-camera .face-consent-row { margin-bottom:8px; }
 .verification-camera { width:min(100%,320px); height:clamp(220px,38dvh,320px); aspect-ratio:auto; margin:8px auto 12px; }
-.verification-camera .camera-guide { inset:19% 20%; }
 .camera-feedback { position:absolute; bottom:0; left:0; right:0; padding:28px 12px 12px; background:linear-gradient(transparent,#101827ed 30%); color:#fff; text-align:center; }
 .camera-feedback strong { display:block; font-size:13px; line-height:1.5; word-break:keep-all; }
 .camera-feedback small { display:block; margin-top:3px; font-size:11px; line-height:1.5; color:#e5e8eb; word-break:keep-all; }
@@ -494,7 +477,7 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .camera-cancel { display:block; margin:4px auto 0; padding:10px 20px; background:none; color:#6b7684; font-size:13px; }
 .is-move .camera-guide.motion-near { animation:camera-near 1.4s ease-in-out infinite; border-color:#86baff; }
 .is-move .camera-guide.motion-far { animation:camera-far 1.4s ease-in-out infinite; border-color:#86baff; }
-.is-done .camera-guide { border-color:#5bcb9d; border-style:solid; }
+.is-done .camera-guide { border-color:#5bcb9d; }
 @keyframes camera-spin { to { transform:rotate(360deg); } }
 @keyframes camera-near { 50% { transform:scale(1.12); } }
 @keyframes camera-far { 50% { transform:scale(.86); } }
@@ -543,3 +526,14 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .quick-region-options{display:flex;flex-direction:column;margin-top:12px}
 .quick-region-options button{display:flex;align-items:center;justify-content:space-between;min-height:56px;width:100%;padding:12px 0;background:transparent;color:#333d4b;font:inherit;text-align:left}
 .quick-region-options button svg{color:#3182f6}
+
+html:has(.app.lobby-active) {
+  --lobby-background:#f7f7f7;
+  background:var(--lobby-background);
+}
+html:has(.app.lobby-active) body,
+html.in-toss .ait-gnb-fill:has(+ .app.lobby-active),
+.app.lobby-active {
+  background:var(--lobby-background);
+}
+.lobby-active .lobby-footer { background:var(--lobby-background); }
