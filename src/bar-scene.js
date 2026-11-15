@@ -127,10 +127,10 @@ export function swapWalk(firstSeat, yieldingSeat) {
   ];
 }
 
-export function walkCue(walk, before, elapsed) {
+export function walkCue(walk, before, elapsed, stepMs = STEP_MS) {
   if (before < walk.duration && elapsed >= walk.duration) return 'sit';
   const leg = walk.legs.find(({start,end}) => elapsed >= start && elapsed < end);
-  if (leg && Math.floor((elapsed - leg.start) / STEP_MS) > Math.floor((before - leg.start) / STEP_MS)) return 'step';
+  if (leg && Math.floor((elapsed - leg.start) / stepMs) > Math.floor((before - leg.start) / stepMs)) return 'step';
   return null;
 }
 
@@ -171,7 +171,7 @@ export function firstPersonWalk(seat, walk, startYaw, endAngle) {
   let duration = 0, elapsed = 0, yaw = startYaw;
   function phase(to, nextYaw, length = 0, corner = null) {
     const delta = turnDelta(yaw, nextYaw);
-    const ms = Math.max((to - elapsed) * 1.65, length * 198, Math.abs(delta) * (corner ? 420 : 320));
+    const ms = Math.max((to - elapsed) * 1.45, length * 172, Math.abs(delta) * (corner ? 420 : 320));
     if (!ms) return;
     phases.push({start:duration, end:duration + ms, from:elapsed, to, yaw, delta, walking:length > 0, corner});
     duration += ms;

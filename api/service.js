@@ -360,7 +360,6 @@ export default async function handler(req,res) {
    ? await rpc('hb_quick_enter',{p_member:member,p_data:body.data||{}})
    : await rpc('hb_action',{p_member:member,p_action:action,p_data:body.data||{}});
   if(action==='leave')await rpc('hb_quick_search',{p_member:member,p_command:'cancel',p_region:'서울'}).catch(()=>{});
-  if(action==='heartbeat'&&typeof (body.data||{}).mic==='boolean')await rpc('hb_set_mic',{p_member:member,p_mic:!!body.data.mic}).catch(()=>{});
   if(action==='ticket')await dispatchOutbox().catch(()=>{});
   if(action==='signal')return res.json({ok:true});
   let state=await snapshot({p_member:member,p_after:Math.max(0,Number(body.after)||0),p_limit:Math.min(100,Math.max(10,Number(body.limit)||10))});

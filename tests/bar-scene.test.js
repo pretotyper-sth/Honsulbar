@@ -128,7 +128,7 @@ test('the first-person camera faces forward on straights and rounded chair appro
         const dx = pose.position[0] - last.position[0], dz = pose.position[1] - last.position[1];
         const distance = Math.hypot(dx, dz);
         assert.ok(Math.abs(wrapFacing((pose.yaw - last.yaw) * 180 / Math.PI)) < 3.0, `rotation from ${from} to ${to} at ${now}ms`);
-        assert.ok(distance <= .052, `seats ${from} to ${to} at ${now}ms`);
+        assert.ok(distance <= .060, `seats ${from} to ${to} at ${now}ms`);
         if (distance > 1e-5) assert.ok((dx * Math.sin(pose.yaw) + dz * Math.cos(pose.yaw)) / distance > .998);
         last = pose;
       }

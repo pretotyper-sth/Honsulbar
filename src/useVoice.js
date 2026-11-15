@@ -34,10 +34,10 @@ export function useVoice(enabled, onError, live = true) {
     acquiring.current = true; setPending(true);
     let stream, context;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-      if (token !== generation.current) { stream.getTracks().forEach(track => track.stop()); return; }
       context = new (window.AudioContext || window.webkitAudioContext)();
-      await context.resume();
+      // Microphone capture can start even if the browser delays resuming the level meter.
+      context.resume().catch(() => {});
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
       if (token !== generation.current) { stream.getTracks().forEach(track => track.stop()); await context.close(); return; }
       const source = context.createMediaStreamSource(stream);
       const analyser = context.createAnalyser(); analyser.fftSize = 1024;

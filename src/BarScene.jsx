@@ -184,7 +184,7 @@ export function BarScene({ view, seat, memberId, gender, facing, partners, drink
         const camera = move?.timeline?.at(time);
         const elapsed = camera?.elapsed ?? time;
         if (move && person.mine) {
-          const cue = walkCue(move.walk, move.elapsed, elapsed);
+          const cue = walkCue(move.walk, move.elapsed, elapsed, view === 'first' ? 125 : undefined);
           if (cue && !document.hidden) onCue(cue);
           move.elapsed = elapsed;
         }
