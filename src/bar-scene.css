@@ -466,3 +466,9 @@ html.in-toss .ait-gnb-fill:has(+ .app.bar-active) {
   background:var(--bar-accent);
   box-shadow:0 0 14px 6px var(--bar-accent),0 0 42px 18px var(--bar-surface);
 }
+
+.bar-active .drink-gift-offer {
+  border:1px solid var(--bar-line);
+  color:var(--bar-ink);
+}
+.bar-active .drink-gift-offer > svg { color:var(--bar-accent); }

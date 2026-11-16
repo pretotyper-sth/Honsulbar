@@ -39,7 +39,7 @@ const scenarios = [
     ['bar-third','기본 3D·옷 색·소리 방향'], ['bar-first','1인칭'], ['bar-flat','2D'], ['bar-full','12석 만석'],
     ['bar-remote-facing','다른 손님 의자 회전·퇴장'], ['bar-solo','혼자 대기 · 20:00'], ['bar-arrival','5초 뒤 손님 입장'], ['bar-departure','5초 뒤 손님 퇴장'],
     ['bar-low','5분 미만 경고'], ['bar-ended','이용 시간 종료'], ['bar-order','한 잔 더 주문'], ['bar-held-drink','손에 든 잔 · 잔량과 이동'],
-    ['bar-host','사장 자리 · 시간 제한 없음'],
+    ['bar-host','사장 자리 · 시간 제한 없음'], ['bar-gift-incoming','한 잔 받기'],
   ]],
   ['자리 이동과 맞교환', [
     ['bar-move','빈자리 이동·내 발소리'], ['bar-move-near','옆자리 인사 후 이동'], ['bar-move-host','사장 자리로 이동'],
@@ -142,6 +142,9 @@ export function setScenario(next) {
   state.rooms=[room(1,state.guests.length+(away?0:1)), room(2,0)];
   if (swapSeat != null) {
     state.requests=[request('swap','qa-guest-0',state.member.id, next === 'bar-swap-expire' ? 9000 : 300000)];
+  }
+  if (next === 'bar-gift-incoming') {
+    state.requests=[{...request('drink-gift',state.guests[0].id,state.member.id,60000), gift_drink_id:'wine'}];
   }
   if (next === 'bar-focus-request' || next === 'bar-focus-right-end') state.requests=[request('focus','qa-guest-0',state.member.id,300000)];
   if (next === 'bar-focus' || next === 'bar-received-block') state.partners={[state.member.id]:'qa-guest-0','qa-guest-0':state.member.id};
@@ -297,20 +300,34 @@ export function qaRequest(body,method) {
   }
   if(action==='request' && state.visit && data.kind!=='wave'){
     if(state.reportedIds?.includes(data.targetId))throw new Error('이용자 보호를 위해 연결할 수 없어요.');
-    state.requests=[request(data.kind,state.member.id,data.targetId)];
-    result={id:state.requests[0].id};
+    const offer=request(data.kind,state.member.id,data.targetId);
+    if (data.kind==='drink-gift') offer.gift_drink_id=data.drinkId;
+    if (data.kind==='drink-gift') state.requests.push(offer);
+    else state.requests=[...state.requests.filter(item=>item.kind==='drink-gift'),offer];
+    result={id:offer.id};
     if(data.kind==='swap')replyAt=Date.now()+2700;
   }
   if(action==='respond'){
     const offer=state.requests.find(item=>item.id===data.id);
     if (!offer) throw new Error('요청 시간이 끝났어요.');
     if(offer.kind==='swap')respondToSwap(offer,data.accept);
-    else {
+    else if (offer.kind==='drink-gift') {
+      const drink=DRINKS.find(item=>item.id===offer.gift_drink_id);
+      if (data.accept && drink) {
+        state.visit.drinkId=drink.id;
+        state.visit.seconds+=drink.minutes*60;
+      }
+      state.requests=state.requests.filter(item=>item.id!==offer.id);
+    } else {
       if(data.accept)state.partners={[offer.sender]:offer.receiver,[offer.receiver]:offer.sender};
-      state.requests=[];
+      state.requests=state.requests.filter(item=>item.id!==offer.id);
     }
   }
-  if(action==='cancel'){state.requests=[];replyAt=0;}
+  if(action==='cancel'){
+    const offer=state.requests.find(item=>item.id===data.id);
+    state.requests=state.requests.filter(item=>item.id!==data.id);
+    if (offer?.kind==='swap') replyAt=0;
+  }
   if(action==='focus-end')state.partners={};
   if(action==='report'||action==='block'){
     protectPair(data.targetId);

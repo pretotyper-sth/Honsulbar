@@ -44,6 +44,7 @@ const MIGRATIONS = [
   '20261115_z_bar_orientation.sql',
   '20261115_zz_photo_retry_window.sql',
   '20261117_basic_drink_twenty_minutes.sql',
+  '20261117_z_drink_gifts.sql',
 ];
 const TABLES = new Set([
   'hb_safety_ops', 'hb_voice_evidence', 'hb_voice_consents', 'hb_push_devices', 'hb_android_ad_claims', 'hb_account_transfers', 'hb_auth_cleanup',

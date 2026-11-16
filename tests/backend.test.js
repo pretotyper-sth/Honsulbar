@@ -22,6 +22,7 @@ async function setup({ soloClock = false } = {}) {
     await db.exec(sql('20261115_preserve_solo_seat_time.sql'));
   }
   await db.exec(sql('20261117_basic_drink_twenty_minutes.sql'));
+  await db.exec(sql('20261117_z_drink_gifts.sql'));
   const one = async (query, params) => (await db.query(query, params)).rows[0];
   const action = async (member, name, data = {}) => (await one('select hb_action($1,$2,$3::jsonb) as r', [member, name, JSON.stringify(data)])).r;
   const snapshot = async member => (await one('select hb_snapshot($1) as s', [member])).s;
@@ -540,6 +541,61 @@ test('a solo guest keeps exactly 20 minutes when changing seats after five secon
     await action(me, 'order', {drinkId:'highball'});
     ({visit} = await snapshot(me));
     assert.equal(visit.seconds, 2395);
+  } finally {
+    await db.close();
+  }
+});
+
+test('drink gifts only charge the sender once and extend the accepting guest’s visit', async () => {
+  const { action, db, login, ready, snapshot } = await setup({ soloClock:true });
+  try {
+    const sender = await login('721001');
+    const receiver = await login('721002');
+    await ready(sender, '느긋한 토끼');
+    await ready(receiver, '조용한 여우');
+    for (const member of [sender, receiver]) {
+      await action(member, 'enter', { region:'서울', number:1, drinkId:'highball' });
+    }
+    const before = await snapshot(receiver);
+    const {id} = await action(sender, 'request', {kind:'drink-gift', targetId:receiver, drinkId:'wine'});
+    assert.equal((await snapshot(sender)).member.balance, 1500);
+    assert.equal((await snapshot(receiver)).requests.find(request => request.id === id).gift_drink_id, 'wine');
+    await assert.rejects(action(sender, 'respond', {id,accept:true}), /받은 선물/);
+    await action(receiver, 'respond', {id,accept:true});
+    await action(receiver, 'respond', {id,accept:true});
+    const after = await snapshot(receiver);
+    assert.equal(after.member.balance, before.member.balance);
+    assert.equal(after.visit.drinkId, 'wine');
+    assert.ok(after.visit.seconds >= before.visit.seconds + 1198 && after.visit.seconds <= before.visit.seconds + 1200);
+    assert.equal((await snapshot(sender)).member.balance, 1000);
+    const ledger = await db.query("select amount from hb_ledger where reference=$1", ['drink-gift:' + id]);
+    assert.deepEqual(ledger.rows, [{amount:-500}]);
+  } finally {
+    await db.close();
+  }
+});
+
+test('declined, expired, and blocked drink gifts do not charge any points', async () => {
+  const { action, db, login, ready, snapshot } = await setup({ soloClock:true });
+  try {
+    const sender = await login('721003');
+    const receiver = await login('721004');
+    await ready(sender, '느긋한 토끼');
+    await ready(receiver, '조용한 여우');
+    for (const member of [sender, receiver]) {
+      await action(member, 'enter', { region:'서울', number:1, drinkId:'highball' });
+    }
+    const offer = () => action(sender, 'request', {kind:'drink-gift', targetId:receiver, drinkId:'wine-hour'});
+    const first = await offer();
+    await action(receiver, 'respond', {id:first.id,accept:false});
+    await db.query("update hb_requests set created_at=now()-interval '11 seconds' where id=$1", [first.id]);
+    const second = await offer();
+    await db.query("update hb_requests set expires_at=now()-interval '1 second' where id=$1", [second.id]);
+    await assert.rejects(action(receiver, 'respond', {id:second.id,accept:true}), /이미 끝난/);
+    await action(receiver, 'block', {targetId:sender});
+    await assert.rejects(offer(), /이용자 보호/);
+    assert.equal((await snapshot(sender)).member.balance, 1500);
+    assert.equal((await snapshot(receiver)).visit.drinkId, 'highball');
   } finally {
     await db.close();
   }
