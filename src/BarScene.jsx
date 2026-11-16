@@ -21,7 +21,7 @@ export function BarViewOptions({ view, onChange }) {
   </div>;
 }
 
-export function BarScene({ view, seat, memberId, gender, facing, partners, drinkId, seconds, elapsed, seatNeutralClock, guests, renderSeat, onUnavailable, onOpenSeats, onFacingChange, moving, onMotionChange, seatPickerRef, onCue, selfReaction, micOff }) {
+export function BarScene({ view, seat, memberId, gender, facing, partners, drinkId, seconds, elapsed, seatNeutralClock, guests, renderSeat, onUnavailable, onOpenSeats, onFacingChange, moving, onMotionChange, seatPickerRef, onCue, selfReaction, micOff, theme }) {
   const canvas = useRef(null);
   const depthCanvas = useRef(null);
   const depth = useRef(null);
@@ -204,7 +204,7 @@ export function BarScene({ view, seat, memberId, gender, facing, partners, drink
         }
         return { ...person, chairAngle, pose };
       });
-      const points = paintBar(context, width, height, view, poses, poses[0].pose, pitch, depth.current);
+      const points = paintBar(context, width, height, view, poses, poses[0].pose, pitch, depth.current, theme);
       const visiblePoints = view !== 'first' ? points : points.map(point =>
         point && !points.some(other => other && other.depth < point.depth
           && Math.hypot(point.left - other.left, point.top - other.top) < 24) ? point : null
@@ -237,7 +237,7 @@ export function BarScene({ view, seat, memberId, gender, facing, partners, drink
     observer.observe(scene);
     redraw();
     return () => { observer.disconnect(); cancelAnimationFrame(frame); };
-  }, [view, seat, memberId, gender, facing, partners, drinkId, seconds, elapsed, seatNeutralClock, guests, pitch, onUnavailable, onMotionChange, onCue]);
+  }, [view, seat, memberId, gender, facing, partners, drinkId, seconds, elapsed, seatNeutralClock, guests, pitch, theme, onUnavailable, onMotionChange, onCue]);
 
   const first = view === 'first';
   return <>

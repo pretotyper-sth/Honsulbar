@@ -18,6 +18,7 @@ import { handleMiniappBack, subscribeMiniappBack, navigationBarOptions } from '.
 import { ExitConfirm } from './ExitConfirm';
 import { Glass } from './Glass';
 import { BarMusic } from './BarMusic';
+import { themeForBar } from './bar-themes';
 import { BarScene, BarViewOptions } from './BarScene';
 import { firstPersonVoice, partnerFacing } from './bar-scene';
 import { SEATS as positions, POINT_PACKS, SUBSCRIPTIONS, adjacent, audioGain } from './social';
@@ -326,6 +327,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide} = {}) {
   const seat = visit?.seat ?? 0;
   const guests = useMemo(() => (server?.guests || []).map(g => ({ ...g, photo: assetUrl(g.photo) })), [server?.guests]);
   const room = inside ? { region: visit.region, number: visit.number, count: guests.length + 1 } : entryRoom;
+  const barTheme = themeForBar(room);
   const rooms = useMemo(() => {
     const grouped = Object.fromEntries(REGIONS.map(r => [r, []]));
     for (const r of server?.rooms || []) (grouped[r.region] ||= []).push({ number: r.number, count: r.count, hasReportedGuest: !!r.hasReportedGuest });
@@ -1669,7 +1671,8 @@ function App({qaControls, qaView, qaStart, qaViewGuide} = {}) {
     title="조금 더 머물까요?" description="이용시간이 1분 남았어요. 괜찮아요를 누르면 남은 시간이 끝날 때 자동으로 홈으로 돌아가요."
     cancelLabel="괜찮아요" confirmLabel="한 잔 더" centered/>
   <div className="ait-gnb-fill" aria-hidden="true"/>
-  <main className={`app${screen === 'bar' ? ' bar-active' : ' lobby-active'}`}>
+  <main className={`app${screen === 'bar' ? ' bar-active' : ' lobby-active'}`}
+    data-bar-theme={screen === 'bar' ? barTheme.id : undefined}>
     <header>
       {screen === 'bar' ? <button className="icon-button" aria-label="바 나가기" onClick={()=>open('leave')}><ArrowLeft size={21}/></button> : <button className="point-entry" aria-label={`포인트 상점, ${wallet.balance.toLocaleString()}P`} onClick={()=>open('shop')}><Coins size={17}/><span>{wallet.balance.toLocaleString()}<small> P</small></span></button>}
       <div className="header-actions">{qaControls}<button className="header-icon-button" aria-label="설정" onClick={()=>open('settings')}><Settings size={18}/></button><button className="notification-button" aria-label={`알림 ${notifications.length}개`} onClick={openNotifications}><Bell size={18}/>{notifications.some(item=>item.unread)&&<i/>}</button><button className="profile-button" aria-label="내 프로필" onClick={()=>openProfileEditor()}>{myPhoto ? <img src={myPhoto} alt="내 프로필"/> : <UserRound size={18}/>}</button></div>
@@ -1758,7 +1761,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide} = {}) {
           guests={guests} renderSeat={renderBarSeat} onUnavailable={selectBarView}
           onOpenSeats={() => open('bar-seats')} onFacingChange={setFacing} moving={sceneMoving}
           onMotionChange={setSceneMoving} seatPickerRef={seatPickerTrigger} onCue={playCue}
-          selfReaction={renderReaction(me)} micOff={!micSending}/>}
+          selfReaction={renderReaction(me)} micOff={!micSending} theme={barTheme}/>}
       </div>
       <div className="bar-reaction-controls"><div className="conversation-status">{activeFocus?'1:1 대화 중 · 다른 사람에게는 들리지 않아요':voice.mic&&voice.level>.06?'지금 이야기하고 있어요':guestsTalking&&partners[guest?.id]?'두 손님이 1:1로 대화하고 있어요':guestsTalking?(audible?'가까운 자리에서 이야기하고 있어요':'저쪽 자리에서 이야기하고 있어요'):'빈자리를 누르면 옮길 수 있어요'}</div>
         {import.meta.env.VITE_BAR_MUSIC_URL && <BarMusic src={import.meta.env.VITE_BAR_MUSIC_URL}/>}
