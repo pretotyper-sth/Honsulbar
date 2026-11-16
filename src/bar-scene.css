@@ -272,8 +272,8 @@ html.in-toss .ait-gnb-fill:has(+ .app.bar-active) {
 }
 .bar-reaction-self {
   position:absolute;
-  z-index:3;
-  bottom:18%;
+  z-index:8;
+  top:30%;
   left:50%;
   pointer-events:none;
 }
@@ -346,3 +346,49 @@ html.in-toss .ait-gnb-fill:has(+ .app.bar-active) {
 .bar-seat-options button:disabled { opacity:.5; }
 
 .bar-stage .seat-drink { transform:scale(.9); transform-origin:top left; }
+
+.bar-first-mic-off {
+  position:absolute;
+  z-index:8;
+  bottom:12px;
+  left:12px;
+  display:flex;
+  align-items:center;
+  gap:5px;
+  padding:5px 8px;
+  border-radius:12px;
+  color:#fff0dc;
+  background:#302721e8;
+  font-size:12px;
+  pointer-events:none;
+}
+.bar-music { position:relative; z-index:5; }
+.bar-music button {
+  display:grid;
+  place-items:center;
+  min-width:44px;
+  min-height:44px;
+  border-radius:12px;
+  background:#352a24;
+  color:#fff0dc;
+}
+.bar-music-slider {
+  position:absolute;
+  bottom:calc(100% + 6px);
+  right:0;
+  display:grid;
+  justify-items:center;
+  gap:6px;
+  padding:8px;
+  border-radius:12px;
+  background:#352a24;
+  color:#fff0dc;
+  font-size:12px;
+}
+.bar-music-slider input {
+  writing-mode:vertical-lr;
+  direction:rtl;
+  width:28px;
+  height:112px;
+  accent-color:#3182f6;
+}

@@ -17,6 +17,7 @@ import { call, getConfig, login, clearSession, hasSession, assetUrl, insideToss,
 import { handleMiniappBack, subscribeMiniappBack, navigationBarOptions } from './miniapp-back';
 import { ExitConfirm } from './ExitConfirm';
 import { Glass } from './Glass';
+import { BarMusic } from './BarMusic';
 import { BarScene, BarViewOptions } from './BarScene';
 import { firstPersonVoice, partnerFacing } from './bar-scene';
 import { SEATS as positions, POINT_PACKS, SUBSCRIPTIONS, adjacent, audioGain } from './social';
@@ -1595,7 +1596,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide} = {}) {
       {mine&&<span className="facing-indicator" aria-hidden="true"/>}
       <button className={`seat ${occupied ? `occupied ${mine ? profile.gender : person.gender}` : 'empty'} ${mine ? 'mine' : ''} ${talking ? 'speaking' : ''}`} aria-label={mine ? '내 자리' : person ? `${i+1}번 손님 프로필` : i === 11 ? '빈 사장 자리로 이동' : `${i+1}번 빈자리로 이동`} disabled={!occupied && (seatFrozen || moving)} onClick={() => selectBarSeat(i)}>{photo ? <img src={photo} alt={mine ? '내 얼굴' : '손님 얼굴'}/> : occupied ? <UserRound size={18} aria-hidden="true"/> : <Plus size={18}/>}</button>
       {occupied && <span className="seat-drink" title={DRINKS.find(d => d.id === personDrink)?.name}><Glass id={personDrink} seconds={leftTime} host={i===11&&!server?.seatNeutralClock}/><span className="sr-only">{DRINKS.find(d => d.id === personDrink)?.name}, {i===11&&!server?.seatNeutralClock?'시간 제한 없음':`${Math.ceil(leftTime/60)}분 남음`}</span></span>}
-      {paired&&<span className="pair-marker" title="서로 속삭이는 중"><MessageCircleMore size={12} style={{transform:'scaleX(-1)'}}/><span className="sr-only">서로 속삭이는 중</span></span>}{!mine&&person&&mutedGuests.includes(person.id)?<span className="muted-marker" title={reportedIds.has(person.id)?'이용자 보호로 연결되지 않아요':'음소거됨'}><VolumeX size={12}/><span className="sr-only">{reportedIds.has(person.id)?'이용자 보호로 연결되지 않아요':'음소거됨'}</span></span>:!mine&&person&&person.mic===false&&!mesh.talking.includes(person.id)?<span className="muted-marker mic-off-marker" title="마이크 꺼짐"><MicOff size={12}/><span className="sr-only">마이크 꺼짐</span></span>:null}{talking && <Waves/>}{mine && <span className="me-label">나</span>}{i === 11 && <span className="host-label">{occupied ? '사장' : '사장 자리'}</span>}
+      {paired&&<span className="pair-marker" title="서로 속삭이는 중"><MessageCircleMore size={12} style={{transform:'scaleX(-1)'}}/><span className="sr-only">서로 속삭이는 중</span></span>}{!mine&&person&&mutedGuests.includes(person.id)?<span className="muted-marker" title={reportedIds.has(person.id)?'이용자 보호로 연결되지 않아요':'음소거됨'}><VolumeX size={12}/><span className="sr-only">{reportedIds.has(person.id)?'이용자 보호로 연결되지 않아요':'음소거됨'}</span></span>:(mine ? !micSending : person?.mic===false&&!mesh.talking.includes(person.id))?<span className="muted-marker mic-off-marker" title="마이크 꺼짐"><MicOff size={12}/><span className="sr-only">마이크 꺼짐</span></span>:null}{talking && <Waves/>}{mine && <span className="me-label">나</span>}{i === 11 && <span className="host-label">{occupied ? '사장' : '사장 자리'}</span>}
     </div>;
   }
 
@@ -1755,10 +1756,11 @@ function App({qaControls, qaView, qaStart, qaViewGuide} = {}) {
           partners={partners} drinkId={ wallet.drinkId } seconds={seconds} elapsed={elapsed} seatNeutralClock={server?.seatNeutralClock}
           guests={guests} renderSeat={renderBarSeat} onUnavailable={selectBarView}
           onOpenSeats={() => open('bar-seats')} onFacingChange={setFacing} moving={sceneMoving}
-          onMotionChange={setSceneMoving} seatPickerRef={seatPickerTrigger} onCue={playCue}/>}
-        {firstPerson && reactions[me]?.expiresAt>now && <div className="bar-reaction-self">{renderReaction(me)}</div>}
+          onMotionChange={setSceneMoving} seatPickerRef={seatPickerTrigger} onCue={playCue}
+          selfReaction={renderReaction(me)} micOff={!micSending}/>}
       </div>
       <div className="bar-reaction-controls"><div className="conversation-status">{activeFocus?'1:1 대화 중 · 다른 사람에게는 들리지 않아요':voice.mic&&voice.level>.06?'지금 이야기하고 있어요':guestsTalking&&partners[guest?.id]?'두 손님이 1:1로 대화하고 있어요':guestsTalking?(audible?'가까운 자리에서 이야기하고 있어요':'저쪽 자리에서 이야기하고 있어요'):'빈자리를 누르면 옮길 수 있어요'}</div>
+        {import.meta.env.VITE_BAR_MUSIC_URL && <BarMusic src={import.meta.env.VITE_BAR_MUSIC_URL}/>}
         <button type="button" className="bar-reaction-trigger" aria-label="이모지 반응" aria-expanded={reactionMenu} onClick={()=>setReactionMenu(value=>!value)}><Smile size={18}/></button>
         {reactionMenu && <div className="bar-reaction-options" role="group" aria-label="반응 선택">
           {BAR_REACTIONS.map(([emoji,label])=><button key={emoji} type="button" aria-label={label} onClick={()=>sendReaction(emoji)}>{emoji}</button>)}

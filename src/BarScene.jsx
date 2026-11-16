@@ -1,5 +1,5 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, ChevronDown } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ChevronDown, MicOff } from 'lucide-react';
 import { avatarPose, cameraPitch, FIRST_PERSON_PITCH, firstPersonWalk, paintBar, partnerFacing, seatWalk, swapWalk, walkCue, wrapFacing } from './bar-scene';
 import { createBarRenderer } from './bar-renderer';
 import './bar-scene.css';
@@ -21,7 +21,7 @@ export function BarViewOptions({ view, onChange }) {
   </div>;
 }
 
-export function BarScene({ view, seat, memberId, gender, facing, partners, drinkId, seconds, elapsed, seatNeutralClock, guests, renderSeat, onUnavailable, onOpenSeats, onFacingChange, moving, onMotionChange, seatPickerRef, onCue }) {
+export function BarScene({ view, seat, memberId, gender, facing, partners, drinkId, seconds, elapsed, seatNeutralClock, guests, renderSeat, onUnavailable, onOpenSeats, onFacingChange, moving, onMotionChange, seatPickerRef, onCue, selfReaction, micOff }) {
   const canvas = useRef(null);
   const depthCanvas = useRef(null);
   const depth = useRef(null);
@@ -253,6 +253,10 @@ export function BarScene({ view, seat, memberId, gender, facing, partners, drink
       <div className="bar-scene-markers" ref={markers}>
         {Array.from({length:12}, (_, i) => renderSeat(i, false, moving))}
       </div>
+      {first && selfReaction && <div className="bar-reaction-self">{selfReaction}</div>}
+      {first && micOff && <span className="bar-first-mic-off">
+        <MicOff size={14} aria-hidden="true"/> 내 마이크 꺼짐
+      </span>}
     </div>
     {first && <div className="bar-first-controls">
       <button type="button" aria-label="왼쪽 보기" disabled={moving} onClick={() => turnBy(-45)}><ArrowLeft size={17}/></button>
