@@ -5,7 +5,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client';
 import { IAP, loadFullScreenAd, showFullScreenAd, SafeAreaInsets, NavigationBar, graniteEvent, Screen } from '@apps-in-toss/web-framework';
 import { Button, BottomSheet, Badge, FaceCaptureNotice, FaceCaptureConsent, CameraVerificationStatus } from './ui';
-import { ArrowLeft, ArrowRight, Bell, Camera, Check, ChevronDown, Clock3, DoorOpen, Coins, MessageCircleMore, Mic, MicOff, Music2, Plus, Smile, Volume2, VolumeX, Speaker, Wine, X, Flag, Wallet, Eye, LockKeyhole, ArrowLeftRight, Settings, UserRound } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Bell, Camera, Check, ChevronDown, Clock3, DoorOpen, Coins, MessageCircleMore, Mic, MicOff, Music2, Plus, Smile, Volume2, VolumeX, Speaker, Wine, X, ZoomIn, Flag, Wallet, Eye, LockKeyhole, ArrowLeftRight, Settings, UserRound } from 'lucide-react';
 import { REGIONS, CAPACITY, DRINKS, BASE_DRINK_MINUTES, DRINK_DURATION_VERSION } from './model';
 import { findAvailableBars } from './quick-match';
 import { useVoice } from './useVoice';
@@ -246,6 +246,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
   }, [voiceVolume]);
   const [mutedGuests, setMutedGuests] = useState([]);
   const [selectedGuest, setSelectedGuest] = useState(null);
+  const guestPhotoDialog = useRef(null);
   const [pendingSeat, setPendingSeat] = useState(null);
   const [toast, setToast] = useState('');
   const [error, setError] = useState('');
@@ -642,7 +643,12 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
     try { off = SafeAreaInsets.subscribe({ onEvent: apply }) || (() => {}); } catch {}
     return () => { try { off(); } catch {} };
   }, []);
-  backHandler.current = () => handleMiniappBack({
+  backHandler.current = () => {
+    if (guestPhotoDialog.current?.open) {
+      guestPhotoDialog.current.close();
+      return;
+    }
+    return handleMiniappBack({
     dismissDialog: () => {
       if (showTimeWarning) { declineTimeWarning(); return true; }
       if (reactionMenu) { setReactionMenu(false); return true; }
@@ -653,7 +659,8 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
     },
     sheet, closeSheet, screen, leaveBar: () => open('leave'),
     exitOpen, cancelExit: () => setExitOpen(false), showExit: () => setExitOpen(true),
-  });
+    });
+  };
   useEffect(() => subscribeMiniappBack({
     window, graniteEvent, insideToss: insideToss(), onBack: () => backHandler.current(),
     interceptNative: !!sheet || screen === 'bar',
@@ -2010,7 +2017,22 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
         </div>
       </>}
       {sheet === 'move' && <><h2 id="sheet-title">옆자리 분께 인사하고 갈까요?</h2><p className="sheet-description">가볍게 인사를 건네고 자리를 옮겨요.</p><div className="actions"><Button color="dark" variant="weak" onClick={() => setSheet(null)}>머무르기</Button><Button size="xlarge" onClick={() => commitMove(pendingSeat)}>자리 옮기기</Button></div></>}
-      {sheet === 'guest' && selectedGuest && <><div className="guest-photo">{!reportedIds.has(selectedGuest.id) && selectedGuest.photo ? <img src={selectedGuest.photo} alt="선택한 손님"/> : <UserRound size={32} aria-hidden="true"/>}<Glass id={selectedGuest.drinkId}/></div><h2 id="sheet-title">{selectedGuest.nickname || '혼술 친구'}</h2><p className="guest-meta"><span>{DRINKS.find(d => d.id === selectedGuest.drinkId)?.name} 마시는 중</span><span aria-hidden="true">·</span><span>{partners[selectedGuest.id]&&partners[selectedGuest.id]!=='me'?'옆자리와 대화 중':mutedGuests.includes(selectedGuest.id)?(reportedIds.has(selectedGuest.id)?'이용자 보호로 연결되지 않아요':'음소거되어 들리지 않아요'):guests.find(guest=>guest.id===selectedGuest.id)?.mic===false&&!mesh.talking.includes(selectedGuest.id)?'마이크가 꺼져 있어요':`내 자리에서 ${Math.round(audioGain({id:'me',seat},selectedGuest,facing,partners,mutedGuests)*100)}%로 들려요`}</span></p>
+      {sheet === 'guest' && selectedGuest && <><div className="guest-photo">{!reportedIds.has(selectedGuest.id) && selectedGuest.photo ? <>
+          <button type="button" className="guest-photo-trigger" aria-label="프로필 사진 크게 보기"
+            aria-haspopup="dialog" onClick={() => guestPhotoDialog.current.showModal()}>
+            <img src={selectedGuest.photo} alt=""/>
+            <span className="guest-photo-zoom"><ZoomIn size={14} aria-hidden="true"/></span>
+          </button>
+          <dialog ref={guestPhotoDialog} className="guest-photo-dialog" aria-label="손님 프로필 사진"
+            onClick={event => { if (event.target === event.currentTarget) event.currentTarget.close(); }}>
+            <div className="guest-photo-full">
+              <img src={selectedGuest.photo} alt="손님 프로필 사진" loading="lazy"/>
+              <button type="button" aria-label="확대 사진 닫기" onClick={() => guestPhotoDialog.current.close()}>
+                <X size={22} aria-hidden="true"/>
+              </button>
+            </div>
+          </dialog>
+        </> : <UserRound size={32} aria-hidden="true"/>}<Glass id={selectedGuest.drinkId}/></div><h2 id="sheet-title">{selectedGuest.nickname || '혼술 친구'}</h2><p className="guest-meta"><span>{DRINKS.find(d => d.id === selectedGuest.drinkId)?.name} 마시는 중</span><span aria-hidden="true">·</span><span>{partners[selectedGuest.id]&&partners[selectedGuest.id]!=='me'?'옆자리와 대화 중':mutedGuests.includes(selectedGuest.id)?(reportedIds.has(selectedGuest.id)?'이용자 보호로 연결되지 않아요':'음소거되어 들리지 않아요'):guests.find(guest=>guest.id===selectedGuest.id)?.mic===false&&!mesh.talking.includes(selectedGuest.id)?'마이크가 꺼져 있어요':`내 자리에서 ${Math.round(audioGain({id:'me',seat},selectedGuest,facing,partners,mutedGuests)*100)}%로 들려요`}</span></p>
         {partners[selectedGuest.id]&&partners[selectedGuest.id]!=='me'?<div className="guest-focus-panel"><MessageCircleMore size={18}/><p>지금 1:1로 대화하고 있어요.<br/>다른 사람에게는 목소리가 들리지 않아요.</p><Button size="large" variant="weak" disabled={waveSent.includes(selectedGuest.id)} onClick={()=>sendWave(selectedGuest)}>{waveSent.includes(selectedGuest.id)?'인사를 남겼어요':'손 흔들기'}</Button></div>:activeFocus===selectedGuest.id?<Button display="block" variant="weak" onClick={()=>{endFocus();setSheet(null);}}>전체 대화로 돌아가기</Button>:<div className="guest-focus-panel"><Button size="large" display="block" disabled={!adjacent(seat,selectedGuest.seat)||!!activeFocus||!!focusRequest||mutedGuests.includes(selectedGuest.id)||seconds===0} onClick={()=>requestFocus(selectedGuest)}>이 옆자리와만 대화하기</Button><p>{!adjacent(seat,selectedGuest.seat)?'바로 옆에 앉아 있을 때 이용할 수 있어요.':'수락하면 둘만 들리고, 자리를 옮기면 전체 대화로 돌아가요.'}</p></div>}
         <Button className="guest-seat-request" size="large" variant="weak" color="dark" display="block" disabled={!!outgoing || wallet.balance < 500 || reportedIds.has(selectedGuest.id)} onClick={() => open('seat-request')}><ArrowLeftRight size={17}/>이 자리 부탁하기 · 500P</Button><p className="footnote">상대가 수락하면 서로 자리를 바꿔요.</p><div className="guest-actions"><button onClick={() => {if(reportedIds.has(selectedGuest.id)) return; if(activeFocus===selectedGuest.id) endFocus();setMutedGuests(v => v.includes(selectedGuest.id) ? v.filter(id => id !== selectedGuest.id) : [...v,selectedGuest.id]);setSheet(null);}}><VolumeX size={15}/>{reportedIds.has(selectedGuest.id) ? '이용자 보호로 연결 제한됨' : mutedGuests.includes(selectedGuest.id) ? '음소거 해제' : selectedGuest.seat===11 ? '사장 음소거' : '음소거'}</button><button disabled={reportedIds.has(selectedGuest.id)} onClick={async()=>{try{await run('block',{targetId:selectedGuest.id});setMutedGuests(ids => [...new Set([...ids, selectedGuest.id])]);setSheet(null);setToast('차단했어요.');}catch(error){fail(error);}}}>차단</button><button onClick={() => open('report')}><Flag size={15}/>신고</button></div></>}
       {sheet === 'voice-consent' && <><h2 id="sheet-title">안전한 음성 대화를 위한 안내</h2><p className="sheet-description">{config?.fullVoiceReady ? '들리는 대화 음성을 신고 대응을 위해 암호화해 24시간 보관해요. 신고에 첨부하면 최대 7일간 보관해요.' : '대화 중 들리는 상대 음성을 최근 최대 20초까지 기기에 임시 보관해요. 퇴장하면 지워지고 신고할 때 선택해 제출할 수 있어요.'}</p><p className="sheet-description">제출된 음성은 암호화해 최대 7일 보관하고 권한 있는 운영자만 신고 조사에 사용해요. 광고·AI 학습에는 사용하지 않아요. 상대도 신고 시 내 음성을 제출할 수 있어요. 동의하지 않아도 로비·고객센터는 이용할 수 있어요.</p><label className="sheet-description"><input type="checkbox" checked={voiceConsentChecked} onChange={e=>setVoiceConsentChecked(e.target.checked)}/> 음성의 임시 보관과 신고 시 제출·운영자 검토에 동의해요. (음성 입장 필수)</label><Button display="block" disabled={!voiceConsentChecked||busy} onClick={agreeVoice}>동의하고 계속하기</Button><Button display="block" variant="weak" disabled={busy} onClick={()=>{setPendingEntry(null);setSheet(null);if(screen==='bar')run('leave').catch(fail);}}>나중에 할게요</Button></>}
