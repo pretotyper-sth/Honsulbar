@@ -64,6 +64,10 @@ test('two simultaneous searchers get one private offer and can enter the same br
   assert.ok(Math.abs(extended.visit.seconds - 3600) <= 2);
   assert.equal(extended.visit.clockEndMs - start.visit.clockEndMs,2_400_000);
   assert.equal((await snapshot(b)).member.balance,8500);
+  await timed(b,'98710002','order',{drinkId:'highball'});
+  const basicExtension=await snapshot(b);
+  assert.equal(basicExtension.visit.clockEndMs - extended.visit.clockEndMs,1_200_000);
+  assert.equal(basicExtension.member.balance,8000);
   const visit=(await snapshot(a)).visit;
   await action(a,'heartbeat',{visitId:visit.id,seat:visit.seat,facing:75});
   assert.equal((await snapshot(b)).guests.find(g=>g.id===a).facing,75);
