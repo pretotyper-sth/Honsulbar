@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { shuffleBarMusic } from './bar-music';
+import { normalizeBarMusic } from './bar-music-level';
 
 export function useBarAmbience({ active, soundOn, talking, prepareAudio, level=1 }) {
   const music = useRef(null);
@@ -22,12 +23,19 @@ export function useBarAmbience({ active, soundOn, talking, prepareAudio, level=1
       if (!context.createMediaElementSource) return;
       const element = new Audio();
       try {
-        const source = context.createMediaElementSource(element);
-        const gain = context.createGain();
-        gain.gain.value = latestVolume.current;
-        source.connect(gain);
-        gain.connect(context.destination);
-        const item = { element, source, gain, context };
+        let output = normalizeBarMusic(context, element, latestVolume.current);
+        if (!output) {
+          const source = context.createMediaElementSource(element);
+          const gain = context.createGain();
+          gain.gain.value = latestVolume.current;
+          source.connect(gain);
+          gain.connect(context.destination);
+          output = {
+            setVolume: (value, transition) => gain.gain.setTargetAtTime(value, context.currentTime, transition),
+            close: () => { source.disconnect(); gain.disconnect(); },
+          };
+        }
+        const item = { element, output };
         let queue = [], previousTrack;
         const selectNext = () => {
           if (!queue.length) queue = shuffleBarMusic(previousTrack);
@@ -61,7 +69,7 @@ export function useBarAmbience({ active, soundOn, talking, prepareAudio, level=1
 
   useEffect(() => {
     const item = music.current;
-    if (item) item.gain.gain.setTargetAtTime(volume, item.context.currentTime, talking ? 0.08 : 0.32);
+    if (item) item.output.setVolume(volume, talking ? 0.08 : 0.32);
   }, [volume, talking]);
 
   useEffect(() => () => {
@@ -71,8 +79,7 @@ export function useBarAmbience({ active, soundOn, talking, prepareAudio, level=1
     item.element.pause();
     item.element.removeAttribute('src');
     item.element.load();
-    item.source.disconnect();
-    item.gain.disconnect();
+    item.output.close();
     music.current = null;
   }, []);
 
