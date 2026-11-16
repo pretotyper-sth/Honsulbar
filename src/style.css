@@ -128,13 +128,14 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 .lamp-one { left:-15px; top:24%; }
 .lamp-two { right:-15px; top:24%; }
 .lamp-three { bottom:-15px; left:calc(50% - 6px); }
+.bar-space { --empty-seat-size:44px; }
 .seat-wrap { position:absolute; width:44px; height:44px; transform:translate(-50%,-50%); z-index:1; }
 .my-wrap { z-index:4; }
 .host-wrap { z-index:3; }
 .seat { position:relative; width:44px; height:44px; padding:0; border-radius:50%; display:grid; place-items:center; overflow:hidden; line-height:0; }
 .seat.occupied { border:2px solid #80b8e6; background:#20291e; box-shadow:0 3px 7px #0008; overflow:visible; }
 .seat.occupied.female { border-color:#e69cba; }
-.seat.empty { margin:0; width:44px; height:44px; border:1px dashed #869177; background:#303b2a; color:#b8c5a4; overflow:visible; }
+.seat.empty { margin:0; width:var(--empty-seat-size,44px); height:var(--empty-seat-size,44px); border:1px dashed #869177; background:#303b2a; color:#b8c5a4; overflow:visible; }
 .seat.empty:disabled { opacity:.38; }
 .seat.mine { box-shadow:0 0 0 3px #b5c79533,0 4px 12px #0009; }
 .seat img { position:absolute; inset:0; display:block; width:100%; height:100%; object-fit:cover; border-radius:50%; clip-path:circle(50%); }
@@ -316,14 +317,14 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
   .art-wrap { width:74px; }
   .bar-screen { padding-left:16px; padding-right:16px; }
   .seat-wrap,.seat { width:44px; height:44px; }
-  .seat.empty { width:40px; height:40px; }
+  .bar-space { --empty-seat-size:40px; }
   .sheet { padding-left:20px; padding-right:20px; }
   .menu button { gap:9px; padding:10px; }
   .menu small { font-size:11px; }
 }
 @media(prefers-reduced-motion:reduce) { *,*:before,*:after { animation:none!important; scroll-behavior:auto!important; } }
 
-@media(max-height:740px) { .seat-wrap,.seat { width:42px; height:42px; } .seat.empty { width:38px; height:38px; } .seat-offer small { display:none; } }
+@media(max-height:740px) { .seat-wrap,.seat { width:42px; height:42px; } .bar-space { --empty-seat-size:38px; } .seat-offer small { display:none; } }
 
 /* Lobby selection and the point wallet use one consistent, compact hierarchy. */
 .app>header { display:grid; grid-template-columns:1fr auto; }
