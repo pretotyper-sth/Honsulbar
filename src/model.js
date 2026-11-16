@@ -1,13 +1,13 @@
 export const REGIONS = ['서울', '경기', '인천', '부산', '대구'];
 export const CAPACITY = 12;
 export const DRINKS = [
-  { id: 'highball', name: '하우스 하이볼', note: '위스키에 탄산, 레몬 한 조각', minutes: 30, price: 500, color: '#ddb76d' },
-  { id: 'wine', name: '레드 와인', note: '천천히 마시기 좋은 한 잔', minutes: 30, price: 500, color: '#b75c6b' },
+  { id: 'highball', name: '하우스 하이볼', note: '위스키에 탄산, 레몬 한 조각', minutes: 20, price: 500, color: '#ddb76d' },
+  { id: 'wine', name: '레드 와인', note: '천천히 마시기 좋은 한 잔', minutes: 20, price: 500, color: '#b75c6b' },
   { id: 'wine-hour', name: '싱글몰트 위스키 · 1시간', note: '깊은 향을 천천히 즐기는 잔', minutes: 60, price: 1000, color: '#9c642f' },
-  { id: 'beer', name: '생맥주', note: '차갑게 따른 시원한 맥주', minutes: 30, price: 500, color: '#d99d38' },
-  { id: 'whiskey', name: '버번 온더락', note: '진한 향을 천천히 즐기는 잔', minutes: 30, price: 500, color: '#b77a3c' },
-  { id: 'cocktail', name: '진토닉', note: '허브 향이 산뜻한 칵테일', minutes: 30, price: 500, color: '#b7d6c2' },
-  { id: 'citrus', name: '무알코올 시트러스', note: '술 없이도 산뜻하게', minutes: 30, price: 500, color: '#a4b97a' },
+  { id: 'beer', name: '생맥주', note: '차갑게 따른 시원한 맥주', minutes: 20, price: 500, color: '#d99d38' },
+  { id: 'whiskey', name: '버번 온더락', note: '진한 향을 천천히 즐기는 잔', minutes: 20, price: 500, color: '#b77a3c' },
+  { id: 'cocktail', name: '진토닉', note: '허브 향이 산뜻한 칵테일', minutes: 20, price: 500, color: '#b7d6c2' },
+  { id: 'citrus', name: '무알코올 시트러스', note: '술 없이도 산뜻하게', minutes: 20, price: 500, color: '#a4b97a' },
 ];
 export const initialWallet = { balance: 1000, expiresAt: null, heldSeconds: 0, welcomed: false, drinkId: null, attendanceDate: null };
 export function remaining(wallet, now) {

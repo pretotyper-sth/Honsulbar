@@ -37,7 +37,7 @@ const scenarios = [
   ['바 화면과 이용 시간', [
     ['view-guide','첫 입장 시점 안내','홈에서 혼술바에 입장해 확인'],
     ['bar-third','기본 3D·옷 색·소리 방향'], ['bar-first','1인칭'], ['bar-flat','2D'], ['bar-full','12석 만석'],
-    ['bar-remote-facing','다른 손님 의자 회전·퇴장'], ['bar-solo','혼자 대기 · 30:00'], ['bar-arrival','5초 뒤 손님 입장'], ['bar-departure','5초 뒤 손님 퇴장'],
+    ['bar-remote-facing','다른 손님 의자 회전·퇴장'], ['bar-solo','혼자 대기 · 20:00'], ['bar-arrival','5초 뒤 손님 입장'], ['bar-departure','5초 뒤 손님 퇴장'],
     ['bar-low','5분 미만 경고'], ['bar-ended','이용 시간 종료'], ['bar-order','한 잔 더 주문'], ['bar-held-drink','손에 든 잔 · 잔량과 이동'],
     ['bar-host','사장 자리 · 시간 제한 없음'],
   ]],
@@ -121,7 +121,7 @@ export function setScenario(next) {
   if (!next.startsWith('bar-') || next === 'bar-camera') return;
 
   const mine = {'bar-host':11,'bar-swap-wait':8,'bar-focus-right-end':10,'bar-move-blocked':4}[next] ?? 0;
-  const time = {'bar-low':240,'bar-ended':0,'bar-order':810,'bar-held-drink':810,'bar-rejoin':1240}[next] ?? 1800;
+  const time = {'bar-low':240,'bar-ended':0,'bar-order':810,'bar-held-drink':810,'bar-rejoin':1040}[next] ?? DRINKS[0].minutes * 60;
   const away = next === 'bar-rejoin';
   const solo = ['bar-solo','bar-arrival'].includes(next);
   const guestsAt = {

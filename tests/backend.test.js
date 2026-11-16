@@ -21,6 +21,7 @@ async function setup({ soloClock = false } = {}) {
     await db.exec(sql('20261108_solo_visit_clock.sql'));
     await db.exec(sql('20261115_preserve_solo_seat_time.sql'));
   }
+  await db.exec(sql('20261117_basic_drink_twenty_minutes.sql'));
   const one = async (query, params) => (await db.query(query, params)).rows[0];
   const action = async (member, name, data = {}) => (await one('select hb_action($1,$2,$3::jsonb) as r', [member, name, JSON.stringify(data)])).r;
   const snapshot = async member => (await one('select hb_snapshot($1) as s', [member])).s;
@@ -54,7 +55,7 @@ test('entering, ordering, moving to the host seat and leaving', async () => {
   let state = await snapshot(me);
   assert.equal(state.member.balance, 1500);
   assert.equal(state.visit.seat, 0);
-  assert.ok(state.visit.seconds > 1790 && state.visit.seconds <= 1800);
+  assert.ok(state.visit.seconds > 1190 && state.visit.seconds <= 1200);
   assert.equal(state.rooms.find(r => r.region === '서울' && r.number === 1).count, 1);
   await action(me, 'move', { seat: 11 });
   state = await snapshot(me);
@@ -63,12 +64,12 @@ test('entering, ordering, moving to the host seat and leaving', async () => {
   await db.query(`update hb_visits set heartbeat_at=now() where member_id=$1`, [me]);
   await action(me, 'order', { drinkId: 'wine' });
   state = await snapshot(me);
-  assert.equal(state.visit.seconds, held + 1800);
+  assert.equal(state.visit.seconds, held + 1200);
   assert.equal(state.member.balance, 1000);
   await action(me, 'move', { seat: 4 });
   state = await snapshot(me);
   assert.equal(state.visit.seat, 4);
-  assert.ok(Math.abs(state.visit.seconds - (held + 1800)) <= 1);
+  assert.ok(Math.abs(state.visit.seconds - (held + 1200)) <= 1);
   await action(me, 'leave');
   state = await snapshot(me);
   assert.equal(state.visit.away, true);
@@ -103,7 +104,7 @@ test('same branch can be rejoined while leftover time keeps running', async () =
   assert.equal(state.visit.region, '부산');
   assert.equal(state.visit.away, false);
   assert.equal(state.member.balance, 1000);
-  assert.ok(state.visit.seconds > 1790 && state.visit.seconds <= 1800);
+  assert.ok(state.visit.seconds > 1190 && state.visit.seconds <= 1200);
 });
 
 test('seat swap moves points and seats atomically, focus pairs neighbours', async () => {
@@ -439,7 +440,7 @@ test('safety pause preserves unused paid time and releases the room until review
   assert.equal((await one('select count(*)::int n from hb_focus')).n,0);
   assert.equal((await one('select count(*)::int n from hb_signals')).n,0);
   assert.doesNotMatch((await one("select prosrc from pg_proc where proname='hb_sync_safety_time'")).prosrc,/delete from \w+\s*;/i);
-  const held=state.visit.seconds;assert.ok(held>=1799 && held<=1802);
+  const held=state.visit.seconds;assert.ok(held>=1199 && held<=1202);
   await db.query("update hb_visits set heartbeat_at=now()-interval '2 hours' where member_id=$1",[a]);
   await db.query('select hb_cleanup()');
   assert.equal((await snapshot(a)).visit.seconds,held);
@@ -500,7 +501,7 @@ test('restricted members can read their action notice and appeal without regaini
  await db.close();
 });
 
-test('a solo guest keeps exactly 30 minutes when changing seats after five seconds', async () => {
+test('a solo guest keeps exactly 20 minutes when changing seats after five seconds', async () => {
   const {action, db, login, ready, snapshot} = await setup({soloClock:true});
   try {
     const me = await login('700001');
@@ -509,21 +510,21 @@ test('a solo guest keeps exactly 30 minutes when changing seats after five secon
     await ready(guest, '조용한 여우');
     const entry = {region:'서울', number:1, drinkId:'highball'};
     await action(me, 'enter', entry);
-    assert.equal((await snapshot(me)).visit.seconds, 1800);
+    assert.equal((await snapshot(me)).visit.seconds, 1200);
 
     // Simulate five seconds passing while the clock is paused.
     await db.query(`update hb_visits set solo_since=now()-interval '5 seconds',
-      expires_at=now()+interval '1795 seconds' where member_id=$1`, [me]);
+      expires_at=now()+interval '1195 seconds' where member_id=$1`, [me]);
     await action(me, 'move', {seat:3});
     let {visit} = await snapshot(me);
     assert.equal(visit.seat, 3);
     assert.equal(visit.soloPaused, true);
-    assert.equal(visit.seconds, 1800);
+    assert.equal(visit.seconds, 1200);
 
     await action(guest, 'enter', entry);
     ({visit} = await snapshot(me));
     assert.equal(visit.soloPaused, false);
-    assert.equal(visit.seconds, 1800);
+    assert.equal(visit.seconds, 1200);
     await db.query("update hb_visits set expires_at=expires_at-interval '5 seconds' where member_id=$1", [me]);
     const expiry = async () => (await db.query(
       'select expires_at::text as expiry from hb_visits where member_id=$1', [me]
@@ -532,13 +533,13 @@ test('a solo guest keeps exactly 30 minutes when changing seats after five secon
     await action(me, 'move', {seat:4});
     assert.equal(await expiry(), beforeMove);
     ({visit} = await snapshot(me));
-    assert.equal(visit.seconds, 1795);
+    assert.equal(visit.seconds, 1195);
 
     await action(guest, 'leave');
     assert.equal((await snapshot(me)).visit.soloPaused, true);
     await action(me, 'order', {drinkId:'highball'});
     ({visit} = await snapshot(me));
-    assert.equal(visit.seconds, 3595);
+    assert.equal(visit.seconds, 2395);
   } finally {
     await db.close();
   }
