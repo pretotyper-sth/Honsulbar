@@ -243,6 +243,7 @@ html.in-toss .ait-gnb-fill:has(+ .app.bar-active) {
   justify-content:space-between;
   gap:8px;
 }
+.bar-reaction-controls:has(.bar-reaction-options) { z-index:7; }
 .bar-reaction-trigger,.bar-reaction-options button {
   display:grid;
   place-items:center;
@@ -266,6 +267,9 @@ html.in-toss .ait-gnb-fill:has(+ .app.bar-active) {
   border-radius:13px;
   background:#352a24;
   box-shadow:0 4px 16px #1b100e80;
+}
+.bar-stage:has(.bar-scene-third) + .bar-reaction-controls .bar-reaction-options {
+  bottom:calc(100% + 116px);
 }
 .bar-reaction-options button { font-size:19px; }
 .bar-reaction-options button:active { background:var(--bar-surface); }
