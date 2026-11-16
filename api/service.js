@@ -2,6 +2,7 @@ import {fullVoiceReady,FULL_VOICE_VERSION,encryptRecording,decryptRecording} fro
 import {playReviewReady,playReviewMember} from '../server/play-review.js';
 import {newPhotoChallenge} from '../server/photo-test-window.js';
 import {androidVoiceServers} from '../server/android-voice.js';
+import {tossVoiceIce,tossVoiceRelayReady} from '../server/toss-voice.js';
 import {safetySnapshot} from '../server/safety-queue.js';
 import {ageTestReady,startAgeTest,completeAgeTest,ageTestHealth} from '../server/age-verification.js';
 import {playBillingConfiguration,processPlayPurchase,processPlaySubscription} from '../server/play-billing.js';
@@ -51,7 +52,7 @@ export default async function handler(req,res) {
   let body=req.body||{};if(typeof body==='string')body=JSON.parse(body);
   if(JSON.stringify(body).length>1500000)throw new AppError('요청이 너무 커요.',413);
   const action=req.method==='GET'?'config':body.action;
-  if(action==='config')return res.json({playReviewReady:playReviewReady(),accountTransferReady:process.env.HB_ACCOUNT_TRANSFER_ENABLED==='1',ageTestReady:ageTestReady(),androidPushReady:androidPushReady(),androidAuthReady:process.env.HB_ANDROID_AUTH_ENABLED==='1',voiceEvidenceReady:voiceEvidenceReady()&&!fullVoiceReady(),signupConsentReady:true,fullVoiceReady:fullVoiceReady(),voiceConsentVersion:VOICE_CONSENT_VERSION,apiReady:!!(sbUrl()&&process.env.SUPABASE_SERVICE_ROLE_KEY),loginReady:!!(process.env.TOSS_CLIENT_CERT_BASE64&&process.env.TOSS_CLIENT_KEY_BASE64&&process.env.TOSS_DECRYPTION_KEY&&process.env.TOSS_AAD),devLogin:!isProduction()&&process.env.HB_DEV_LOGIN==='1',supabaseUrl:sbUrl(),supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_ANON_KEY||'',adGroupId:rewardedAdGroupId(),products:skuPoints(),subscriptionSku:subscriptionSku(),pushAvailableTemplate:pushAvailableTemplate(),pushReplyTemplate:pushReplyTemplate(),iceServers:process.env.WEBRTC_ICE_SERVERS?JSON.parse(process.env.WEBRTC_ICE_SERVERS):[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]});
+  if(action==='config')return res.json({tossVoiceRelayReady:tossVoiceRelayReady(),playReviewReady:playReviewReady(),accountTransferReady:process.env.HB_ACCOUNT_TRANSFER_ENABLED==='1',ageTestReady:ageTestReady(),androidPushReady:androidPushReady(),androidAuthReady:process.env.HB_ANDROID_AUTH_ENABLED==='1',voiceEvidenceReady:voiceEvidenceReady()&&!fullVoiceReady(),signupConsentReady:true,fullVoiceReady:fullVoiceReady(),voiceConsentVersion:VOICE_CONSENT_VERSION,apiReady:!!(sbUrl()&&process.env.SUPABASE_SERVICE_ROLE_KEY),loginReady:!!(process.env.TOSS_CLIENT_CERT_BASE64&&process.env.TOSS_CLIENT_KEY_BASE64&&process.env.TOSS_DECRYPTION_KEY&&process.env.TOSS_AAD),devLogin:!isProduction()&&process.env.HB_DEV_LOGIN==='1',supabaseUrl:sbUrl(),supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_ANON_KEY||'',adGroupId:rewardedAdGroupId(),products:skuPoints(),subscriptionSku:subscriptionSku(),pushAvailableTemplate:pushAvailableTemplate(),pushReplyTemplate:pushReplyTemplate(),iceServers:process.env.WEBRTC_ICE_SERVERS?JSON.parse(process.env.WEBRTC_ICE_SERVERS):[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]});
   if(action==='login'){
    const code=typeof body.authorizationCode==='string'?body.authorizationCode.trim():'';
    const referrer=String(body.referrer||'').trim().toUpperCase();
@@ -191,6 +192,14 @@ export default async function handler(req,res) {
    throw new AppError('지원하지 않는 관리자 요청이에요.');
   }
   const member=await authenticate(req);
+  if(action==='voice-ice'){
+   const sessionHash=hash(req.headers.authorization.slice(7));
+   const [session]=await database(`hb_sessions?token_hash=eq.${sessionHash}&select=platform`);
+   if(session?.platform!=='toss')throw new AppError('토스 로그인 후 이용해 주세요.',403);
+   const [visit]=await database(`hb_visits?member_id=eq.${member}&away=eq.false&select=id`);
+   if(!visit)throw new AppError('혼술바에 입장해 주세요.',403);
+   return res.json({result:await tossVoiceIce(member)});
+  }
   if(action==='android-voice-config'){
    const [session]=await database(`hb_sessions?token_hash=eq.${hash(req.headers.authorization.slice(7))}&select=platform`);
    if(session?.platform!=='android')throw new AppError('Android 로그인 후 이용해 주세요.',403);
