@@ -100,6 +100,17 @@
   background:#271d17d1;
   border:1px solid #f4daa883;
 }
+.bar-scene-third .seat-wrap {
+  width:var(--empty-seat-size,44px);
+  height:var(--empty-seat-size,44px);
+}
+.bar-scene-third .seat:is(.empty,.occupied) {
+  width:100%;
+  height:100%;
+}
+.bar-scene-third .seat.occupied:has(> img) {
+  border:0;
+}
 .bar-scene-third .host-wrap .seat.empty {
   left:50%;
   transform:translateX(-50%);
