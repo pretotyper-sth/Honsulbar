@@ -298,6 +298,12 @@ html.in-toss .ait-gnb-fill:has(+ .app.bar-active) {
   box-shadow:0 4px 16px #1b100e80;
   pointer-events:auto;
 }
+.bar-scene-third .bar-reaction-picker:has(.bar-reaction-options) { z-index:9; }
+.bar-scene-third .bar-reaction-options {
+  position:absolute;
+  inset-inline-start:0;
+  bottom:calc(100% + 10px);
+}
 .bar-reaction-options button:active { background:var(--bar-surface); }
 .bar-reaction-picker button:focus-visible { outline:2px solid var(--bar-accent); outline-offset:-2px; }
 .bar-reaction {
