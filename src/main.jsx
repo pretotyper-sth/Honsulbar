@@ -22,6 +22,7 @@ import { handleMiniappBack, subscribeMiniappBack, navigationBarOptions } from '.
 import { ExitConfirm } from './ExitConfirm';
 import { Glass } from './Glass';
 import { BarMusic } from './BarMusic';
+import { themeForBar } from './bar-themes';
 import { BarScene, BarViewOptions } from './BarScene';
 import { firstPersonVoice, partnerFacing } from './bar-scene';
 import { SEATS as positions, POINT_PACKS, SUBSCRIPTIONS, adjacent, audioGain } from './social';
@@ -350,6 +351,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
   const seat = visit?.seat ?? 0;
   const guests = useMemo(() => (server?.guests || []).map(g => ({ ...g, photo: assetUrl(g.photo) })), [server?.guests]);
   const room = inside ? { region: visit.region, number: visit.number, count: guests.length + 1 } : entryRoom;
+  const barTheme = themeForBar(room);
   const rooms = useMemo(() => {
     const grouped = Object.fromEntries(REGIONS.map(r => [r, []]));
     for (const r of server?.rooms || []) (grouped[r.region] ||= []).push({ number: r.number, count: r.count, hasReportedGuest: !!r.hasReportedGuest });
@@ -1813,7 +1815,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
     title="조금 더 머물까요?" description="이용시간이 1분 남았어요. 괜찮아요를 누르면 남은 시간이 끝날 때 자동으로 홈으로 돌아가요."
     cancelLabel="괜찮아요" confirmLabel="한 잔 더" centered/>
   <div className="ait-gnb-fill" aria-hidden="true"/>
-  <main className={`app${screen === 'bar' ? ' bar-active' : ' lobby-active'}`} onPointerDownCapture={screen === 'bar' ? event => {
+  <main className={`app${screen === 'bar' ? ' bar-active' : ' lobby-active'}`} data-bar-theme={screen === 'bar' ? barTheme.id : undefined} onPointerDownCapture={screen === 'bar' ? event => {
     startAmbience();
     if (reactionMenu && !event.target.closest('.bar-reaction-picker')) setReactionMenu(false);
   } : undefined}>
@@ -1905,7 +1907,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
           partners={partners} drinkId={ wallet.drinkId } seconds={seconds} elapsed={elapsed} seatNeutralClock={server?.seatNeutralClock}
           guests={guests} renderSeat={renderBarSeat} onUnavailable={selectBarView}
           onOpenSeats={() => open('bar-seats')} onFacingChange={setFacing} moving={sceneMoving}
-          onMotionChange={setSceneMoving} seatPickerRef={seatPickerTrigger} onCue={playCue} micOff={!micSending}>
+          onMotionChange={setSceneMoving} seatPickerRef={seatPickerTrigger} onCue={playCue} micOff={!micSending} theme={barTheme}>
           {reactionPicker}
           {firstPerson && reactions[me]?.expiresAt>now && <div className="bar-reaction-self">{renderReaction(me)}</div>}
         </BarScene>}

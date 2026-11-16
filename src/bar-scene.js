@@ -1,5 +1,6 @@
 import { SEATS, drinkLevel } from './social.js';
 import { DRINKS, proximity } from './model.js';
+import { barMaterials, barThemes } from './bar-themes.js';
 
 const THIRD_EYE = [0, 10.4, 12.7];
 const THIRD_PITCH = -.64;
@@ -263,11 +264,7 @@ function rounded(faces, x, y, z, width, height, depth, colors, yaw = 0) {
   faces.push({points:[...rings.at(-1)].reverse(), color:colors[0]});
 }
 
-const wood = ['#b57b51','#78472f','#653927'];
-const trim = ['#694132','#4b2c25','#362320'];
-const brass = ['#edc28a','#bf8a4e','#8e6036'];
-const olive = ['#819175','#5c745f','#425246'];
-const amber = ['#ffe4a4','#f5bb68','#d38a41'];
+const { wood, trim, metal: brass, upholstery: olive, lamp: amber } = barMaterials;
 const tops = {
   female: [
     ['#f5af9f','#d48076','#9e4f51'],
@@ -296,11 +293,11 @@ for (let row = -4; row <= 4; row++) {
   for (let col = 0; col < 7; col++) {
     const x = col * 1.9 - 7.1 + (row % 2 ? .45 : 0);
     const z = row * 1.58;
-    const colors = ['#48302a','#51352c','#57392e','#4d322b'];
+    const colors = barMaterials.floor;
     floor.push({points:[[x,0,z],[x,0,z+1.55],[x+1.88,0,z+1.55],[x+1.88,0,z]],color:colors[(col + row * row) % colors.length]});
   }
 }
-box(walls, 0, 1.65, -6.55, 13.1, 3.3, .16, ['#4c5149','#373e36','#292d29']);
+box(walls, 0, 1.65, -6.55, 13.1, 3.3, .16, barMaterials.rearWall);
 box(room, 0, .28, -6.39, 13.1, .56, .16, trim);
 box(room, 0, 1.13, -6.24, 8.4, .16, .44, wood);
 box(room, 0, 2.05, -6.35, 8.4, .15, .48, wood);
@@ -308,7 +305,7 @@ for (let shelf = 0; shelf < 2; shelf++) {
   for (let i = 0; i < 12; i++) {
     const x = (i - 5.5) * .62;
     const base = shelf ? 2.13 : 1.22;
-    const palette = [olive, brass, ['#bd8981','#8c625c','#6b4543']][(i + shelf) % 3];
+    const palette = [olive, brass, barMaterials.bottles][(i + shelf) % 3];
     box(room, x, base + .14, -6.15, .22, .28, .20, palette);
     box(room, x, base + .32, -6.15, .10, .12, .10, palette);
   }
@@ -333,7 +330,7 @@ for (const [x,z] of lamps) {
 const firstPersonWalls = [];
 const wallDetails = [];
 for (const side of [-1,1]) {
-  const wall = ['#586457','#414e44','#29372f'];
+  const wall = barMaterials.sideWall;
   box(firstPersonWalls, side * 6.45, 1.9, .18, .15, 3.8, 13.5, wall);
   box(wallDetails, side * 6.31, .46, .18, .13, .92, 13.5, trim);
   for (const z of [-3.4,0,3.4]) {
@@ -341,7 +338,7 @@ for (const side of [-1,1]) {
     rounded(wallDetails, side * 6.18, 2.18, z, .24, .40, .36, amber);
   }
 }
-box(firstPersonWalls, 0, 1.9, 6.93, 13, 3.8, .15, ['#514a41','#454139','#373632']);
+box(firstPersonWalls, 0, 1.9, 6.93, 13, 3.8, .15, barMaterials.entryWall);
 box(wallDetails, 0, .48, 6.78, 13, .96, .15, trim);
 box(wallDetails, 0, 1.34, 6.79, 1.3, 2.68, .26, wood);
 
@@ -444,7 +441,7 @@ function clip(points) {
   });
 }
 
-export function paintBar(context, width, height, view, people, ownPose, pitch = FIRST_PERSON_PITCH, depthRenderer = null) {
+export function paintBar(context, width, height, view, people, ownPose, pitch = FIRST_PERSON_PITCH, depthRenderer = null, theme = barThemes[0]) {
   const first = view === 'first';
   const [x,z] = ownPose.position;
   const {camera, screen, focal, lens} = first
@@ -457,9 +454,6 @@ export function paintBar(context, width, height, view, people, ownPose, pitch = 
     if (angle) chair(faces, seat, angle);
     else faces.push(...geometry);
   });
-  for (const person of people) {
-    if (!first || !person.mine) avatar(faces, person.pose, avatarOutfit(person.id, person.gender), person);
-  }
   const visible = (polygons, project = camera) => polygons.map(({points, color}) => {
     const corners = clip(points.map(project)).map(screen);
     const depth = corners.reduce((sum, corner) => sum + corner[2], 0) / corners.length;
@@ -476,15 +470,23 @@ export function paintBar(context, width, height, view, people, ownPose, pitch = 
   }
   const wallFaces = first ? [...walls, ...firstPersonWalls] : walls;
   const details = first ? wallDetails : [];
-  if (depthRenderer?.draw([...floor, ...wallFaces, ...details, ...faces], lens, context.canvas.width, context.canvas.height)) {
+  const geometry = [floor, wallFaces, details, faces].map(layer => layer.map(face => {
+    const color = theme.colors[face.color];
+    return color ? { ...face, color } : face;
+  }));
+  const foreground = geometry[3];
+  for (const person of people) {
+    if (!first || !person.mine) avatar(foreground, person.pose, avatarOutfit(person.id, person.gender), person);
+  }
+  if (depthRenderer?.draw(geometry.flat(), lens, context.canvas.width, context.canvas.height)) {
     context.clearRect(0,0,width,height);
   } else {
     const background = context.createLinearGradient(0,0,0,height);
-    background.addColorStop(0, '#252c2b');
-    background.addColorStop(1, '#33211e');
+    background.addColorStop(0, theme.background[0]);
+    background.addColorStop(1, theme.background[1]);
     context.fillStyle = background;
     context.fillRect(0,0,width,height);
-    drawFaces([...visible(floor), ...visible(wallFaces), ...visible(details), ...visible(faces)]);
+    drawFaces(geometry.flatMap(layer => visible(layer)));
   }
 
   for (const [x,z] of first ? [] : lamps) {
@@ -493,8 +495,8 @@ export function paintBar(context, width, height, view, people, ownPose, pitch = 
     const [px,py,depth] = screen(point);
     const radius = Math.min(60, 360 / depth);
     const glow = context.createRadialGradient(px,py,0,px,py,radius);
-    glow.addColorStop(0, '#ffd38e50');
-    glow.addColorStop(1, '#ffd38e00');
+    glow.addColorStop(0, theme.glow + '50');
+    glow.addColorStop(1, theme.glow + '00');
     context.fillStyle = glow;
     context.fillRect(px - radius, py - radius, radius * 2, radius * 2);
   }
