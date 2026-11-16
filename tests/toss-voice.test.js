@@ -9,6 +9,10 @@ test('Toss can use its own Metered TURN servers without borrowing Android creden
   env.HB_TOSS_ICE_SERVERS = JSON.stringify({iceServers:config});
   assert.equal(tossVoiceRelayReady(env), true);
   assert.deepEqual(await tossVoiceIce('member-metered', {env,now:1000}), {iceServers:config,expiresAt:14_401_000});
+  env.HB_TOSS_ICE_SERVERS = 'var myPeerConnection = new RTCPeerConnection({ iceServers: [{urls: "turns:relay.metered.ca:443?transport=tcp", username: "test", credential: "test",},], });';
+  const pasted = await tossVoiceIce('member-metered', {env,now:1000});
+  assert.equal(pasted.iceServers[0].urls, config[0].urls[0]);
+  assert.equal(tossVoiceRelayReady(env), true);
   env.HB_TOSS_ICE_SERVERS = JSON.stringify([{urls:'stun:relay.metered.ca:443'}]);
   assert.equal(tossVoiceRelayReady(env), false);
   await assert.rejects(tossVoiceIce('member-metered', {env}), {status:503});

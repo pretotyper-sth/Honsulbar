@@ -6,7 +6,14 @@ const REFRESH_MARGIN_MS = 5 * 60 * 1000;
 const cached = new Map();
 
 function staticRelay(value) {
-  const iceServers = parseVoiceServers(value);
+  // Metered's dashboard can copy a JavaScript snippet instead of JSON. Parse data only.
+  const config = value.trim()
+    .replace(/^(?:(?:var|const|let)\s+\w+\s*=\s*)?new\s+RTCPeerConnection\(\s*([\s\S]+)\s*\)\s*;?$/, '$1')
+    .replace(/"(?:[^"\\]|\\.)*"|\b(?:iceServers|urls|username|credential)(?=\s*:)|,(?=\s*[}\]])/g, token => {
+      if (token[0] === '"') return token;
+      return token === ',' ? '' : JSON.stringify(token);
+    });
+  const iceServers = parseVoiceServers(config);
   if (!iceServers.some(({urls}) => [urls].flat().some(url => /^turns?:/.test(url)))) {
     throw new AppError('음성 중계에 연결하지 못했어요.',503);
   }
