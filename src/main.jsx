@@ -21,6 +21,7 @@ import { call, getConfig, login, clearSession, hasSession, assetUrl, insideToss,
 import { handleMiniappBack, subscribeMiniappBack, navigationBarOptions } from './miniapp-back';
 import { ExitConfirm } from './ExitConfirm';
 import { Glass } from './Glass';
+import { BarMusic } from './BarMusic';
 import { BarScene, BarViewOptions } from './BarScene';
 import { firstPersonVoice, partnerFacing } from './bar-scene';
 import { SEATS as positions, POINT_PACKS, SUBSCRIPTIONS, adjacent, audioGain } from './social';
@@ -232,6 +233,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
   const [speaker, setSpeaker] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
   const [bgmMuted, setBgmMuted] = useState(() => storageFlag(BGM_MUTED_KEY));
+  const [bgmLevel, setBgmLevel] = useState(1);
   const [voiceVolume, setVoiceVolume] = useState(() => {
     try {
       const saved = localStorage.getItem('honsulbar:voice-volume');
@@ -536,6 +538,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
         setStorageFlag(BGM_MUTED_KEY, muted);
         setReactionMenu(false);
       }}><Music2 size={20} aria-hidden="true"/></button>
+    <BarMusic volume={bgmLevel} onChange={setBgmLevel}/>
     <button ref={reactionTrigger} className="bar-stage-button" type="button"
       aria-label="이모지 반응" aria-expanded={reactionMenu} aria-controls={reactionMenu ? 'bar-reaction-options' : undefined}
       onClick={() => setReactionMenu(value => !value)}><Smile size={20} aria-hidden="true"/></button>
@@ -757,7 +760,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
     });
   }, [prepareCueAudio]);
 
-  const {start:startAmbience,pause:pauseAmbience} = useBarAmbience({
+  const {start:startAmbience,pause:pauseAmbience} = useBarAmbience({ level:bgmLevel,
     active:screen === 'bar' && inside, soundOn:soundOn && !bgmMuted, prepareAudio:prepareCueAudio,
     talking:localSpeaking || mesh.talking.some(id => gains[id] > .035),
   });
@@ -1718,7 +1721,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
       {mine&&<span className="facing-indicator" aria-hidden="true"/>}
       <button className={`seat ${occupied ? `occupied ${mine ? profile.gender : person.gender}` : 'empty'} ${mine ? 'mine' : ''} ${talking ? 'speaking' : ''}`} aria-label={mine ? '내 자리' : person ? `${i+1}번 손님 프로필` : i === 11 ? '빈 사장 자리로 이동' : `${i+1}번 빈자리로 이동`} disabled={!occupied && (seatFrozen || moving)} onClick={() => selectBarSeat(i)}>{photo ? <img src={photo} alt={mine ? '내 얼굴' : '손님 얼굴'}/> : occupied ? <UserRound size={18} aria-hidden="true"/> : <Plus size={18}/>}</button>
       {occupied && <span className="seat-drink" title={DRINKS.find(d => d.id === personDrink)?.name}><Glass id={personDrink} seconds={leftTime} host={i===11&&!server?.seatNeutralClock}/><span className="sr-only">{DRINKS.find(d => d.id === personDrink)?.name}, {i===11&&!server?.seatNeutralClock?'시간 제한 없음':`${Math.ceil(leftTime/60)}분 남음`}</span></span>}
-      {paired&&<span className="pair-marker" title="서로 속삭이는 중"><MessageCircleMore size={12} style={{transform:'scaleX(-1)'}}/><span className="sr-only">서로 속삭이는 중</span></span>}{!mine&&person&&mutedGuests.includes(person.id)?<span className="muted-marker" title={reportedIds.has(person.id)?'이용자 보호로 연결되지 않아요':'음소거됨'}><VolumeX size={12}/><span className="sr-only">{reportedIds.has(person.id)?'이용자 보호로 연결되지 않아요':'음소거됨'}</span></span>:!mine&&person&&person.mic===false&&!mesh.talking.includes(person.id)?<span className="muted-marker mic-off-marker" title="마이크 꺼짐"><MicOff size={12}/><span className="sr-only">마이크 꺼짐</span></span>:null}{talking && <Waves/>}{mine && <span className="me-label">나</span>}{i === 11 && <span className="host-label">{occupied ? '사장' : '사장 자리'}</span>}
+      {paired&&<span className="pair-marker" title="서로 속삭이는 중"><MessageCircleMore size={12} style={{transform:'scaleX(-1)'}}/><span className="sr-only">서로 속삭이는 중</span></span>}{!mine&&person&&mutedGuests.includes(person.id)?<span className="muted-marker" title={reportedIds.has(person.id)?'이용자 보호로 연결되지 않아요':'음소거됨'}><VolumeX size={12}/><span className="sr-only">{reportedIds.has(person.id)?'이용자 보호로 연결되지 않아요':'음소거됨'}</span></span>:(mine ? !micSending : person?.mic===false&&!mesh.talking.includes(person.id))?<span className="muted-marker mic-off-marker" title="마이크 꺼짐"><MicOff size={12}/><span className="sr-only">마이크 꺼짐</span></span>:null}{talking && <Waves/>}{mine && <span className="me-label">나</span>}{i === 11 && <span className="host-label">{occupied ? '사장' : '사장 자리'}</span>}
     </div>;
   }
 
@@ -1893,7 +1896,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
           partners={partners} drinkId={ wallet.drinkId } seconds={seconds} elapsed={elapsed} seatNeutralClock={server?.seatNeutralClock}
           guests={guests} renderSeat={renderBarSeat} onUnavailable={selectBarView}
           onOpenSeats={() => open('bar-seats')} onFacingChange={setFacing} moving={sceneMoving}
-          onMotionChange={setSceneMoving} seatPickerRef={seatPickerTrigger} onCue={playCue}>
+          onMotionChange={setSceneMoving} seatPickerRef={seatPickerTrigger} onCue={playCue} micOff={!micSending}>
           {reactionPicker}
           {firstPerson && reactions[me]?.expiresAt>now && <div className="bar-reaction-self">{renderReaction(me)}</div>}
         </BarScene>}

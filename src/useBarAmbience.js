@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { shuffleBarMusic } from './bar-music';
 
-export function useBarAmbience({ active, soundOn, talking, prepareAudio }) {
+export function useBarAmbience({ active, soundOn, talking, prepareAudio, level=1 }) {
   const music = useRef(null);
-  const volume = active && soundOn ? (talking ? 0.0015 : 0.012) : 0;
+  const volume = active && soundOn ? level * (talking ? 0.0015 : 0.012) : 0;
   const latestVolume = useRef(volume);
   latestVolume.current = volume;
 
