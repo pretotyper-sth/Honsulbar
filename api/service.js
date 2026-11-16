@@ -13,23 +13,23 @@ import {emailReady,sendNotificationEmail} from '../server/notification-email.js'
 import {verifySocialIdentity,socialAuthMember} from '../server/social-auth.js';
 import {androidAdsConfiguration,startAndroidAd,finishAndroidAd} from '../server/android-ads.js';
 import {randomUUID,randomBytes} from 'node:crypto';
-import {verifyPhoto,warmPhotoVerifier} from '../server/photo-verification.js';
+import {checkProfilePhoto,verifyPhoto,warmPhotoVerifier} from '../server/photo-verification.js';
 import {AppError,authenticate,admin,database,rpc,toss,decryptField,isAdult,newToken,hash,dispatchOutbox,sbUrl,signPhoto,photoMatches,skuPoints,findProduct,rewardedAdGroupId,subscriptionSku,isSubscriptionSku,parseTossTime,pushAvailableTemplate,pushReplyTemplate,isProduction,identityKey} from '../server/platform.js';
 const snapshot = args => safetySnapshot(args, {database,rpc});
 const allowedActions=new Set(['state','profile','ticket','read','region','waitlist','enter','order','leave','heartbeat','move','request','respond','cancel','focus-end','preview','signal','ad-start','ad-claim','block']);
 const origins=new Set(['https://honsulbar-app.vercel.app','https://honsulbar.apps.tossmini.com','https://honsulbar.private-apps.tossmini.com','https://honsulbar.web.tossmini.com','https://honsulbar.private-web.tossmini.com']);
-function withPhotos(value,viewer){
+function withPhotos(value,viewer,quick=false){
  const expires=Math.floor(Date.now()/60000)*60+300;
- if(Array.isArray(value))return value.map(item=>withPhotos(item,viewer));
+ if(Array.isArray(value))return value.map(item=>withPhotos(item,viewer,quick));
  if(!value||typeof value!=='object')return value;
  const out={};
- for(const [k,v] of Object.entries(value))out[k]=k==='photo'&&typeof v==='number'&&value.id?`/api/service?photo=${value.id}&v=${v}&viewer=${viewer}&expires=${expires}&s=${signPhoto(value.id,v,viewer,expires)}`:withPhotos(v,viewer);
+ for(const [k,v] of Object.entries(value))out[k]=k==='photo'&&typeof v==='number'&&value.id?`/api/service?photo=${value.id}&v=${v}&viewer=${viewer}&expires=${expires}&s=${signPhoto(value.id,v,viewer,expires)}${quick?'&quick=1':''}`:withPhotos(v,viewer,quick);
  return out;
 }
 async function sendPhoto(req,res){
  const {photo:id,v,viewer,expires,s}=req.query||{};
  if(!/^[\da-f-]{36}$/.test(id||'')||!/^\d{1,16}$/.test(v||'')||!/^([\da-f-]{36})$/.test(viewer||'')||!photoMatches(id,v,viewer,expires,s))return res.status(404).end();
- if(!await rpc('hb_can_view_photo',{p_viewer:viewer,p_target:id,p_version:Number(v)}))return res.status(404).end();
+ if(!await rpc(req.query?.quick==='1'?'hb_can_view_quick_photo':'hb_can_view_photo',{p_viewer:viewer,p_target:id,p_version:Number(v)}))return res.status(404).end();
  const [m]=await database(`hb_members?id=eq.${id}&select=photo`);
  const match=/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(m?.photo||'');
  if(!match)return res.status(404).end();
@@ -309,6 +309,12 @@ export default async function handler(req,res) {
    return res.json({result,state:withPhotos(await snapshot({p_member:member}),member)});
   }
   if(action==='photo-prepare'){await warmPhotoVerifier();return res.json({result:{ready:true}});}
+  if(action==='photo-screen'){
+   const [account]=await database(`hb_members?id=eq.${member}&select=adult,banned_until`);
+   if(!account?.adult||(account.banned_until&&Date.parse(account.banned_until)>Date.now()))throw new AppError('이용 자격을 확인해 주세요.',403);
+   await checkProfilePhoto(body.data?.photo);
+   return res.json({result:{accepted:true}});
+  }
   if(action==='photo-challenge'){ await warmPhotoVerifier(); return res.json({result:await newPhotoChallenge(member,{database,rpc})}); }
   if(action==='photo-verify'){
    const data=body.data||{};
@@ -358,17 +364,37 @@ export default async function handler(req,res) {
    await rpc('hb_credit_order',{p_member:member,p_order:body.orderId,p_sku:order.sku,p_points:product.points,p_amount:product.won});
    return res.json({ok:true,state:withPhotos(await snapshot({p_member:member}),member)});
   }
+  if(action==='quick-search'){
+   const {command,region}=body.data||{};
+   if(!['start','poll','cancel'].includes(command)||!['서울','경기','인천','부산','대구'].includes(region))throw new AppError('검색 조건을 확인해 주세요.');
+   return res.json({result:withPhotos(await rpc('hb_quick_search',{p_member:member,p_command:command,p_region:region}),member,true)});
+  }
   if(!allowedActions.has(action))throw new AppError('지원하지 않는 요청이에요.');
+  let profileUpdate;
   if(action==='profile'){
    const data=body.data||{};
    if('photo' in data&&(typeof data.photo!=='string'||!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(data.photo)||data.photo.length>400000))throw new AppError('프로필 사진을 다시 선택해 주세요.');
+   if(data.photo&&!data.photoProof){
+    const sessionHash=hash(req.headers.authorization.slice(7));
+    const [session]=await database(`hb_sessions?token_hash=eq.${sessionHash}&select=platform`);
+    if(session?.platform==='toss'){
+     const [account]=await database(`hb_members?id=eq.${member}&select=banned_until`);
+     if(account?.banned_until&&Date.parse(account.banned_until)>Date.now())throw new AppError('이용이 제한된 계정이에요.',403);
+     await checkProfilePhoto(data.photo);
+     profileUpdate={p_member:member,p_session_hash:sessionHash,p_data:data};
+    }
+   }
   }
   if (action === 'enter') {
    const [eligibility] = await database(`hb_members?id=eq.${member}&select=adult,photo_checked`);
    if (eligibility?.adult !== true) throw new AppError('성인 확인을 갱신하려면 토스 로그인을 다시 진행해 주세요.',403);
-   if (eligibility.photo_checked !== true) throw new AppError('등록한 프로필 사진의 얼굴 확인을 먼저 완료해 주세요.',403);
+   if (eligibility.photo_checked !== true) throw new AppError('프로필 사진을 먼저 등록해 주세요.',403);
   }
-  const result=await rpc('hb_action',{p_member:member,p_action:action,p_data:body.data||{}});
+  const result=profileUpdate
+   ? await rpc('hb_update_toss_profile_photo',profileUpdate)
+   : action==='enter' && body.data?.quickOfferId
+   ? await rpc('hb_quick_enter',{p_member:member,p_data:body.data||{}})
+   : await rpc('hb_action',{p_member:member,p_action:action,p_data:body.data||{}});
   if(action==='heartbeat'&&typeof (body.data||{}).mic==='boolean')await rpc('hb_set_mic',{p_member:member,p_mic:!!body.data.mic}).catch(()=>{});
   if(action==='ticket')await dispatchOutbox().catch(()=>{});
   if(action==='signal')return res.json({ok:true});
