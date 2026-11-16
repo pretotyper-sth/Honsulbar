@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { tossSfuPilot, tossSfuSession } from '../server/toss-sfu.js';
+import { tossSfuPilot, tossSfuReady, tossSfuSession } from '../server/toss-sfu.js';
 import { positionsByDistance, sfuTrackIds } from '../src/sfu-selection.js';
 
 const env = {
@@ -13,9 +13,10 @@ function fixture(overrides = {}) {
 }
 const session = (state,partnerId=null) => tossSfuSession('a',state,{visitId:'visit',partnerId},{env,now:10_000});
 
-test('the SFU pilot is opt-in and grants a short-lived microphone token only in the configured bar', () => {
+test('SFU grants short-lived, bar-specific tokens for active visits', () => {
   assert.deepEqual(tossSfuPilot(env),{region:'대구',number:1});
   assert.equal(tossSfuPilot({...env,HB_TOSS_SFU_ENABLED:'0'}),null);
+  assert.equal(tossSfuReady({...env,HB_TOSS_SFU_PILOT_ROOM:''}),true);
   const {url,token} = session(fixture());
   const [head,body,sig] = token.split('.');
   const claims = JSON.parse(Buffer.from(body,'base64url'));
@@ -24,7 +25,9 @@ test('the SFU pilot is opt-in and grants a short-lived microphone token only in 
   assert.equal(claims.exp,130);
   assert.deepEqual(claims.video.canPublishSources,['microphone']);
   assert.equal(claims.video.canPublishData,false);
-  for (const state of [fixture({safetyPaused:true}),fixture({visit:{...fixture().visit,away:true}}),fixture({visit:{...fixture().visit,number:2}})]) {
+  const other = session(fixture({visit:{...fixture().visit,number:2}})).token;
+  assert.notEqual(JSON.parse(Buffer.from(other.split('.')[1],'base64url')).video.room,claims.video.room);
+  for (const state of [fixture({safetyPaused:true}),fixture({visit:{...fixture().visit,away:true}})]) {
     assert.throws(()=>session(state),{status:403});
   }
 });

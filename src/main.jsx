@@ -459,7 +459,9 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
   const voiceEnabled = import.meta.env.VITE_QUICK_SEARCH_QA !== '1' && (!config?.fullVoiceReady || recordingBlocked.current !== visit?.id) && screen === 'bar' && !!me && !!member?.photoChecked && !server?.safetyPaused && hasVoiceConsent;
   const pilotBuild = import.meta.env.VITE_TOSS_SFU_PILOT === '1' && insideToss();
   const pilotRoom = config?.tossSfuPilot;
-  const useSfu = pilotBuild && !!pilotRoom && visit?.region === pilotRoom.region && visit?.number === pilotRoom.number && !voiceVersion;
+  const inPilotRoom = pilotRoom && visit?.region === pilotRoom.region && visit?.number === pilotRoom.number;
+  const useSfu = pilotBuild && !!visit && !voiceVersion &&
+    (config?.tossSfuReady === true || (config?.tossSfuReady == null && !!inPilotRoom));
   const voicePeers = voicePeerIds(guests,partners,reportedIds);
   const meshVoice = useMesh({ enabled: voiceEnabled && !useSfu && (!pilotBuild || !!config), evidenceEnabled: !!config?.voiceEvidenceReady && hasVoiceConsent, recordingEnabled: !!config?.fullVoiceReady, selfId: me, peerIds: voicePeers, stream: sending, iceServers, gains, pans });
   const sfu = useSfuVoice({ enabled:voiceEnabled && useSfu && voicePeers.length>0, visitId:visit?.id, partnerId:partners.me || null, stream:sending, peerIds:voicePeers, guests, seat, gains, pans });
