@@ -568,7 +568,7 @@ html.in-toss .ait-gnb-fill:has(+ .app.bar-active) {
 }
 .bar-active .drink-gift-offer > svg { color:var(--bar-accent); }
 
-.bar-stage-button.bar-waiting-trigger:disabled { opacity:.42; }
+.bar-stage-button.bar-waiting-trigger[aria-disabled="true"] { opacity:.42; }
 .bar-waiting-game {
   display:grid;
   gap:12px;

@@ -591,8 +591,16 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
   }}>
     <button ref={waitingGameTrigger} type="button" className="bar-stage-button bar-waiting-trigger"
       aria-label="혼자 기다리기 게임" aria-expanded={waitingGameOpen}
-      aria-controls={waitingGameOpen ? 'bar-waiting-game' : undefined} disabled={!canPlayWaitingGame}
-      onClick={() => {setReactionMenu(false); if (waitingGameOpen) closeWaitingGame(); else setGameVisitId(visit.id);}}>
+      aria-controls={waitingGameOpen ? 'bar-waiting-game' : undefined} aria-disabled={!canPlayWaitingGame}
+      onClick={() => {
+        if (!canPlayWaitingGame) {
+          setToast('혼자 있을때만 가능해요');
+          return;
+        }
+        setReactionMenu(false);
+        if (waitingGameOpen) closeWaitingGame();
+        else setGameVisitId(visit.id);
+      }}>
       <Gamepad2 size={15} aria-hidden="true"/>
     </button>
     <BarMusic volume={bgmLevel} onChange={value => {
