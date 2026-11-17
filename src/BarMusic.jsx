@@ -33,7 +33,7 @@ export function BarMusic({ volume, onChange, onOpen }) {
         if (!expanded) onOpen();
         setExpanded(!expanded);
       }}>
-      <Music2 size={20} aria-hidden="true"/>
+      <Music2 size={15} aria-hidden="true"/>
     </button>
   </div>;
 }

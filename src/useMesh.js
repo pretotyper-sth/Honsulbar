@@ -19,7 +19,7 @@ function waitForIce(pc) {
 
 // Full-mesh voice between guests in the same room. The member with the smaller id always offers,
 // so both sides never create competing offers for the same pair.
-export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains, pans = {}, evidenceEnabled = false, recordingEnabled = false }) {
+export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains, pans = {}, evidenceEnabled = false, recordingEnabled = false, prepareAudio }) {
   const peers = useRef(new Map());
   const context = useRef(null);
   const recording = useRef(null);
@@ -48,18 +48,20 @@ export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains, p
   }, []);
 
   const audio = useCallback(() => {
-    if (!context.current) {
+    if (prepareAudio) context.current = prepareAudio();
+    else if (!context.current) {
       const AudioContext = window.AudioContext || window.webkitAudioContext;
-      context.current = new AudioContext();
-
+      if (AudioContext) context.current = new AudioContext();
     }
+    const ctx = context.current;
+    if (!ctx) return null;
     if (recordingEnabled && !recording.current) {
-      recording.current = context.current.createMediaStreamDestination();
+      recording.current = ctx.createMediaStreamDestination();
       setRecordingStream(recording.current.stream);
     }
-    if (context.current.state === 'suspended' || context.current.state === 'interrupted') context.current.resume().catch(() => {});
-    return context.current;
-  }, []);
+    if (!prepareAudio && (ctx.state === 'suspended' || ctx.state === 'interrupted')) ctx.resume().catch(() => {});
+    return ctx;
+  }, [prepareAudio, recordingEnabled]);
 
   const close = useCallback(id => {
     const peer = peers.current.get(id);
@@ -106,6 +108,7 @@ export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains, p
     pc.ontrack = event => {
       const remote = new MediaStream([event.track]);
       const ctx = audio();
+      if (!ctx) return;
       peer.element = new Audio();
       peer.element.muted = true;
       peer.element.srcObject = remote;
@@ -277,7 +280,10 @@ export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains, p
     return () => document.removeEventListener('visibilitychange', clear);
   }, []);
 
-  useEffect(() => () => { [...peers.current.keys()].forEach(close); context.current?.close().catch(() => {}); }, [close]);
+  useEffect(() => () => {
+    [...peers.current.keys()].forEach(close);
+    if (!prepareAudio) context.current?.close().catch(() => {});
+  }, [close, prepareAudio]);
 
   useEffect(() => {
     for (const peer of peers.current.values()) syncAudioTrack(peer);

@@ -2,10 +2,11 @@ import React, { useId } from 'react';
 import { DRINKS, BASE_DRINK_MINUTES } from './model';
 import { drinkLevel } from './social';
 
-export function Glass({id,className='',seconds=BASE_DRINK_MINUTES*60,host=false}) {
+export function Glass({id,className='',seconds,host=false,minutes}) {
   const clip=useId().replaceAll(':','');
   const drink=DRINKS.find(d=>d.id===id);
-  const {fill,low}=drinkLevel(seconds,host,(drink?.minutes ?? BASE_DRINK_MINUTES)*60);
+  const duration=(minutes ?? drink?.minutes ?? BASE_DRINK_MINUTES)*60;
+  const {fill,low}=drinkLevel(seconds ?? duration,host,duration);
   const color=drink?.color || '#ddb76d';
   const stroke=low ? '#df9c98' : '#d8cdb8';
   const wine=id==='wine',beer=id==='beer';

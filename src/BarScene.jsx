@@ -1,6 +1,6 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, ChevronDown, MicOff } from 'lucide-react';
-import { avatarPose, cameraPitch, FIRST_PERSON_PITCH, firstPersonWalk, paintBar, partnerFacing, seatWalk, swapWalk, walkCue, wrapFacing } from './bar-scene';
+import { avatarPose, cameraPitch, FIRST_PERSON_PITCH, FIRST_PERSON_WALK_SPEED, firstPersonWalk, paintBar, partnerFacing, seatWalk, swapWalk, walkCue, wrapFacing } from './bar-scene';
 import { createBarRenderer } from './bar-renderer';
 import './bar-scene.css';
 
@@ -24,7 +24,7 @@ export function BarViewOptions({ view, onChange }) {
   </div>;
 }
 
-export function BarScene({ view, seat, memberId, gender, facing, partners, drinkId, seconds, elapsed, seatNeutralClock, guests, renderSeat, renderSeatReaction, onUnavailable, onOpenSeats, onFacingChange, moving, onMotionChange, seatPickerRef, onCue, micOff, theme, children }) {
+export function BarScene({ view, seat, memberId, gender, facing, partners, drinkId, seconds, elapsed, seatNeutralClock, guests, renderSeat, renderSeatReaction, onUnavailable, onOpenSeats, onFacingChange, moving, onMotionChange, seatPickerRef, onCue, micOff, theme, drinks, children }) {
   const canvas = useRef(null);
   const depthCanvas = useRef(null);
   const depth = useRef(null);
@@ -46,8 +46,8 @@ export function BarScene({ view, seat, memberId, gender, facing, partners, drink
   }
 
   function startLook(event) {
-    if (moving || drag.current || event.target.closest('button, .bar-music')) return;
-    if (event.button !== 0 && event.button !== 2) return;
+    if (moving || drag.current || event.target.closest('.bar-music')) return;
+    if (event.button !== 2 && (event.button !== 0 || event.target.closest('button'))) return;
     event.preventDefault();
     drag.current = {id:event.pointerId, x:event.clientX, y:event.clientY};
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -104,6 +104,7 @@ export function BarScene({ view, seat, memberId, gender, facing, partners, drink
       {id:myId, seat, mine:true, gender, facing, drinkId, seconds:liquidSeconds, unlimited:seat===11&&!seatNeutralClock},
       ...JSON.parse(visibleGuests).map(person=>({...person,unlimited:person.seat===11&&!seatNeutralClock})),
     ];
+    for (const person of people) person.drinkMinutes = drinks?.find(drink => drink.id === person.drinkId)?.minutes;
     const updated = new Map(people.map(person => [person.id, person.seat]));
     const changedAt = performance.now();
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -140,7 +141,7 @@ export function BarScene({ view, seat, memberId, gender, facing, partners, drink
     const cameraWalk = (person, walk) => {
       const turn = rotations.current.get(person.id);
       const startYaw = avatarPose(person.seat, walk, 0, 0, -turn.value * Math.PI / 180).yaw;
-      return firstPersonWalk(person.seat, walk, startYaw, -turn.target * Math.PI / 180);
+      return firstPersonWalk(person.seat, walk, startYaw, -turn.target * Math.PI / 180, FIRST_PERSON_WALK_SPEED);
     };
     const stage = (person, walk, timeline, endsAt) => {
       moves.current.set(person.id, {
@@ -159,7 +160,7 @@ export function BarScene({ view, seat, memberId, gender, facing, partners, drink
           const [first, second] = swapWalk(oldSeat, person.seat);
           const mine = person.mine ? first : other.mine ? second : null;
           const timeline = view === 'first' && mine ? cameraWalk(person.mine ? person : other, mine) : null;
-          const duration = timeline ? timeline.duration + second.duration - mine.duration : second.duration;
+          const duration = timeline ? timeline.duration + (second.duration - mine.duration) / FIRST_PERSON_WALK_SPEED : second.duration;
           stage(person, first, timeline, startsAt + duration);
           stage(other, second, timeline, startsAt + duration);
           startsAt += duration;
@@ -199,8 +200,8 @@ export function BarScene({ view, seat, memberId, gender, facing, partners, drink
         const camera = move?.timeline?.at(time);
         const elapsed = camera?.elapsed ?? time;
         if (move && person.mine) {
-          const cue = walkCue(move.walk, move.elapsed, elapsed, view === 'first' ? 125 : undefined);
-          if (cue && !document.hidden) onCue(cue);
+          const cue = walkCue(move.walk, move.elapsed, elapsed, move.timeline ? 125 : undefined);
+          if (cue) onCue(cue, move.timeline ? FIRST_PERSON_WALK_SPEED : 1);
           move.elapsed = elapsed;
         }
         if (move && elapsed >= move.walk.duration) {
@@ -259,7 +260,7 @@ export function BarScene({ view, seat, memberId, gender, facing, partners, drink
     redraw();
     document.addEventListener('visibilitychange', redraw);
     return () => { observer.disconnect(); cancelAnimationFrame(frame); clearTimeout(ambientTimer); document.removeEventListener('visibilitychange', redraw); };
-  }, [view, seat, memberId, gender, facing, visiblePartners, drinkId, liquidSeconds, seatNeutralClock, visibleGuests, pitch, theme, onUnavailable, onMotionChange, onCue]);
+  }, [view, seat, memberId, gender, facing, visiblePartners, drinkId, liquidSeconds, seatNeutralClock, visibleGuests, pitch, theme, drinks, onUnavailable, onMotionChange, onCue]);
 
   const first = view === 'first';
   return <>

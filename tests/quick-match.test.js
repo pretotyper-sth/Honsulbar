@@ -86,7 +86,26 @@ test('two simultaneous searchers get one private offer and can enter the same br
   assert.ok(!(await snapshot(b)).guests.some(g=>g.id===a));
   await enter(a,{region:'서울',number:offer.number});
   assert.equal((await snapshot(b)).guests.find(g=>g.id===a).facing,0);
- } finally {
+
+  await db.query("update hb_bar_operations set settings=$1::jsonb where id=1", [JSON.stringify({
+   defaultDrinkMinutes:25,drinkMinutes:{'wine-hour':50,beer:35},
+  })]);
+  const before=await snapshot(b);
+  await assert.rejects(timed(b,'98710002','order',{drinkId:'beer',expectedMinutes:20}),/음료 이용시간이 바뀌었어요/);
+  assert.equal((await snapshot(b)).member.balance,before.member.balance);
+  await timed(b,'98710002','order',{drinkId:'beer',expectedMinutes:35});
+  assert.equal((await snapshot(b)).visit.clockEndMs - before.visit.clockEndMs,35*60_000);
+  await timed(c,'98710003','enter',{region:'부산',number:1,drinkId:'highball',expectedMinutes:25});
+  assert.equal((await snapshot(c)).visit.seconds,25*60);
+  const gift=await action(a,'request',{kind:'drink-gift',targetId:b,drinkId:'beer',expectedMinutes:35});
+  assert.equal((await snapshot(b)).requests.find(request=>request.id===gift.id).gift_minutes,35);
+  await db.query("update hb_bar_operations set settings=$1::jsonb where id=1", [JSON.stringify({
+   defaultDrinkMinutes:40,drinkMinutes:{},
+  })]);
+  assert.equal(await query("select hb_operating_drink_minutes('wine-hour') as value"),40);
+  const beforeGift=await snapshot(b);
+  await action(b,'respond',{id:gift.id,accept:true});
+  assert.equal((await snapshot(b)).visit.clockEndMs - beforeGift.visit.clockEndMs,35*60_000); } finally {
   await db.close();
  }
 });

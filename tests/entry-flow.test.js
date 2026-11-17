@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { DRINK_TIME_CHANGED } from '../src/bar-operations.js';
 import { entryRequirement } from '../src/entry-check.js';
 
 const source = readFileSync(new URL('../src/main.jsx', import.meta.url),'utf8');
@@ -16,7 +17,7 @@ test('a registered picture is not treated as a verified picture; adult and profi
 });
 function fixture(run){
  const changes=[];
- const env={busy:false,orderLock:{current:false},entering:{current:false},isWelcome:true,room:{region:'서울',number:1},selection:'highball',chosen:{name:'하이볼',minutes:20},DRINK_DURATION_VERSION:'20-40',startAmbience(){},pauseAmbience(){},run,resetConversation(){},setWaveSent(){},setSpeaker(){},setSoundOn(){},setMutedGuests(){},mesh:{resume(){}},setBusy(v){env.busy=v;},setError(v){changes.push(['error',v]);},setToast(v){changes.push(['toast',v]);},setSheet(v){changes.push(['sheet',v]);},setScreen(v){changes.push(['screen',v]);},setServer(){throw new Error('optimistic balance/visit must not be fabricated');}};
+ const env={busy:false,orderLock:{current:false},entering:{current:false},isWelcome:true,room:{region:'서울',number:1},selection:'highball',chosen:{name:'하이볼',minutes:20},DRINK_DURATION_VERSION:'20-40',DRINK_TIME_CHANGED,startAmbience(){},pauseAmbience(){},run,resetConversation(){},setWaveSent(){},setSpeaker(){},setSoundOn(){},setMutedGuests(){},mesh:{resume(){}},setBusy(v){env.busy=v;},setError(v){changes.push(['error',v]);},setToast(v){changes.push(['toast',v]);},setSheet(v){changes.push(['sheet',v]);},setScreen(v){changes.push(['screen',v]);},setServer(){throw new Error('optimistic balance/visit must not be fabricated');}};
  vm.createContext(env);vm.runInContext(orderSource,env);return {env,changes};
 }
 test('failed entry keeps the drink sheet and does not flash a bar or invent a point deduction',async()=>{

@@ -50,6 +50,7 @@ const MIGRATIONS = [
   '20261117_z_drink_gifts.sql',
   '20261117_zz_swap_auto_decline.sql',
   '20261117_zzz_bar_operations.sql',
+  '20261118_operating_drink_minutes.sql',
 ];
 const TABLES = new Set([
   'hb_safety_ops', 'hb_voice_evidence', 'hb_voice_consents', 'hb_push_devices', 'hb_android_ad_claims', 'hb_account_transfers', 'hb_auth_cleanup',

@@ -1,0 +1,5 @@
+Local QA fixture photos under the Unsplash License (https://unsplash.com/license):
+1.jpg — Jurica Koletić, clear portrait: https://unsplash.com/photos/man-wearing-henley-top-portrait-7YVZYZeITc8
+2.jpg — Ann Agterberg, clear portrait: https://unsplash.com/photos/woman-in-gray-crew-neck-top-WqATKbXqGZQ
+3.jpg — Stefano Intintoli, distant silhouette: https://unsplash.com/photos/silhouette-of-man-standing-on-mountain-zrOmqS3y8W4
+4.jpg — Ansis Kančs, shadow and hand occlusion: https://unsplash.com/photos/woman-partially-hidden-by-her-hand-n4imQF13Oys

@@ -5,8 +5,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client';
 import { IAP, loadFullScreenAd, showFullScreenAd, SafeAreaInsets, NavigationBar, graniteEvent, Screen } from '@apps-in-toss/web-framework';
 import { Button, BottomSheet, Badge, FaceCaptureNotice, FaceCaptureConsent, CameraVerificationStatus } from './ui';
-import { ArrowLeft, ArrowRight, Bell, Camera, Check, ChevronDown, Clock3, DoorOpen, Coins, MessageCircleMore, Mic, MicOff, Plus, Smile, Volume2, VolumeX, Speaker, Wine, X, ZoomIn, Flag, Wallet, Eye, LockKeyhole, ArrowLeftRight, Settings, UserRound } from 'lucide-react';
-import { REGIONS, CAPACITY, DRINKS, BASE_DRINK_MINUTES, DRINK_DURATION_VERSION } from './model';
+import { ArrowLeft, ArrowRight, Bell, Camera, Check, ChevronDown, Clock3, DoorOpen, Coins, Gamepad2, MessageCircleMore, Mic, MicOff, Plus, Smile, Volume2, VolumeX, Speaker, Wine, X, ZoomIn, Flag, Wallet, Eye, LockKeyhole, ArrowLeftRight, Settings, UserRound } from 'lucide-react';
+import { REGIONS, CAPACITY, DRINKS, DRINK_DURATION_VERSION } from './model';
 import { findAvailableBars } from './quick-match';
 import { useVoice } from './useVoice';
 import { voicePeerIds } from './social';
@@ -22,10 +22,11 @@ import { handleMiniappBack, subscribeMiniappBack, navigationBarOptions } from '.
 import { ExitConfirm } from './ExitConfirm';
 import { Glass } from './Glass';
 import { BarMusic } from './BarMusic';
+import { BarWaitingGame } from './BarWaitingGame';
 import { barThemes, themeForBar } from './bar-themes';
-import { BAR_OPERATIONS_DEFAULTS } from './bar-operations';
+import { BAR_OPERATIONS_DEFAULTS, DRINK_TIME_CHANGED } from './bar-operations';
 import { BarScene, BarViewOptions } from './BarScene';
-import { barVoice, flatFacingIndicator, partnerFacing } from './bar-scene';
+import { barVoice, FIRST_PERSON_WALK_SPEED, flatFacingIndicator, partnerFacing } from './bar-scene';
 import { SEATS as positions, POINT_PACKS, SUBSCRIPTIONS, adjacent } from './social';
 import { AdminPage } from './admin';
 import './style.css';
@@ -47,7 +48,7 @@ const IAP_SUB_SKU = 'sub.1od0.muf71ewh.de9ba197b4';
 
 function Waves() { return <span className="waves" aria-hidden="true"><i/><i/><i/><i/></span>; }
 const FAQ_ITEMS = [
-  ['입장하면 포인트가 얼마 차감되나요?', `첫 입장은 선택한 음료에 따라 차감돼요. 기본 음료는 500P로 ${BASE_DRINK_MINUTES}분 이용할 수 있고, 입장 후 한 잔 더 주문해 시간을 연장할 수 있어요.`],
+  ['입장하면 포인트가 얼마 차감되나요?', '첫 입장에 필요한 포인트와 이용시간은 음료를 고를 때 확인할 수 있어요. 입장 후 한 잔 더 주문해 시간을 연장할 수 있어요.'],
   ['바를 나가면 남은 시간이 어떻게 되나요?', '바를 나가도 같은 호점의 이용시간은 계속 흘러요. 자리가 있으면 남은 시간으로 다시 들어갈 수 있고, 다른 호점은 새로 입장해야 해요.'],
   ['입장 전에 손님 사진을 볼 수 있나요?', '미리보기 상품을 구매하면 현재 호점에 있는 손님들의 사진을 확인할 수 있어요. 미리보기는 입장이나 자리 예약을 포함하지 않아요.'],
   ['목소리가 불편한 손님은 어떻게 신고하나요?', '손님 프로필에서 신고를 선택하고 사유와 내용을 접수해 주세요. 신고한 손님의 목소리는 바로 들리지 않고, 서로 상대가 있는 바에는 입장할 수 없어요.'],
@@ -182,6 +183,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
   const historyLimitRef = useRef(10);
   historyLimitRef.current = historyLimit;
   const [facing, setFacing] = useState(0);
+  const [audioFacing, setAudioFacing] = useState(0);
   const [waveSent, setWaveSent] = useState([]);
   const [focusSubscription, setFocusSubscription] = useState(false);
   const [region, setRegion] = useState('서울');
@@ -226,6 +228,8 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
   const seatPickerTrigger = useRef(null);
   const [sceneMoving, setSceneMoving] = useState(false);
   const [reactionMenu, setReactionMenu] = useState(false);
+  const [gameVisitId, setGameVisitId] = useState(null);
+  const waitingGameTrigger = useRef(null);
   const reactionTrigger = useRef(null);
   const [reactions, setReactions] = useState({});
   const [pendingSignals, setPendingSignals] = useState([]);
@@ -234,6 +238,10 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
   const [speaker, setSpeaker] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
   const [barOperations, setBarOperations] = useState(BAR_OPERATIONS_DEFAULTS);
+  const { defaultDrinkMinutes, drinkMinutes } = barOperations;
+  const drinks = useMemo(() => DRINKS.map(drink => ({
+    ...drink, minutes:drinkMinutes[drink.id] ?? defaultDrinkMinutes,
+  })), [defaultDrinkMinutes, drinkMinutes]);
   const [personalBgmLevel, setBgmLevel] = useState(() => {
     try {
       const saved = localStorage.getItem(BGM_LEVEL_KEY);
@@ -292,7 +300,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
   const cameraDraw = useRef(0);
   const photoInspect = useRef(0);
   const subscriptionSection = useRef(null);
-  const cueContext = useRef(null);
+  const barAudioContext = useRef(null);
   const orderLock = useRef(false);
   const previewLock = useRef(false);
   const polling = useRef(false);
@@ -376,10 +384,15 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
   const activeFocus = partners.me;
   const neighbors = guests.filter(g => adjacent(seat, g.seat));
   const soloPaused = inside && visit?.soloPaused === true;
+  const canPlayWaitingGame = inside && !server?.safetyPaused && guests.length === 0;
+  const waitingGameOpen = inside && !!visit?.id && gameVisitId === visit.id;
+  useEffect(() => {
+    if (screen !== 'bar' || !inside) setGameVisitId(null);
+  }, [screen, inside]);
   const unlimitedSeat = seat === 11 && !server?.seatNeutralClock;
   const seconds = visit ? (visitClock?.visitId === visit.id ? secondsOnVisitClock(visitClock, clockNow) : visit.seconds) : 0;
   const leftover = visit?.away && seconds > 0 ? visit : null;
-  const voice = useVoice(import.meta.env.VITE_QUICK_SEARCH_QA !== '1' && screen === 'bar', setToast, seconds > 0 || unlimitedSeat);
+  const voice = useVoice(screen === 'bar', setToast, seconds > 0 || unlimitedSeat);
   const pendingRequests = server?.requests || [];
   const activeGifts = pendingRequests.filter(request =>
     request.kind === 'drink-gift' && Date.parse(request.expires_at) > now);
@@ -387,7 +400,8 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
   const reviewedGift = activeGifts.find(request => request.id === giftToReview && request.receiver === me);
   const outgoingGift = activeGifts.find(request => request.sender === me);
   const giftSender = guests.find(guest => guest.id === reviewedGift?.sender);
-  const offeredDrink = DRINKS.find(drink => drink.id === reviewedGift?.gift_drink_id);
+  const giftDrink = DRINKS.find(drink => drink.id === reviewedGift?.gift_drink_id);
+  const offeredDrink = giftDrink && { ...giftDrink, minutes:reviewedGift.gift_minutes ?? giftDrink.minutes };
   useEffect(() => {
     if (sheet === 'gift-receive' && !reviewedGift && !busy) {
       setSheet(null);
@@ -415,7 +429,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
   const reportedIds = useMemo(() => new Set(server?.reportedIds || []), [server?.reportedIds]);
   const wallet = { balance: member?.balance ?? 0, drinkId: visit?.drinkId ?? null, attendanceDate: server?.attendanceDate ?? null };
   const currentDrink = DRINKS.find(d => d.id === wallet.drinkId);
-  const chosen = DRINKS.find(d => d.id === selection);
+  const chosen = drinks.find(d => d.id === selection);
   const isWelcome = sheet === 'welcome';
   const price = chosen.price;
   const previewKey = previewRoom ? `${previewRoom.region}:${previewRoom.number}` : null;
@@ -442,18 +456,19 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
     ? (member.subAutoRenew === false ? (member.subExpiresAt || null) : null)
     : (devSubscription?.cancelAt ? (devSubscription.expiresAt || null) : null);
   const firstPerson = barView === 'first';
-  const facingLimit = 180;
+  const facingLimit = firstPerson ? 180 : 90;
+  const heardAngle = firstPerson ? facing : audioFacing;
   const {gains, pans, focusGains} = useMemo(() => {
     const gains = {}, pans = {}, focusGains = {};
     const volume = (voiceVolume / 100) ** 2;
     for (const guest of guests) {
-      const spatial = barVoice({id:'me', seat}, guest, facing, partners, mutedGuests);
+      const spatial = barVoice({id:'me', seat}, guest, heardAngle, partners, mutedGuests, firstPerson);
       focusGains[guest.id] = spatial.gain;
       gains[guest.id] = soundOn && !reportedIds.has(guest.id) ? spatial.gain * volume : 0;
       pans[guest.id] = spatial.pan;
     }
     return {gains, pans, focusGains};
-  }, [guests, soundOn, voiceVolume, reportedIds, mutedGuests, partners, seat, facing]);
+  }, [guests, soundOn, voiceVolume, reportedIds, mutedGuests, partners, seat, heardAngle, firstPerson]);
   const [relay, setRelay] = useState(null);
   useEffect(() => {
     if (!inside || !me || import.meta.env.VITE_QUICK_SEARCH_QA === '1') return;
@@ -484,8 +499,24 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
   const useSfu = pilotBuild && !!visit && !voiceVersion &&
     (config?.tossSfuReady === true || (config?.tossSfuReady == null && !!inPilotRoom));
   const voicePeers = voicePeerIds(guests,partners,reportedIds);
-  const meshVoice = useMesh({ enabled: voiceEnabled && !useSfu && (!pilotBuild || !!config), evidenceEnabled: !!config?.voiceEvidenceReady && hasVoiceConsent, recordingEnabled: !!config?.fullVoiceReady, selfId: me, peerIds: voicePeers, stream: sending, iceServers, gains, pans });
-  const sfu = useSfuVoice({ enabled:voiceEnabled && useSfu && voicePeers.length>0, visitId:visit?.id, partnerId:partners.me || null, stream:sending, peerIds:voicePeers, guests, seat, gains, pans });
+  const prepareBarAudio = useCallback(() => {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return null;
+    try {
+      const context = barAudioContext.current || (barAudioContext.current = new AudioContext());
+      if (context.state !== 'running') context.resume().catch(() => {});
+      return context;
+    } catch {
+      return null;
+    }
+  }, []);
+  const prepareCueAudio = useCallback(() => soundOn ? prepareBarAudio() : null, [soundOn, prepareBarAudio]);
+  useEffect(() => () => {
+    barAudioContext.current?.close().catch(() => {});
+    barAudioContext.current = null;
+  }, []);
+  const meshVoice = useMesh({ enabled: voiceEnabled && !useSfu && (!pilotBuild || !!config), evidenceEnabled: !!config?.voiceEvidenceReady && hasVoiceConsent, recordingEnabled: !!config?.fullVoiceReady, selfId: me, peerIds: voicePeers, stream: sending, iceServers, gains, pans, prepareAudio:prepareBarAudio });
+  const sfu = useSfuVoice({ enabled:voiceEnabled && useSfu && voicePeers.length>0, visitId:visit?.id, partnerId:partners.me || null, stream:sending, peerIds:voicePeers, guests, seat, gains, pans, prepareAudio:prepareBarAudio });
   const mesh = {
     ...meshVoice,
     talking:useSfu ? sfu.talking : meshVoice.talking,
@@ -547,12 +578,23 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
       : null;
   }
 
+  function closeWaitingGame() {
+    setGameVisitId(null);
+    if (canPlayWaitingGame) waitingGameTrigger.current?.focus({preventScroll:true});
+  }
+
   const reactionPicker = <div className="bar-reaction-picker" onKeyDown={event => {
     if (event.key !== 'Escape' || !reactionMenu) return;
     event.stopPropagation();
     setReactionMenu(false);
     reactionTrigger.current?.focus({preventScroll:true});
   }}>
+    <button ref={waitingGameTrigger} type="button" className="bar-stage-button bar-waiting-trigger"
+      aria-label="혼자 기다리기 게임" aria-expanded={waitingGameOpen}
+      aria-controls={waitingGameOpen ? 'bar-waiting-game' : undefined} disabled={!canPlayWaitingGame}
+      onClick={() => {setReactionMenu(false); if (waitingGameOpen) closeWaitingGame(); else setGameVisitId(visit.id);}}>
+      <Gamepad2 size={15} aria-hidden="true"/>
+    </button>
     <BarMusic volume={bgmLevel} onChange={value => {
       const level = value <= .02 ? 0 : value;
       setBgmLevel(level);
@@ -560,7 +602,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
     }} onOpen={() => { prepareCueAudio(); setReactionMenu(false); }}/>
     <button ref={reactionTrigger} className="bar-stage-button" type="button"
       aria-label="이모지 반응" aria-expanded={reactionMenu} aria-controls={reactionMenu ? 'bar-reaction-options' : undefined}
-      onClick={() => setReactionMenu(value => !value)}><Smile size={20} aria-hidden="true"/></button>
+      onClick={() => setReactionMenu(value => !value)}><Smile size={15} aria-hidden="true"/></button>
     {reactionMenu && <div className="bar-reaction-options" id="bar-reaction-options" role="group" aria-label="반응 선택">
       {BAR_REACTIONS.map(([emoji,label])=><button key={emoji} type="button" aria-label={label} onClick={()=>sendReaction(emoji)}>{emoji}</button>)}
     </div>}
@@ -668,6 +710,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
       dismissDialog: () => {
         if (showTimeWarning) { declineTimeWarning(); return true; }
         if (reactionMenu) { setReactionMenu(false); return true; }
+        if (!sheet && waitingGameOpen) { closeWaitingGame(); return true; }
         const dialog = document.querySelector('dialog[open]');
         if (!dialog) return false;
         dialog.close();
@@ -686,14 +729,16 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
     NavigationBar.setOptions(navigationBarOptions(screen === 'bar')).catch(() => {});
   }, [screen === 'bar']);
   useEffect(() => { getConfig().then(setConfig).catch(() => setConfig({})); }, []);
+  const refreshBarOperations = useCallback(async signal => {
+    const settings = await getBarOperations(signal);
+    if (!signal?.aborted && settings) setBarOperations({...BAR_OPERATIONS_DEFAULTS, ...settings});
+  }, []);
   useEffect(() => {
     if (import.meta.env.VITE_QUICK_SEARCH_QA === '1' || !['lobby','bar'].includes(screen)) return;
     const controller = new AbortController();
-    getBarOperations(controller.signal).then(settings => {
-      if (!controller.signal.aborted && settings) setBarOperations(settings);
-    }).catch(() => {});
+    refreshBarOperations(controller.signal).catch(() => {});
     return () => controller.abort();
-  }, [screen, room?.region, room?.number]);
+  }, [screen, room?.region, room?.number, refreshBarOperations]);
   useEffect(() => {
     if(screen==='bar' && !hasVoiceConsent) { setPendingEntry(null);setSheetState('voice-consent'); }
   },[screen,hasVoiceConsent]);
@@ -738,26 +783,13 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
     if (sheet === 'profile' || (!SCREEN_PROFILE_PHOTO_ONLY && sheet === 'verify-profile')) call('photo-prepare').catch(() => {});
   }, [sheet]);
 
-  const prepareCueAudio = useCallback(() => {
-    if (!soundOn) return null;
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContext) return null;
-    try {
-      const context = cueContext.current || (cueContext.current = new AudioContext());
-      if (context.state === 'suspended') context.resume().catch(() => {});
-      return context;
-    } catch {
-      return null;
-    }
-  }, [soundOn]);
-
-  const playCue = useCallback(kind => {
+  const playCue = useCallback((kind, speed = 1) => {
     const context = prepareCueAudio();
     if (!context) return;
     if (kind === 'step' || kind === 'sit') {
       if (context.state !== 'running') return;
       const sitting = kind === 'sit';
-      const length = sitting ? .17 : .09;
+      const length = (sitting ? .17 : .09) / speed;
       const start = context.currentTime;
       const noise = context.createBuffer(1, Math.ceil(context.sampleRate * length), context.sampleRate);
       const samples = noise.getChannelData(0);
@@ -795,7 +827,6 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
 
   const {start:startAmbience,pause:pauseAmbience} = useBarAmbience({ level:bgmLevel, tracks:barOperations.tracks,
     active:screen === 'bar' && inside, soundOn:soundOn && bgmLevel > 0, prepareAudio:prepareCueAudio,
-    talking:localSpeaking || mesh.talking.some(id => gains[id] > .035),
   });
   const observedGuests = useRef(null);
   useEffect(() => {
@@ -806,6 +837,10 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
     if (!document.hidden && previous?.visitId === visit.id && [...ids].some(id => !previous.ids.has(id))) playCue('arrival');
   }, [screen, inside, visit?.id, guests, reportedIds, playCue]);
 
+  useEffect(() => {
+    const timer = setTimeout(() => setAudioFacing(facing), 150);
+    return () => clearTimeout(timer);
+  }, [facing]);
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [screen]);
   useEffect(() => {
     let id = 0;
@@ -1074,7 +1109,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
     }
     setSheet(null);
   }
-  function resetConversation() { setFacing(0); }
+  function resetConversation() { setFacing(0); setAudioFacing(0); }
   async function requestFocus(target) {
     if (!target || !adjacent(seat, target.seat) || partners[target.id] || mutedGuests.includes(target.id) || seconds === 0 || focusRequest || activeFocus) return;
     try { await run('request', { targetId: target.id, kind: 'focus' }); setSheet(null); setToast('옆자리와 대화를 요청했어요.'); }
@@ -1316,10 +1351,11 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
     setBusy(true);
     setError('');
     try {
-      await run('request', { kind:'drink-gift', targetId:selectedGuest.id, drinkId:chosen.id });
+      await run('request', { kind:'drink-gift', targetId:selectedGuest.id, drinkId:chosen.id, expectedMinutes:chosen.minutes });
       setSheet(null);
       setToast('한 잔 제안을 보냈어요.');
     } catch (error) {
+      if (error.message === DRINK_TIME_CHANGED) await refreshBarOperations().catch(() => {});
       setError(error.message);
     } finally {
       setBusy(false);
@@ -1531,10 +1567,10 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
     }
     try {
       if (welcome) {
-        await run('enter', { region: room.region, number: room.number, drinkId: selection, durationVersion:DRINK_DURATION_VERSION, ...(room.firstGuest ? {firstGuest:true} : {}), ...(room.quickOfferId ? {quickOfferId:room.quickOfferId} : {}) });
+        await run('enter', { region: room.region, number: room.number, drinkId: selection, durationVersion:DRINK_DURATION_VERSION, expectedMinutes:chosen.minutes, ...(room.firstGuest ? {firstGuest:true} : {}), ...(room.quickOfferId ? {quickOfferId:room.quickOfferId} : {}) });
         resetConversation();setWaveSent([]);setSpeaker(false);setSoundOn(true);setMutedGuests([]);
       } else {
-        await run('order', { drinkId: selection, durationVersion:DRINK_DURATION_VERSION });
+        await run('order', { drinkId: selection, durationVersion:DRINK_DURATION_VERSION, expectedMinutes:chosen.minutes });
         warnedVisit.current = null;
         setTimeWarningOpen(false);
       }
@@ -1542,6 +1578,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
       setToast(welcome ? `${chosen.name} ${chosen.minutes}분으로 시작했어요.` : `${chosen.minutes}분 연장했어요.`);
     } catch (e) {
       if (welcome) pauseAmbience();
+      if (e.message === DRINK_TIME_CHANGED) await refreshBarOperations().catch(() => {});
       setError(e.message);setToast(e.message);
     } finally {
       orderLock.current = false;entering.current = false;setBusy(false);
@@ -1574,12 +1611,13 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
     return sceneMoving || pendingMove.current != null || Date.now() < moveLockUntil.current;
   }
   function freezeSeats() {
-    moveLockUntil.current = Date.now() + 1600;
+    const lockMs = barView === 'first' ? 1600 / FIRST_PERSON_WALK_SPEED : 1600;
+    moveLockUntil.current = Date.now() + lockMs;
     setSeatFrozen(true);
     clearTimeout(freezeTimer.current);
     freezeTimer.current = window.setTimeout(() => {
       if (Date.now() >= moveLockUntil.current) setSeatFrozen(false);
-    }, 1650);
+    }, lockMs + 50);
   }
   async function commitMove(index) {
     if (index == null || index === seat || seatsAreLocked()) return;
@@ -1758,6 +1796,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
   const guestSeconds = person => tick(person.seconds, person.seat === 11 && !server?.seatNeutralClock);
 
   const selectBarView = useCallback(view => {
+    if (view !== 'first' && !activeFocus) setFacing(angle => Math.max(-90, Math.min(90, angle)));
     setBarView(view);
   }, [activeFocus]);
 
@@ -1787,12 +1826,12 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
     const personDrink = mine ? wallet.drinkId : person?.drinkId;
     const leftTime=mine?seconds:person?guestSeconds(person):0;
     const paired=partners[mine?'me':person?.id];
-    const rotation = flat && mine ? flatFacingIndicator(i, facing) : undefined;
-    return <div key={i} className={`seat-wrap ${i === 11 ? 'host-wrap' : ''} ${talking ? 'is-speaking' : ''} ${mine ? 'my-wrap' : ''} ${paired?'paired-seat':''}`} style={{...(flat ? {left:`${x}%`,top:`${y}%`} : {}),'--voice':mine ? voice.level : .7,'--facing':rotation === undefined ? undefined : `${rotation}deg`}}>
+    const rotation = i === 11 ? flatFacingIndicator(i, facing) : Math.atan2(50-y,50-x) * 180 / Math.PI + 90 + facing;
+    return <div key={i} className={`seat-wrap ${i === 11 ? 'host-wrap' : ''} ${talking ? 'is-speaking' : ''} ${mine ? 'my-wrap' : ''} ${paired?'paired-seat':''}`} style={{...(flat ? {left:`${x}%`,top:`${y}%`} : {}),'--voice':mine ? voice.level : .7,'--facing':mine ? `${rotation}deg` : undefined}}>
       {flat && renderReaction(mine ? me : person?.id)}
       {mine&&<span className="facing-indicator" aria-hidden="true"/>}
       <button className={`seat ${occupied ? `occupied ${mine ? profile.gender : person.gender}` : 'empty'} ${mine ? 'mine' : ''} ${talking ? 'speaking' : ''}`} aria-label={mine ? '내 자리' : person ? `${i+1}번 손님 프로필` : i === 11 ? '빈 사장 자리로 이동' : `${i+1}번 빈자리로 이동`} disabled={!occupied && (seatFrozen || moving)} onClick={() => selectBarSeat(i)}>{photo ? <img src={photo} alt={mine ? '내 얼굴' : '손님 얼굴'}/> : occupied ? <UserRound size={18} aria-hidden="true"/> : <Plus size={18}/>}</button>
-      {occupied && <span className="seat-drink" title={DRINKS.find(d => d.id === personDrink)?.name}><Glass id={personDrink} seconds={leftTime} host={i===11&&!server?.seatNeutralClock}/><span className="sr-only">{DRINKS.find(d => d.id === personDrink)?.name}, {i===11&&!server?.seatNeutralClock?'시간 제한 없음':`${Math.ceil(leftTime/60)}분 남음`}</span></span>}
+      {occupied && <span className="seat-drink" title={DRINKS.find(d => d.id === personDrink)?.name}><Glass id={personDrink} minutes={drinkMinutes[personDrink] ?? defaultDrinkMinutes} seconds={leftTime} host={i===11&&!server?.seatNeutralClock}/><span className="sr-only">{DRINKS.find(d => d.id === personDrink)?.name}, {i===11&&!server?.seatNeutralClock?'시간 제한 없음':`${Math.ceil(leftTime/60)}분 남음`}</span></span>}
       {paired&&<span className="pair-marker" title="서로 속삭이는 중"><MessageCircleMore size={12} style={{transform:'scaleX(-1)'}}/><span className="sr-only">서로 속삭이는 중</span></span>}{!mine&&person&&mutedGuests.includes(person.id)?<span className="muted-marker" title={reportedIds.has(person.id)?'이용자 보호로 연결되지 않아요':'음소거됨'}><VolumeX size={12}/><span className="sr-only">{reportedIds.has(person.id)?'이용자 보호로 연결되지 않아요':'음소거됨'}</span></span>:(mine ? !micSending : person?.mic===false&&!mesh.talking.includes(person.id))?<span className="muted-marker mic-off-marker" title="마이크 꺼짐"><MicOff size={12}/><span className="sr-only">마이크 꺼짐</span></span>:null}{talking && <Waves/>}{mine && <span className="me-label">나</span>}{i === 11 && <span className="host-label">{occupied ? '사장' : '사장 자리'}</span>}
     </div>;
   }
@@ -1971,17 +2010,19 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
           renderSeatReaction={i => i === seat ? (firstPerson ? null : renderReaction(me)) : renderReaction(guests.find(guest => guest.seat === i)?.id)}
           onUnavailable={selectBarView}
           onOpenSeats={() => open('bar-seats')} onFacingChange={setFacing} moving={sceneMoving}
-          onMotionChange={setSceneMoving} seatPickerRef={seatPickerTrigger} onCue={playCue} micOff={!micSending} theme={barTheme}>
+          onMotionChange={setSceneMoving} seatPickerRef={seatPickerTrigger} onCue={playCue} micOff={!micSending} theme={barTheme} drinks={drinks}>
           {reactionPicker}
           {firstPerson && reactions[me]?.expiresAt>now && <div className="bar-reaction-self">{renderReaction(me)}</div>}
         </BarScene>}
       </div>
-      <div className="conversation-status" role={voiceRecovering ? 'status' : undefined}>{voiceRecovering?'음성 연결을 다시 확인하고 있어요':activeFocus?'1:1 대화 중 · 다른 사람에게는 들리지 않아요':localSpeaking?'지금 이야기하고 있어요':guestsTalking&&partners[guest?.id]?'두 손님이 1:1로 대화하고 있어요':guestsTalking?(audible?'가까운 자리에서 이야기하고 있어요':'저쪽 자리에서 이야기하고 있어요'):'빈자리를 누르면 옮길 수 있어요'}</div>
+      {waitingGameOpen && <BarWaitingGame key={visit.id} canPlay={canPlayWaitingGame} safetyPaused={server?.safetyPaused}
+        arrivingGuest={guests.find(guest => !reportedIds.has(guest.id))?.nickname} onClose={closeWaitingGame}/>}
+      <div className="conversation-status" role={voiceRecovering ? 'status' : undefined}>{voiceRecovering?'음성 연결을 다시 확인하고 있어요':activeFocus?'1:1 대화 중 · 다른 사람에게는 들리지 않아요':localSpeaking?'지금 이야기하고 있어요':guestsTalking&&partners[guest?.id]?'두 손님이 1:1로 대화하고 있어요':guestsTalking?(audible?'가까운 자리에서 이야기하고 있어요':'저쪽 자리에서 이야기하고 있어요'):guests.length + 1 >= CAPACITY ? '원하는 자리로 변경을 요청할 수 있어요' : '빈자리를 누르면 옮길 수 있어요'}</div>
       <div className="direction-control">
-        {QaDirectionAudio && <QaDirectionAudio guests={guests} gains={gains} pans={pans} prepareAudio={prepareCueAudio}/>}
+        {QaDirectionAudio && <QaDirectionAudio guests={guests} seat={seat} gains={gains} pans={pans} prepareAudio={prepareCueAudio}/>}
         {activeFocus?<div className="focus-active"><MessageCircleMore size={17}/><span>1:1 대화 중 · 다른 사람에게는 들리지 않아요</span><button onClick={endFocus}>전체 대화로</button></div>:focusRequest?<div className="focus-active"><span>대화 요청에 답을 기다려요</span><button onClick={cancelFocus}>취소</button></div>:incomingFocus?<div className="focus-active"><MessageCircleMore size={17}/><span>옆자리 손님이 둘만의 대화를 요청했어요</span><button onClick={()=>respondFocus(false)}>거절</button><button onClick={()=>respondFocus(true)}>수락</button></div>:<>
           <div className="direction-label"><span>소리 집중 방향</span><output>{Math.round(facing)===0?'양쪽 고르게':`${facing<0?'왼쪽':'오른쪽'}으로 ${Math.round(Math.abs(facing))}°`}</output></div>
-          <div className="direction-presets"><button className={facing < -15 ? 'active' : ''} onClick={()=>setFacing(-60)}>왼쪽</button><button className={Math.abs(facing) <= 15 ? 'active' : ''} onClick={()=>setFacing(0)}>양쪽</button><button className={facing > 15 ? 'active' : ''} onClick={()=>setFacing(60)}>오른쪽</button></div><div className="direction-slider"><span aria-hidden="true">왼쪽</span><input type="range" aria-label="대화 방향 각도" min={-facingLimit} max={facingLimit} step={1} value={Math.round(facing)} style={{'--range-progress':`${((facing + facingLimit) / (2 * facingLimit)) * 100}%`}} onChange={e=>setFacing(Number(e.target.value))}/><span aria-hidden="true">오른쪽</span></div>
+          <div className="direction-presets"><button className={facing < -15 ? 'active' : ''} onClick={()=>setFacing(-60)}>왼쪽</button><button className={Math.abs(facing) <= 15 ? 'active' : ''} onClick={()=>setFacing(0)}>양쪽</button><button className={facing > 15 ? 'active' : ''} onClick={()=>setFacing(60)}>오른쪽</button></div><div className="direction-slider"><span aria-hidden="true">왼쪽</span><input type="range" aria-label="대화 방향 각도" min={-facingLimit} max={facingLimit} step={firstPerson ? 1 : 15} value={Math.round(facing)} style={{'--range-progress':`${((facing + facingLimit) / (2 * facingLimit)) * 100}%`}} onChange={e=>setFacing(Number(e.target.value))}/><span aria-hidden="true">오른쪽</span></div>
           {neighbors.length>0&&<div className="neighbor-actions">{neighbors.map(g=><button key={g.id} onClick={()=>{setSelectedGuest(g);open('guest');}}><ArrowLeftRight size={13}/>{g.seat<seat?'왼쪽':'오른쪽'} 옆자리{partners[g.id]?' · 대화 중':'와만 대화'}</button>)}</div>}
         </>}
         <div className="bar-volume-control">
@@ -2043,7 +2084,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
         <div className="settings-list"><button onClick={()=>{setLegalSrc(COMMUNITY_POLICY_URL);open('legal-doc');}}>커뮤니티 가이드라인 보기<ArrowRight size={16}/></button></div>
         <div className="sheet-inline-cta"><Button display="block" onClick={closeSheet}>확인</Button></div>
       </>}
-      {(sheet === 'welcome' || sheet === 'menu') && <><p className="eyebrow">{isWelcome ? (room?.firstGuest ? `${room.region} · 첫 손님으로 입장` : `${room?.region} ${room?.number}호점 입장`) : '메뉴판'}</p><h2 id="sheet-title">{isWelcome ? '어떤 음료로 시작할까요?' : '한 잔 더 하고 갈까요?'}</h2><p className="sheet-description">{isWelcome ? (subscription ? '구독 중이면 입장에 포인트가 차감되지 않아요.' : '입장 시 포인트가 차감돼요.') : '주문한 잔은 내 사진 옆에 놓여요.'}</p><div className="menu">{DRINKS.filter(item => !isWelcome || item.minutes === BASE_DRINK_MINUTES).map(item => <button className={selection === item.id ? 'chosen' : ''} key={item.id} aria-pressed={selection === item.id} onClick={() => {setSelection(item.id);setError('');}}><div className="drink-illustration"><Glass id={item.id}/></div><span><strong>{item.name}</strong><small>{item.note}</small><em>{`+${item.minutes}분`}</em></span><span className="menu-price">{isWelcome ? `입장 ${item.price.toLocaleString()}P` : `${item.price.toLocaleString()} P`}{selection === item.id && <Check size={16}/>}</span></button>)}</div><div className="order-summary"><span>보유 포인트<b>{wallet.balance.toLocaleString()} P</b></span><span>{subscription ? '구독 이용' : (isWelcome ? '입장 후 남는 포인트' : '주문 후 남는 포인트')}<strong>{subscription ? '0 P' : `${Math.max(0,wallet.balance-price).toLocaleString()} P`}</strong></span></div><p className="digital-note">음료는 취향을 표현하는 아이템이에요.</p>{!subscription && wallet.balance<price?<><div className="insufficient-state"><strong>{(price-wallet.balance).toLocaleString()}P가 더 필요해요</strong><span>충전 후 {isWelcome ? '입장' : '주문'}할 수 있어요.</span></div><Button className="sheet-recharge-cta" size="xlarge" display="block" onClick={()=>open('shop')}>포인트 충전하기</Button><p className="footnote">충전 후 선택한 음료로 이용해요.</p></>:<div className="sheet-inline-cta"><Button size="xlarge" display="block" disabled={busy} onClick={confirmOrder}>{subscription ? (isWelcome ? `${chosen.minutes}분 입장하기` : `주문 · ${chosen.minutes}분 연장`) : (isWelcome ? `${price.toLocaleString()} 포인트로 ${chosen.minutes}분 입장하기` : `${price.toLocaleString()} 포인트로 주문 · ${chosen.minutes}분 연장`)}</Button><p className="footnote">{subscription ? '구독 기간에는 입장·연장에 포인트가 차감되지 않아요.' : (isWelcome ? (leftover ? '다른 호점에 입장하면 남은 이용시간은 끝나요.' : '바를 나가도 이 호점 이용시간은 이어져요.') : '주문을 누르면 포인트가 차감되고 이용시간이 늘어나요.')}</p></div>}</>}
+      {(sheet === 'welcome' || sheet === 'menu') && <><p className="eyebrow">{isWelcome ? (room?.firstGuest ? `${room.region} · 첫 손님으로 입장` : `${room?.region} ${room?.number}호점 입장`) : '메뉴판'}</p><h2 id="sheet-title">{isWelcome ? '어떤 음료로 시작할까요?' : '한 잔 더 하고 갈까요?'}</h2><p className="sheet-description">{isWelcome ? (subscription ? '구독 중이면 입장에 포인트가 차감되지 않아요.' : '입장 시 포인트가 차감돼요.') : '주문한 잔은 내 사진 옆에 놓여요.'}</p><div className="menu">{drinks.filter(item => !isWelcome || item.id !== 'wine-hour').map(item => <button className={selection === item.id ? 'chosen' : ''} key={item.id} aria-pressed={selection === item.id} onClick={() => {setSelection(item.id);setError('');}}><div className="drink-illustration"><Glass id={item.id}/></div><span><strong>{item.name}</strong><small>{item.note}</small><em>{`+${item.minutes}분`}</em></span><span className="menu-price">{isWelcome ? `입장 ${item.price.toLocaleString()}P` : `${item.price.toLocaleString()} P`}{selection === item.id && <Check size={16}/>}</span></button>)}</div><div className="order-summary"><span>보유 포인트<b>{wallet.balance.toLocaleString()} P</b></span><span>{subscription ? '구독 이용' : (isWelcome ? '입장 후 남는 포인트' : '주문 후 남는 포인트')}<strong>{subscription ? '0 P' : `${Math.max(0,wallet.balance-price).toLocaleString()} P`}</strong></span></div><p className="digital-note">음료는 취향을 표현하는 아이템이에요.</p>{!subscription && wallet.balance<price?<><div className="insufficient-state"><strong>{(price-wallet.balance).toLocaleString()}P가 더 필요해요</strong><span>충전 후 {isWelcome ? '입장' : '주문'}할 수 있어요.</span></div><Button className="sheet-recharge-cta" size="xlarge" display="block" onClick={()=>open('shop')}>포인트 충전하기</Button><p className="footnote">충전 후 선택한 음료로 이용해요.</p></>:<div className="sheet-inline-cta"><Button size="xlarge" display="block" disabled={busy} onClick={confirmOrder}>{subscription ? (isWelcome ? `${chosen.minutes}분 입장하기` : `주문 · ${chosen.minutes}분 연장`) : (isWelcome ? `${price.toLocaleString()} 포인트로 ${chosen.minutes}분 입장하기` : `${price.toLocaleString()} 포인트로 주문 · ${chosen.minutes}분 연장`)}</Button><p className="footnote">{subscription ? '구독 기간에는 입장·연장에 포인트가 차감되지 않아요.' : (isWelcome ? (leftover ? '다른 호점에 입장하면 남은 이용시간은 끝나요.' : '바를 나가도 이 호점 이용시간은 이어져요.') : '주문을 누르면 포인트가 차감되고 이용시간이 늘어나요.')}</p></div>}</>}
       {sheet === 'preview' && previewRoom && <><p className="eyebrow">{previewRoom.region} {previewRoom.number}호점</p><h2 id="sheet-title">{previewGuests ? '지금 이 바의 손님들' : previewRoom.quickOfferId ? '입장 가능한 자리가 없어졌어요' : '들어가기 전에 살짝 볼까요?'}</h2>{previewGuests ? <><p className="sheet-description">미리보기 시점에 확인된 손님들이에요. 입장할 때는 달라질 수 있어요.</p><div className="preview-portraits">{previewGuests.map(g => <div key={g.id} className={g.gender}><img src={g.photo} alt={previewOffer ? g.nickname : '미리보기 손님'}/></div>)}</div>{previewOffer && <p className="sheet-description">{previewOffer.guest.nickname}</p>}{rooms[previewRoom.region].find(r => r.number === previewRoom.number)?.count === CAPACITY ? <Button size="xlarge" display="block" disabled={server?.safetyPaused} onClick={()=>requestWaitlist(previewRoom)}>{waitlistLabel(previewRoom)}</Button> : <Button size="xlarge" display="block" onClick={() => requestEntry(previewRoom)}>이 바에 입장하기</Button>}</> : previewRoom.quickOfferId ? <Button display="block" onClick={closeSheet}>닫기</Button> : <><div className="locked-preview"><LockKeyhole size={29}/><span>미리보기로 손님 사진을 확인해요.</span></div><p className="sheet-description">입장·자리 예약은 포함되지 않아요.</p><div className="order-summary"><span>보유 포인트<b>{wallet.balance.toLocaleString()} P</b></span><span>{subscription ? '구독 이용' : '구매 후 남는 포인트'}<strong>{subscription ? '0 P' : `${Math.max(0,wallet.balance-500).toLocaleString()} P`}</strong></span></div><Button size="xlarge" display="block" disabled={!subscription && wallet.balance < 500} onClick={buyPreview}>{subscription ? '미리보기' : '500P로 미리보기'}</Button></>}</>}
       {sheet === 'incoming' && incoming && <><p className="eyebrow">자리 양보 요청</p><h2 id="sheet-title">자리 바꿔주실래요?</h2><p className="sheet-description">다른 손님이 지금 내 자리를 부탁했어요.<br/>{incomingSeconds}초 안에 수락하면 500P를 받아요.<br/>오늘 남은 보상 {Math.max(0,DAILY_SWAP_REWARD_LIMIT-dailySwapRewards)}회</p><div className="swap-reward"><ArrowLeftRight size={24}/><strong>+500 P</strong><span>수락과 동시에 적립</span></div><div className="actions"><Button color="dark" variant="weak" disabled={busy} onClick={() => respondSwap(false)}>거절하기</Button><Button size="xlarge" disabled={busy || dailySwapRewards >= DAILY_SWAP_REWARD_LIMIT} onClick={() => respondSwap(true)}>{dailySwapRewards >= DAILY_SWAP_REWARD_LIMIT ? '오늘 보상 한도에 도달했어요' : '양보하고 500P 받기'}</Button></div><div className="sheet-inline-cta"><Button display="block" color="dark" variant="weak" disabled={busy} onClick={() => respondSwap(false,true)}>이 자리에서는 자동 거절</Button></div></>}
       {sheet === 'gift-send' && selectedGuest && chosen && <>
@@ -2051,7 +2092,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
         <h2 id="sheet-title">{selectedGuest.nickname || '손님'}님께 어떤 한 잔을 보낼까요?</h2>
         <p className="sheet-description">상대가 받으면 내 포인트가 차감되고, 상대에게 음료와 이용시간이 추가돼요.</p>
         <div className="menu">
-          {DRINKS.map(drink => <button key={drink.id} type="button" className={selection === drink.id ? 'chosen' : ''}
+          {drinks.map(drink => <button key={drink.id} type="button" className={selection === drink.id ? 'chosen' : ''}
             aria-pressed={selection === drink.id} onClick={() => {setSelection(drink.id); setError('');}}>
             <div className="drink-illustration"><Glass id={drink.id}/></div>
             <span><strong>{drink.name}</strong><em>+{drink.minutes}분</em></span>
@@ -2067,7 +2108,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
         <h2 id="sheet-title">저쪽 {giftSender?.nickname ? `${giftSender.nickname}님` : '손님'}이 사는 겁니다.</h2>
         <div className="order-summary">
           <span>{offeredDrink.name}<b>이용시간 +{offeredDrink.minutes}분</b></span>
-          <Glass id={offeredDrink.id} seconds={offeredDrink.minutes * 60}/>
+          <Glass id={offeredDrink.id} minutes={offeredDrink.minutes}/>
         </div>
         <div className="actions">
           <Button variant="weak" disabled={busy} onClick={() => respondToDrinkGift(false)}>괜찮아요</Button>
@@ -2082,7 +2123,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
           <div className="shop-row"><span><strong>자리 양보</strong><small>요청을 수락하고 자리를 바꾸면</small></span><b>+500P</b></div>
         </div>
         <h3 className="section-title">포인트 충전</h3><p className="shop-note">많이 충전할수록 보너스를 받아요.</p><div className="point-packs">{POINT_PACKS.map(pack=><button key={pack.points} onClick={()=>{setShopPack(pack);open('charge');}}><span>{pack.points.toLocaleString()} P {pack.bonus>0&&<em>{pack.label}</em>}</span><strong>{pack.won.toLocaleString()}원 <ArrowRight size={15}/></strong></button>)}</div>
-        <h3 ref={subscriptionSection} className="section-title">정기 구독</h3><div className={`subscription-card ${subscriptionCancelAt?'is-canceling':''}`}><div><strong>{subscription?subscriptionCancelAt?'해지됨':'이용 중':`${SUBSCRIPTIONS[0].price.toLocaleString()}원`}</strong><small>{subscriptionCancelAt?`${subscriptionEndLabel()}까지 이용할 수 있어요.`:'입장·연장·미리보기 제한 없이 사용'}</small></div><Button size="small" variant="weak" onClick={requestSubscriptionChange}>{subscription?'해지 방법':'시작하기'}</Button></div><p className="shop-note">매월 자동 결제돼요. 해지는 토스 결제 내역에서 할 수 있어요.</p><h3 className="section-title">이렇게 사용해요</h3><div className="shop-list point-uses"><span>입장<strong>500P</strong></span><span>시간 연장<strong>{BASE_DRINK_MINUTES}분 500P</strong></span><span>손님 미리보기<strong>500P</strong></span><span>자리 양보 부탁<strong>수락 시 500P</strong></span></div>
+        <h3 ref={subscriptionSection} className="section-title">정기 구독</h3><div className={`subscription-card ${subscriptionCancelAt?'is-canceling':''}`}><div><strong>{subscription?subscriptionCancelAt?'해지됨':'이용 중':`${SUBSCRIPTIONS[0].price.toLocaleString()}원`}</strong><small>{subscriptionCancelAt?`${subscriptionEndLabel()}까지 이용할 수 있어요.`:'입장·연장·미리보기 제한 없이 사용'}</small></div><Button size="small" variant="weak" onClick={requestSubscriptionChange}>{subscription?'해지 방법':'시작하기'}</Button></div><p className="shop-note">매월 자동 결제돼요. 해지는 토스 결제 내역에서 할 수 있어요.</p><h3 className="section-title">이렇게 사용해요</h3><div className="shop-list point-uses"><span>입장<strong>500P</strong></span><span>시간 연장<strong>기본 {defaultDrinkMinutes}분 · 500P</strong></span><span>손님 미리보기<strong>500P</strong></span><span>자리 양보 부탁<strong>수락 시 500P</strong></span></div>
         <h3 className="section-title">최근 내역 <small className="history-limit">{historyLimit===10?'최근 10건':`${Math.min(historyLimit,ledgerCount)}건`}</small></h3><div className="point-history">{ledger.slice(0,historyLimit).map((item,index)=><div key={item.id}><span className="history-item-label"><strong>{item.label}</strong><small>{formatHistoryDate(item.date || Date.now() - index * 86400000)}</small></span><b className={item.amount>0?'earned':''}>{item.amount>0?'+':''}{item.amount.toLocaleString()} P</b></div>)}</div>{ledgerCount>10&&<div className="history-actions">{historyLimit===10?<Button size="small" variant="weak" display="block" onClick={()=>setHistoryLimit(Math.min(30,ledgerCount))}>전체 내역 보기</Button>:<>{historyLimit>=ledgerCount&&<p className="history-complete">모든 내역을 보고 있어요.</p>}<Button size="small" variant="weak" display="block" onClick={()=>setHistoryLimit(10)}>최근 10건만 보기</Button>{historyLimit<ledgerCount&&historyLimit<100&&<Button size="small" variant="weak" display="block" onClick={()=>setHistoryLimit(v=>Math.min(v+20,ledgerCount,100))}>더 불러오기</Button>}</>}</div>}</>}
       {sheet==='charge'&&<><h2 id="sheet-title">포인트 충전</h2><div className="point-balance"><Coins size={24}/><strong>{shopPack.points.toLocaleString()} P</strong></div><div className="order-summary"><span>상품 금액<strong>{shopPack.won.toLocaleString()}원</strong></span><span>충전 후 포인트<b>{(wallet.balance+shopPack.points).toLocaleString()} P</b></span></div><p className="sheet-description">결제 후 {shopPack.points.toLocaleString()}P가 충전돼요. 토스에서 결제해요.</p><Button display="block" disabled={busy} onClick={buyPoints}>{busy ? '결제 진행 중…' : '결제하고 충전하기'}</Button><Button display="block" variant="weak" color="dark" onClick={()=>open('shop')}>다른 상품 보기</Button></>}
       {sheet==='subscription-confirm'&&<><p className="eyebrow">정기 구독</p><h2 id="sheet-title">정기 구독을 시작할까요?</h2><p className="sheet-description">{`매월 ${SUBSCRIPTIONS[0].price.toLocaleString()}원이 자동 결제되고, 입장·연장·미리보기를 제한 없이 이용할 수 있어요.`}</p><div className="actions"><Button color="dark" variant="weak" onClick={()=>setSheet('shop')}>취소</Button><Button size="xlarge" onClick={confirmSubscriptionChange}>구독 시작하기</Button></div></>}

@@ -1,65 +1,93 @@
 import React, {useEffect,useRef,useState} from 'react';
 import {scenarios,setScenario} from './quick-search';
+import leftVoice from './audio/left.wav?inline';
+import rightVoice from './audio/right.wav?inline';
 import './qa.css';
 
 const requestedScenario = new URLSearchParams(location.search).get('qa');
 const initialScenario = scenarios.some(([, cases])=>cases.some(([id])=>id===requestedScenario)) ? requestedScenario : 'many';
 setScenario(initialScenario);
 
-function DirectionAudio({ guests, gains, pans, prepareAudio }) {
-  const tones = useRef(null);
-  const [playing, setPlaying] = useState(false);
+const voiceSamples = { left:leftVoice, right:rightVoice };
+const sideFor = (seat, guestSeat) => guestSeat < (seat === 11 ? 5 : seat) ? 'left' : 'right';
+const sideLabel = { left:'왼쪽 손님', right:'오른쪽 손님' };
+
+function DirectionAudio({ guests, seat, gains, pans, prepareAudio }) {
+  const playback = useRef(null);
+  const [status, setStatus] = useState('idle');
 
   useEffect(() => {
-    const audio = tones.current;
+    const audio = playback.current;
     if (!audio) return;
     for (const { id, gain, pan } of audio.nodes) {
-      gain.gain.setTargetAtTime(.12 * (gains[id] ?? 0), audio.context.currentTime, .08);
-      if (pan) pan.pan.setTargetAtTime(pans[id] ?? 0, audio.context.currentTime, .08);
+      gain.gain.setTargetAtTime(gains[id] ?? 0, audio.context.currentTime, .08);
+      pan?.pan.setTargetAtTime(pans[id] ?? 0, audio.context.currentTime, .08);
     }
-  }, [gains, pans, playing]);
+  }, [gains, pans, status]);
 
   function stop() {
-    if (!tones.current) return;
-    for (const { tone, gain, pan } of tones.current.nodes) {
-      tone.stop();
-      tone.disconnect();
+    const audio = playback.current;
+    playback.current = null;
+    if (!audio) return;
+    audio.abort.abort();
+    for (const { source, gain, pan } of audio.nodes) {
+      source.stop();
+      source.disconnect();
       gain.disconnect();
       pan?.disconnect();
     }
-    tones.current = null;
   }
   useEffect(() => stop, []);
 
-  function toggle() {
-    if (tones.current) {
+  async function toggle() {
+    if (playback.current) {
       stop();
-      setPlaying(false);
+      setStatus('idle');
       return;
     }
     const context = prepareAudio();
     if (!context) return;
-    const nodes = guests.map(({ id }, index) => {
-      const tone = context.createOscillator();
-      const gain = context.createGain();
-      const pan = context.createStereoPanner?.();
-      tone.frequency.value = index % 2 ? 392 : 222;
-      gain.gain.value = 0;
-      tone.connect(gain);
-      if (pan) {
-        gain.connect(pan);
-        pan.connect(context.destination);
-      } else gain.connect(context.destination);
-      tone.start();
-      return { id, tone, gain, pan };
-    });
-    tones.current = { context, nodes };
-    setPlaying(true);
+    const audio = { context, abort:new AbortController(), nodes:[] };
+    playback.current = audio;
+    setStatus('loading');
+    try {
+      const buffers = await Promise.all(guests.map(async guest => {
+        const side = sideFor(seat, guest.seat);
+        const response = await fetch(voiceSamples[side], { signal:audio.abort.signal });
+        if (!response.ok) throw new Error('QA voice sample unavailable');
+        return { id:guest.id, side, buffer:await context.decodeAudioData(await response.arrayBuffer()) };
+      }));
+      if (playback.current !== audio) return;
+      const startAt = context.currentTime + .05;
+      for (const { id, side, buffer } of buffers) {
+        const source = context.createBufferSource();
+        const gain = context.createGain();
+        const pan = context.createStereoPanner?.();
+        source.buffer = buffer;
+        source.loop = true;
+        gain.gain.value = 0;
+        source.connect(gain);
+        if (pan) {
+          gain.connect(pan);
+          pan.connect(context.destination);
+        } else gain.connect(context.destination);
+        source.start(startAt + (side === 'right' ? .65 : 0));
+        audio.nodes.push({ id, source, gain, pan });
+      }
+      setStatus('playing');
+    } catch {
+      if (playback.current !== audio) return;
+      stop();
+      setStatus('error');
+    }
   }
 
+  const enabled = status === 'playing' || status === 'loading';
   return <div className="qa-direction">
-    <button type="button" onClick={toggle} aria-pressed={playing}>{playing ? '테스트음 끄기' : '테스트음 켜기'}</button>
-    <span>{guests.map(({id,seat}, index) => `${seat + 1}번 ${index % 2 ? '높은음' : '낮은음'} ${Math.round((gains[id] || 0) * 100)}%`).join(' · ')}</span>
+    <button type="button" onClick={toggle} aria-pressed={enabled}>{enabled ? '샘플 대화 끄기' : '샘플 대화 듣기'}</button>
+    <span role="status">{status === 'error' ? '샘플 대화를 불러오지 못했어요.' :
+      status === 'loading' ? '샘플 대화를 불러오는 중이에요.' :
+      guests.map(({id,seat:guestSeat}) => `${guestSeat + 1}번 ${sideLabel[sideFor(seat, guestSeat)]} ${Math.round((gains[id] || 0) * 100)}%`).join(' · ')}</span>
   </div>;
 }
 

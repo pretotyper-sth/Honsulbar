@@ -33,11 +33,15 @@ test('bar operations allow only authorized saves, publish settings and prevent o
     const get = await call({body:{action:'admin-bar-operations'},token});
     assert.deepEqual(get.body,{settings:BAR_OPERATIONS_DEFAULTS,revision:0});
     const settings = {tracks:['bossa-antigua'],bgmVolume:55,
-      roomThemes:[{region:'서울',number:1,theme:'holiday'}],lobbyNotice:' 오늘은 크리스마스 바가 열려요. '};
+      roomThemes:[{region:'서울',number:1,theme:'holiday'}],lobbyNotice:' 오늘은 크리스마스 바가 열려요. ',
+      defaultDrinkMinutes:25, drinkMinutes:{'wine-hour':55,beer:35}};
     assert.equal((await write(settings,0,null)).statusCode,401);
     assert.equal((await write({...settings,tracks:['https://other.test/audio']},0)).statusCode,400);
     assert.equal((await write({...settings,tracks:[]},0)).statusCode,400);
     assert.equal((await write({...settings,roomThemes:[settings.roomThemes[0],settings.roomThemes[0]]},0)).statusCode,400);
+    assert.equal((await write({...settings,defaultDrinkMinutes:0},0)).statusCode,400);
+    assert.equal((await write({...settings,drinkMinutes:{beer:121}},0)).statusCode,400);
+    assert.equal((await write({...settings,drinkMinutes:{invalid:30}},0)).statusCode,400);
     const normalized = {...settings,lobbyNotice:settings.lobbyNotice.trim()};
     const saved = await write(settings,0);
     assert.deepEqual(saved.body,{settings:normalized,revision:1});

@@ -122,6 +122,16 @@ export default async function handler(req,res) {
     if(!Number.isInteger(revision)||revision<0||revision>=2147483647)throw new AppError('운영 설정을 새로고침해 주세요.');
     let settings;
     try{settings=validateBarOperations(body.settings);}catch(error){throw new AppError(error.message);}
+    const defaults=BAR_OPERATIONS_DEFAULTS;
+    const sameDrinkMinutes=Object.keys(settings.drinkMinutes).length===Object.keys(defaults.drinkMinutes).length &&
+     Object.entries(settings.drinkMinutes).every(([id,minutes])=>defaults.drinkMinutes[id]===minutes);
+    if(settings.defaultDrinkMinutes!==defaults.defaultDrinkMinutes || !sameDrinkMinutes){
+     try{await rpc('hb_operating_drink_minutes',{p_drink:'highball'});}
+     catch(error){
+      if(error.databaseCode==='PGRST202')throw new AppError('음료 시간 운영 설정을 준비 중이에요.',503);
+      throw error;
+     }
+    }
     const rows=await database(`hb_bar_operations?id=eq.1&revision=eq.${revision}&select=revision`,{
      method:'PATCH',headers:{Prefer:'return=representation'},
      body:{settings,revision:revision+1,updated_by:email,updated_at:new Date().toISOString()},
@@ -429,6 +439,7 @@ export default async function handler(req,res) {
    ? await rpc('hb_toss_timed_action',{p_member:member,p_session_hash:hash(req.headers.authorization.slice(7)),p_action:action,p_data:body.data})
      .catch(error=>{
       if(error.databaseCode!=='PGRST202')throw error;
+      if(body.data?.expectedMinutes!==undefined)throw new AppError('음료 이용시간을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.',503);
       return callExistingAction();
      })
    : await callExistingAction();

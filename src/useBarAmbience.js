@@ -2,10 +2,10 @@ import { useCallback, useEffect, useRef } from 'react';
 import { shuffleBarMusic } from './bar-music';
 import { normalizeBarMusic } from './bar-music-level';
 
-export function useBarAmbience({ active, soundOn, talking, prepareAudio, level=1, tracks }) {
+export function useBarAmbience({ active, soundOn, prepareAudio, level=1, tracks }) {
   const music = useRef(null);
   const playlistKey = tracks?.join(',');
-  const volume = active && soundOn ? level * (talking ? 0.0015 : 0.012) : 0;
+  const volume = active && soundOn ? level * 0.01518 : 0;
   const latestVolume = useRef(volume);
   latestVolume.current = volume;
 
@@ -81,8 +81,8 @@ export function useBarAmbience({ active, soundOn, talking, prepareAudio, level=1
 
   useEffect(() => {
     const item = music.current;
-    if (item) item.output.setVolume(volume, talking ? 0.08 : 0.32);
-  }, [volume, talking]);
+    if (item) item.output.setVolume(volume, 0.32);
+  }, [volume]);
 
   return { start, pause };
 }

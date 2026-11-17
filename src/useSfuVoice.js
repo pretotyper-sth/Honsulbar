@@ -1,25 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { call } from './api';
 import { positionsByDistance, sfuTrackIds } from './sfu-selection';
 
 const EMPTY = [];
 const KEEP_SPEAKER_MS = 1500;
 
-export function useSfuVoice({ enabled, visitId, partnerId, stream, peerIds, guests, seat, gains, pans }) {
+export function useSfuVoice({ enabled, visitId, partnerId, stream, peerIds, guests, seat, gains, pans, prepareAudio }) {
   const session = useRef(null);
-  const context = useRef(null);
   const latest = useRef(null);
   const [talking, setTalking] = useState(EMPTY);
   const [connecting, setConnecting] = useState(false);
   latest.current = {stream,peerIds,guests,seat,gains,pans};
-
-  const resume = useCallback(() => {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContext) return null;
-    const ctx = context.current || (context.current = new AudioContext());
-    if (ctx.state !== 'running') ctx.resume().catch(() => {});
-    return ctx;
-  }, []);
 
   useEffect(() => {
     if (!enabled) {
@@ -119,7 +110,7 @@ export function useSfuVoice({ enabled, visitId, partnerId, stream, peerIds, gues
 
         room.on(RoomEvent.TrackSubscribed,(track,_publication,participant)=>{
           if (closed || track.kind !== Track.Kind.Audio) return;
-          const ctx = resume();
+          const ctx = prepareAudio();
           if (!ctx) return;
           const id = participant.identity;
           disconnectTrack(id);
@@ -194,10 +185,9 @@ export function useSfuVoice({ enabled, visitId, partnerId, stream, peerIds, gues
       room?.disconnect().catch(()=>{});
       setTalking(EMPTY);
     };
-  }, [enabled,visitId,partnerId,resume]);
+  }, [enabled,visitId,partnerId,prepareAudio]);
 
   const peersKey = peerIds.join(',');
   useEffect(() => { session.current?.refresh(); }, [peersKey,stream,seat,guests,gains,pans]);
-  useEffect(() => () => { context.current?.close().catch(()=>{}); }, []);
-  return {resume,talking,connecting};
+  return {resume:prepareAudio,talking,connecting};
 }

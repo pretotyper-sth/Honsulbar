@@ -35,6 +35,7 @@ const walkProgress = (t, entersMoving, exitsMoving) => {
 };
 const facingBar = ([x, z]) => Math.atan2(-x, -.5 - z);
 export const FIRST_PERSON_PITCH = -.23;
+export const FIRST_PERSON_WALK_SPEED = 2;
 export const wrapFacing = degrees => ((degrees + 180) % 360 + 360) % 360 - 180;
 export const cameraPitch = value => clamp(value, -.58, .14);
 const facingYaw = (position, degrees) => facingBar(position) - degrees * Math.PI / 180;
@@ -60,16 +61,15 @@ export function flatFacingIndicator(seat, degrees) {
   return facingIndicatorAngle(Math.sin(yaw), Math.cos(yaw));
 }
 
-export function barVoice(listener, speaker, degrees, partners, muted) {
+export function barVoice(listener, speaker, degrees, partners, muted, firstPerson = false) {
   const from = barSeats[listener.seat], to = barSeats[speaker.seat];
-  if (!from || !to || listener.seat === speaker.seat) return {gain:0, pan:0};
-  const gain = audioGain(listener, speaker, partners, muted);
-  if (!gain || speaker.speaker || partners?.[listener.id] === speaker.id) return {gain, pan:0};
+  if (!from || !to || listener.seat === speaker.seat) return { gain:0, pan:0 };
+  const gain = audioGain(listener, speaker, partners, muted, firstPerson ? 0 : degrees);
+  if (!firstPerson || !gain || speaker.speaker || partners?.[listener.id]) return { gain, pan:0 };
 
   const relative = facingYaw(from, degrees) - Math.atan2(to[0] - from[0], to[1] - from[1]);
-  const focus = ((1 + Math.cos(relative)) / 2) ** 2;
-  const strength = Math.min(1, Math.abs(wrapFacing(degrees)) / 45);
-  return {gain:gain * mix(1, .05 + .95 * focus, strength), pan:.8 * Math.sin(relative)};
+  const focus = (1 + Math.cos(relative)) / 2;
+  return { gain:gain * (.22 + .78 * focus), pan:.8 * Math.sin(relative) };
 }
 
 const outerSeat = index => {
@@ -180,12 +180,12 @@ export function avatarPose(seat, walk, elapsed, angle = 0, startAngle = angle) {
   };
 }
 
-export function firstPersonWalk(seat, walk, startYaw, endAngle) {
+export function firstPersonWalk(seat, walk, startYaw, endAngle, speed = 1) {
   const phases = [];
   let duration = 0, elapsed = 0, yaw = startYaw;
   function phase(to, nextYaw, length = 0, corner = null) {
     const delta = turnDelta(yaw, nextYaw);
-    const ms = Math.max((to - elapsed) * 1.45, length * 172, Math.abs(delta) * (corner ? 420 : 320));
+    const ms = Math.max((to - elapsed) * 1.45, length * 172, Math.abs(delta) * (corner ? 420 : 320)) / speed;
     if (!ms) return;
     phases.push({start:duration, end:duration + ms, from:elapsed, to, yaw, delta, walking:length > 0, corner});
     duration += ms;
@@ -225,8 +225,8 @@ export function firstPersonWalk(seat, walk, startYaw, endAngle) {
   return {
     duration,
     at(time) {
-      if (time <= 0) return {elapsed:time, yaw:startYaw};
-      if (time >= duration) return {elapsed:walk.duration + (time - duration), yaw:endYaw};
+      if (time <= 0) return {elapsed:time * speed, yaw:startYaw};
+      if (time >= duration) return {elapsed:walk.duration + (time - duration) * speed, yaw:endYaw};
       const {start, end, from, to, yaw, delta, walking, corner, entersMoving, exitsMoving} = phases.find(({end}) => time < end);
       const t = (time - start) / (end - start);
       const smooth = t * t * (3 - 2 * t);
@@ -488,7 +488,7 @@ const skin = ['#f3c8a8','#dca68a','#bb856d'];
 function heldGlass(faces, x, y, z, person, yaw = 0, scale = 1) {
   const drink = DRINKS.find(item => item.id === person.drinkId);
   if (!drink) return;
-  const fill = drinkLevel(person.seconds, person.unlimited, drink.minutes * 60).fill;
+  const fill = drinkLevel(person.seconds, person.unlimited, (person.drinkMinutes ?? drink.minutes) * 60).fill;
   const wine = drink.id === 'wine', beer = drink.id === 'beer';
   const height = (wine ? .28 : beer ? .40 : .36) * scale;
   const width = (beer ? .27 : .24) * scale;
@@ -524,18 +524,19 @@ function heldGlass(faces, x, y, z, person, yaw = 0, scale = 1) {
 function avatar(faces, pose, outfit, person) {
   const { position: [x,z], yaw, rise, stride } = pose;
   const point = (side, ahead) => [x + Math.cos(yaw)*side + Math.sin(yaw)*ahead, z - Math.sin(yaw)*side + Math.cos(yaw)*ahead];
+  const rightHand = -1;
   const trousers = ['#555468','#403f53','#343346'];
   for (const side of [-1,1]) {
     const [footX,footZ] = point(side * .16, mix(.25, side * stride * .19, rise));
     box(faces, footX, mix(.42, .24, rise), footZ, .23, mix(.29, .45, rise), .29, trousers, yaw);
     box(faces, footX, mix(.29, .08, rise) + Math.max(0, side * stride) * .11, footZ, .24, .16, .34, trim, yaw);
-    const holding = side === 1 && !!person.drinkId;
+    const holding = side === rightHand && !!person.drinkId;
     const [armX,armZ] = point(side * .37, holding ? .12 + stride * .025 : -side * stride * .09);
     rounded(faces, armX, 1 + rise * .22, armZ, .25, .29, .24, outfit);
     const handY = (holding ? .95 : .79) + rise * .22;
     rounded(faces, armX, handY, armZ, .18, .26, .18, skin);
     if (holding) {
-      const [glassX,glassZ] = point(.46, .22 + stride * .025);
+      const [glassX,glassZ] = point(rightHand * .46, .22 + stride * .025);
       heldGlass(faces, glassX, handY - .09, glassZ, person, yaw, 1.08);
     }
   }
@@ -659,7 +660,7 @@ export function paintBar(context, width, height, view, people, ownPose, pitch = 
     const [left,top,depth] = screen(point);
     if (left < 20 || left > width - 20 || top < 18 || top > height - 19) return null;
     let facingAngle;
-    if (!first && person?.mine) {
+    if (!first && seat === 11 && person?.mine) {
       const [aheadX,aheadY] = screen(camera([px + Math.sin(pose.yaw), markerHeight, pz + Math.cos(pose.yaw)]));
       facingAngle = facingIndicatorAngle(aheadX - left, aheadY - top);
     }

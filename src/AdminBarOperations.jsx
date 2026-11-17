@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { barMusic } from './bar-music';
-import { REGIONS } from './model';
-import { BAR_THEME_LABELS, MAX_LOBBY_NOTICE, MAX_ROOM_THEMES, validateBarOperations } from './bar-operations';
+import { DRINKS, REGIONS } from './model';
+import { BAR_THEME_LABELS, MAX_DRINK_MINUTES, MIN_DRINK_MINUTES, MAX_LOBBY_NOTICE, MAX_ROOM_THEMES, validateBarOperations } from './bar-operations';
 import './admin-bar-operations.css';
 
 export function AdminBarOperations({ token, request, styles }) {
@@ -34,6 +34,13 @@ export function AdminBarOperations({ token, request, styles }) {
 
   function updateRoom(index, changes) {
     update('roomThemes', draft.roomThemes.map((room, i) => i === index ? {...room,...changes} : room));
+  }
+
+  function updateDrinkMinutes(id, value) {
+    const minutes = {...draft.drinkMinutes};
+    if (value === '') delete minutes[id];
+    else minutes[id] = Number(value);
+    update('drinkMinutes', minutes);
   }
 
   async function save(event) {
@@ -74,6 +81,21 @@ export function AdminBarOperations({ token, request, styles }) {
             <tr><th scope="row"><label htmlFor="ops-bgm-volume">BGM 기본 음량</label><small>개인 설정이 없는 손님에게 적용해요.</small></th>
               <td><div className="bar-ops-volume"><input id="ops-bgm-volume" type="number" min={0} max={100} step={1}
                 required value={draft.bgmVolume} onChange={event => update('bgmVolume',event.target.value === '' ? '' : event.target.valueAsNumber)}/> %</div></td></tr>
+            <tr><th scope="row"><label htmlFor="ops-default-drink-minutes">기본 음료 이용시간</label>
+              <small>음료별 설정을 비워두면 이 시간이 적용돼요.</small></th>
+              <td><div className="bar-ops-volume"><input id="ops-default-drink-minutes" type="number"
+                min={MIN_DRINK_MINUTES} max={MAX_DRINK_MINUTES} required value={draft.defaultDrinkMinutes}
+                onChange={event => update('defaultDrinkMinutes', event.target.value === '' ? '' : event.target.valueAsNumber)}/> 분</div></td></tr>
+            <tr><th scope="row">음료별 이용시간<small>새 입장, 연장, 한 잔 보내기에 적용돼요.</small></th>
+              <td><div className="bar-ops-drink-times">
+                {DRINKS.map(drink => <label key={drink.id}>
+                  <span>{drink.name}</span>
+                  <span className="bar-ops-volume"><input aria-label={`${drink.name} 이용시간`} type="number"
+                    min={MIN_DRINK_MINUTES} max={MAX_DRINK_MINUTES} value={draft.drinkMinutes[drink.id] ?? ''}
+                    placeholder={String(draft.defaultDrinkMinutes)}
+                    onChange={event => updateDrinkMinutes(drink.id, event.target.value)}/> 분</span>
+                </label>)}
+              </div></td></tr>
             <tr><th scope="row">호점 테마<small>지정하지 않은 호점은 자동 배정돼요.</small></th>
               <td><div className="bar-ops-rooms">
                 {draft.roomThemes.map(({region,number,theme},index) => <div className="bar-ops-room" key={index}>

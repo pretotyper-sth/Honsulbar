@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { barThemes } from '../src/bar-themes.js';
-import { avatarOutfit, avatarPose, barSeats, cameraPitch, flatFacingIndicator, firstPersonWalk, barVoice, paintBar, partnerFacing, seatWalk, swapWalk, walkCue, wrapFacing } from '../src/bar-scene.js';
+import { avatarOutfit, avatarPose, barSeats, cameraPitch, FIRST_PERSON_WALK_SPEED, flatFacingIndicator, firstPersonWalk, barVoice, paintBar, partnerFacing, seatWalk, swapWalk, walkCue, wrapFacing } from '../src/bar-scene.js';
 
 test('walking sounds follow the steps and play one impact on sitting', () => {
   const walk = seatWalk(0, 5);
@@ -37,19 +37,27 @@ test('seated avatars use the listener angle and distinct outfit palettes', () =>
   assert.notDeepEqual(avatarOutfit('my-id', 'female'), avatarOutfit('my-id', 'male'));
 });
 
-const voiceAt = (from, to, degrees) => barVoice({id:'me',seat:from},{id:'guest',seat:to},degrees);
+const voiceAt = (from, to, degrees, firstPerson = false) =>
+  barVoice({id:'me',seat:from},{id:'guest',seat:to},degrees,undefined,undefined,firstPerson);
 
-test('rotation wraps and moves voice gain and balance with the shared heading', () => {
+test('rotation wraps and moves voice gain and balance with the first-person heading', () => {
   assert.equal(wrapFacing(190), -170);
   assert.equal(wrapFacing(-190), 170);
   assert.equal(cameraPitch(-1), -.58);
   assert.equal(cameraPitch(1), .14);
-  const left = voiceAt(5,4,0);
-  const right = voiceAt(5,6,0);
+  const left = voiceAt(5,4,0,true);
+  const right = voiceAt(5,6,0,true);
   assert.ok(left.pan < 0);
   assert.ok(right.pan > 0);
-  assert.ok(voiceAt(5,6,60).gain > voiceAt(5,6,-60).gain);
-  assert.ok(voiceAt(5,4,-60).gain > voiceAt(5,4,60).gain);
+  assert.ok(voiceAt(5,6,60,true).gain > voiceAt(5,6,-60,true).gain);
+  assert.ok(voiceAt(5,4,-60,true).gain > voiceAt(5,4,60,true).gain);
+});
+
+test('regular third-person seats retain the original gradual left and right focus', () => {
+  assert.deepEqual(voiceAt(5,6,15), {gain:1,pan:0});
+  assert.deepEqual(voiceAt(5,4,15), {gain:1 - .95 * 15 / 90,pan:0});
+  assert.deepEqual(voiceAt(5,4,-15), {gain:1,pan:0});
+  assert.deepEqual(voiceAt(5,6,-15), {gain:1 - .95 * 15 / 90,pan:0});
 });
 
 test('third-person rows stay aligned with equal spacing whether their seats are occupied or empty', () => {
@@ -80,8 +88,9 @@ test('the host arrow points toward the louder seat in 2D and the third-person pr
     const direction = Math.sign(points[near].left - points[11].left);
     assert.equal(Math.sign(Math.sin(points[11].facingAngle * Math.PI / 180)),direction);
     assert.equal(Math.sign(Math.sin(flatFacingIndicator(11,degrees) * Math.PI / 180)),direction);
-    assert.ok(voiceAt(11,near,degrees).gain > voiceAt(11,far,degrees).gain * 4);
-    assert.ok(voiceAt(11,far,degrees).gain < .2);
+    assert.equal(voiceAt(11,near,degrees).gain, 1);
+    assert.ok(Math.abs(voiceAt(11,far,degrees).gain - (1 - .95 * 60 / 90)) < 1e-8);
+    assert.equal(voiceAt(11,5,degrees).gain, 1);
   }
 });
 
@@ -132,6 +141,19 @@ test('both far-end pairs face inward on absolute diagonals during 1:1', () => {
   }
 });
 
+test('the third-person drink sits on the same right side as the first-person glass', () => {
+  const context = {canvas:{width:343,height:350},clearRect(){},fillRect(){},createRadialGradient:()=>({addColorStop(){}})};
+  const pose = avatarPose(11);
+  const person = {id:'me',mine:true,seat:11,pose,drinkId:'highball',seconds:600};
+  let glass;
+  const renderer = {draw(faces){ glass = faces.filter(face=>face.color==='#ddb76d'); return true; }};
+  paintBar(context,343,350,'third',[person],pose,undefined,renderer);
+  assert.ok(glass.length > 0);
+  const [x,z] = pose.position;
+  const localSides = glass.flatMap(face=>face.points.map(([px,,pz])=>(px-x)*Math.cos(pose.yaw)-(pz-z)*Math.sin(pose.yaw)));
+  assert.ok(localSides.every(side=>side < 0));
+});
+
 test('the renderer gets all world objects across rotations and the carried drink loses liquid with time', () => {
   let mesh;
   const renderer={draw(faces){mesh=faces;return true;}};
@@ -177,4 +199,22 @@ test('the first-person camera faces forward on straights and rounded chair appro
       }
     }
   }
+});
+
+test('the accelerated first-person route reaches each footstep and the seat in half the time', () => {
+  const walk = seatWalk(0, 11);
+  const yaw = avatarPose(0).yaw;
+  const original = firstPersonWalk(11, walk, yaw, 0);
+  const accelerated = firstPersonWalk(11, walk, yaw, 0, FIRST_PERSON_WALK_SPEED);
+  assert.equal(accelerated.duration, original.duration / 2);
+  const cues = [];
+  for (let time = 2; time <= Math.ceil(original.duration / 2) * 2; time += 2) {
+    const cue = walkCue(walk, original.at(time - 2).elapsed, original.at(time).elapsed, 125);
+    const step = walkCue(walk, accelerated.at((time - 2) / 2).elapsed, accelerated.at(time / 2).elapsed, 125);
+    assert.equal(step, cue);
+    if (step) cues.push(step);
+  }
+  assert.ok(cues.includes('step'));
+  assert.equal(cues.at(-1), 'sit');
+  assert.equal(accelerated.at(accelerated.duration + 12).elapsed, walk.duration + 24);
 });
