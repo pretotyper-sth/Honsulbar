@@ -395,19 +395,28 @@ export default async function handler(req,res) {
    if (eligibility?.adult !== true) throw new AppError('성인 확인을 갱신하려면 토스 로그인을 다시 진행해 주세요.',403);
    if (eligibility.photo_checked !== true) throw new AppError('프로필 사진을 먼저 등록해 주세요.',403);
   }
+  const callExistingAction=()=>action==='enter' && body.data?.quickOfferId
+   ? rpc('hb_quick_enter',{p_member:member,p_data:body.data||{}})
+   : rpc('hb_action',{p_member:member,p_action:action,p_data:body.data||{}});
   const tossTiming=['enter','order'].includes(action)&&body.data?.durationVersion==='20-40';
-  const result=tossTiming
-   ? await rpc('hb_toss_timed_action',{p_member:member,p_session_hash:hash(req.headers.authorization.slice(7)),p_action:action,p_data:body.data})
-   : profileUpdate
+  const result=profileUpdate
    ? await rpc('hb_update_toss_profile_photo',profileUpdate)
-   : action==='enter'
-   ? await rpc('hb_quick_enter',{p_member:member,p_data:body.data||{}})
-   : await rpc('hb_action',{p_member:member,p_action:action,p_data:body.data||{}});
+   : tossTiming
+   ? await rpc('hb_toss_timed_action',{p_member:member,p_session_hash:hash(req.headers.authorization.slice(7)),p_action:action,p_data:body.data})
+     .catch(error=>{
+      if(error.databaseCode!=='PGRST202')throw error;
+      return callExistingAction();
+     })
+   : await callExistingAction();
+  if(action==='heartbeat'&&typeof (body.data||{}).mic==='boolean')await rpc('hb_set_mic',{p_member:member,p_mic:!!body.data.mic}).catch(()=>{});
   if(action==='leave')await rpc('hb_quick_search',{p_member:member,p_command:'cancel',p_region:'서울'}).catch(()=>{});
   if(action==='ticket')await dispatchOutbox().catch(()=>{});
   if(action==='signal')return res.json({ok:true});
   let state=await snapshot({p_member:member,p_after:Math.max(0,Number(body.after)||0),p_limit:Math.min(100,Math.max(10,Number(body.limit)||10))});
-  if(action!=='heartbeat')state=await rpc('hb_quick_visible_rooms',{p_state:state});
+  if(action!=='heartbeat')state=await rpc('hb_quick_visible_rooms',{p_state:state}).catch(error=>{
+   if(error.databaseCode!=='PGRST202')throw error;
+   return state;
+  });
   return res.json({result:withPhotos(result,member),state:withPhotos(state,member)});
  }catch(error){console.error(error);return res.status(error.status||500).json({error:error instanceof AppError?error.message:'요청을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.'});}
 }

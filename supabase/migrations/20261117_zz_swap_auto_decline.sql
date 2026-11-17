@@ -40,7 +40,7 @@ begin
   update hb_visits set auto_decline_swaps=true where id=visit.id;
   update hb_requests set status='declined'
    where receiver=p_member and room_id=visit.room_id and receiver_seat=visit.seat and kind='swap' and status='pending' and expires_at>now();
-  return result;
+  return result||jsonb_build_object('autoDeclined',true);
  end if;
 
  result:=hb_action_before_swap_auto_decline(p_member,p_action,p_data);

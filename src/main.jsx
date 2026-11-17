@@ -1284,9 +1284,9 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
     setBusy(true);
     prepareCueAudio();
     try {
-      await run('respond', { id: incoming.id, accept, ...(autoDecline ? { autoDecline:true } : {}) });
+      const result = await run('respond', { id: incoming.id, accept, ...(autoDecline ? { autoDecline:true } : {}) });
       setSheet(null);
-      setToast(accept ? '자리를 양보하고 500P를 받았어요' : autoDecline ? '이 자리에 있는 동안 자동으로 거절해요.' : '요청을 거절했어요.');
+      setToast(accept ? '자리를 양보하고 500P를 받았어요' : result?.autoDeclined ? '이 자리에 있는 동안 자동으로 거절해요.' : '요청을 거절했어요.');
       if (!accept) playCue('declined');
     } catch (e) { setSheet(null); fail(e); }
     finally { setBusy(false); }
