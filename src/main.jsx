@@ -578,9 +578,9 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
       : null;
   }
 
-  function closeWaitingGame() {
+  function closeWaitingGame(restoreFocus = false) {
     setGameVisitId(null);
-    if (canPlayWaitingGame) waitingGameTrigger.current?.focus({preventScroll:true});
+    if (restoreFocus) waitingGameTrigger.current?.focus({preventScroll:true});
   }
 
   const reactionPicker = <div className="bar-reaction-picker" onKeyDown={event => {

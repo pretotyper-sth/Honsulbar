@@ -166,7 +166,7 @@ export function BarWaitingGame({ canPlay, arrivingGuest, safetyPaused, onClose }
 
   return <section id="bar-waiting-game" className="bar-waiting-game" aria-labelledby="bar-waiting-title"
     onKeyDown={event => {
-      if (event.key === 'Escape') { event.stopPropagation(); onClose(); }
+      if (event.key === 'Escape') { event.stopPropagation(); onClose(true); }
     }}>
     <div className="bar-waiting-header">
       <h2 id="bar-waiting-title" className="sr-only">혼자 기다리기 게임</h2>
@@ -174,7 +174,7 @@ export function BarWaitingGame({ canPlay, arrivingGuest, safetyPaused, onClose }
         {games.map(choice => <button key={choice.id} type="button"
           aria-pressed={game.id === choice.id} onClick={() => setGame(choice)}>{choice.label}</button>)}
       </div> : <span>게임이 멈췄어요</span>}
-      <button type="button" className="bar-waiting-close" aria-label="게임 닫기" onClick={onClose}><X size={18} aria-hidden="true"/></button>
+      <button type="button" className="bar-waiting-close" aria-label="게임 닫기" onClick={event => onClose(event.detail === 0)}><X size={18} aria-hidden="true"/></button>
     </div>
     {canPlay ? <div className="bar-waiting-body"><Play/></div> : <div className="bar-waiting-actions">
       <p role="status">{safetyPaused ? '안전 점검 중이에요.' :
