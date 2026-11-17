@@ -1,3 +1,4 @@
+import { BAR_OPERATIONS_DEFAULTS, validateBarOperations } from '../src/bar-operations.js';
 import {fullVoiceReady,FULL_VOICE_VERSION,encryptRecording,decryptRecording} from '../server/full-voice.js';
 import {playReviewReady,playReviewMember} from '../server/play-review.js';
 import {newPhotoChallenge} from '../server/photo-test-window.js';
@@ -16,6 +17,12 @@ import {randomUUID,randomBytes} from 'node:crypto';
 import {checkProfilePhoto,verifyPhoto,warmPhotoVerifier} from '../server/photo-verification.js';
 import {AppError,authenticate,admin,database,rpc,toss,decryptField,isAdult,newToken,hash,dispatchOutbox,sbUrl,signPhoto,photoMatches,skuPoints,findProduct,rewardedAdGroupId,subscriptionSku,isSubscriptionSku,parseTossTime,pushAvailableTemplate,pushReplyTemplate,isProduction,identityKey} from '../server/platform.js';
 const snapshot = args => safetySnapshot(args, {database,rpc});
+async function readBarOperations() {
+ const [row]=await database('hb_bar_operations?id=eq.1&select=settings,revision');
+ if(!row)throw new AppError('운영 설정을 불러오지 못했어요.',503);
+ return {settings:validateBarOperations({...BAR_OPERATIONS_DEFAULTS,...row.settings}),revision:row.revision};
+}
+
 const allowedActions=new Set(['state','profile','ticket','read','region','waitlist','enter','order','leave','heartbeat','move','request','respond','cancel','focus-end','preview','signal','ad-start','ad-claim','block']);
 const origins=new Set(['https://honsulbar-app.vercel.app','https://honsulbar.apps.tossmini.com','https://honsulbar.private-apps.tossmini.com','https://honsulbar.web.tossmini.com','https://honsulbar.private-web.tossmini.com']);
 function withPhotos(value,viewer,quick=false){
@@ -50,6 +57,10 @@ export default async function handler(req,res) {
  try{
   if(req.method==='GET'&&req.query?.ageTestHealth==='1')return res.json(await ageTestHealth());
   if(req.method==='GET'&&req.query?.photo)return await sendPhoto(req,res);
+  if(req.method==='GET'&&req.query?.barOperations==='1'){
+   const {settings}=await readBarOperations();
+   return res.json({settings});
+  }
   let body=req.body||{};if(typeof body==='string')body=JSON.parse(body);
   if(JSON.stringify(body).length>1500000)throw new AppError('요청이 너무 커요.',413);
   const action=req.method==='GET'?'config':body.action;
@@ -105,6 +116,19 @@ export default async function handler(req,res) {
   if(action?.startsWith('admin-')){
    const email=await admin(req);
    if(action==='admin-session')return res.json({email});
+   if(action==='admin-bar-operations')return res.json(await readBarOperations());
+   if(action==='admin-save-bar-operations'){
+    const {revision}=body;
+    if(!Number.isInteger(revision)||revision<0||revision>=2147483647)throw new AppError('운영 설정을 새로고침해 주세요.');
+    let settings;
+    try{settings=validateBarOperations(body.settings);}catch(error){throw new AppError(error.message);}
+    const rows=await database(`hb_bar_operations?id=eq.1&revision=eq.${revision}&select=revision`,{
+     method:'PATCH',headers:{Prefer:'return=representation'},
+     body:{settings,revision:revision+1,updated_by:email,updated_at:new Date().toISOString()},
+    });
+    if(!rows?.length)throw new AppError('다른 곳에서 설정이 바뀌었어요. 새로고침해 주세요.',409);
+    return res.json({settings,revision:rows[0].revision});
+   }
    if(action==='admin-alert-state'){
     await dispatchOutbox().catch(()=>{});
     return res.json({result:await rpc('hb_admin_stats')});

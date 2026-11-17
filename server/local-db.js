@@ -49,13 +49,14 @@ const MIGRATIONS = [
   '20261116_z_toss_profile_photo_screening.sql',
   '20261117_z_drink_gifts.sql',
   '20261117_zz_swap_auto_decline.sql',
+  '20261117_zzz_bar_operations.sql',
 ];
 const TABLES = new Set([
   'hb_safety_ops', 'hb_voice_evidence', 'hb_voice_consents', 'hb_push_devices', 'hb_android_ad_claims', 'hb_account_transfers', 'hb_auth_cleanup',
   'hb_members', 'hb_sessions', 'hb_tickets', 'hb_outbox', 'hb_visits', 'hb_rooms',
   'hb_ledger', 'hb_notifications', 'hb_waitlist', 'hb_requests', 'hb_focus',
   'toss_login_links', 'hb_orders', 'hb_ad_claims', 'hb_events',
-  'hb_photo_checks', 'hb_photo_challenges', 'hb_restrictions', 'hb_photo_access',
+  'hb_bar_operations', 'hb_photo_checks', 'hb_photo_challenges', 'hb_restrictions', 'hb_photo_access',
 ]);
 const GUESTS = [
   { key: '91880001', nick: '느긋한 토끼', gender: 'male', drink: 'highball', file: '1.jpg' },

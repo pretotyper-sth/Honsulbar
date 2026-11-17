@@ -17,12 +17,13 @@ import { barMusic } from './bar-music';
 import { nextVisitTick, secondsOnVisitClock, syncVisitClock } from './visit-clock';
 import { useFullVoiceRecording } from './useFullVoiceRecording';
 import { VOICE_CONSENT_VERSION } from './voice-evidence';
-import { call, getConfig, login, clearSession, hasSession, assetUrl, insideToss, requestPushAgreement } from './api';
+import { call, getConfig, getBarOperations, login, clearSession, hasSession, assetUrl, insideToss, requestPushAgreement } from './api';
 import { handleMiniappBack, subscribeMiniappBack, navigationBarOptions } from './miniapp-back';
 import { ExitConfirm } from './ExitConfirm';
 import { Glass } from './Glass';
 import { BarMusic } from './BarMusic';
-import { themeForBar } from './bar-themes';
+import { barThemes, themeForBar } from './bar-themes';
+import { BAR_OPERATIONS_DEFAULTS } from './bar-operations';
 import { BarScene, BarViewOptions } from './BarScene';
 import { barVoice, flatFacingIndicator, partnerFacing } from './bar-scene';
 import { SEATS as positions, POINT_PACKS, SUBSCRIPTIONS, adjacent } from './social';
@@ -232,13 +233,16 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
   const [selection, setSelection] = useState('highball');
   const [speaker, setSpeaker] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
-  const [bgmLevel, setBgmLevel] = useState(() => {
+  const [barOperations, setBarOperations] = useState(BAR_OPERATIONS_DEFAULTS);
+  const [personalBgmLevel, setBgmLevel] = useState(() => {
     try {
       const saved = localStorage.getItem(BGM_LEVEL_KEY);
       if (saved !== null && /^\d{1,3}$/.test(saved)) return Math.min(100, Number(saved)) / 100;
     } catch {}
-    return storageFlag('honsulbar:bgm-muted:v1') ? 0 : 1;
+    return storageFlag('honsulbar:bgm-muted:v1') ? 0 : null;
   });
+  const bgmDefault = barOperations.bgmVolume / 100;
+  const bgmLevel = personalBgmLevel ?? (bgmDefault <= .02 ? 0 : bgmDefault);
   const [voiceVolume, setVoiceVolume] = useState(() => {
     try {
       const saved = localStorage.getItem('honsulbar:voice-volume');
@@ -356,7 +360,8 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
   const seat = visit?.seat ?? 0;
   const guests = useMemo(() => (server?.guests || []).map(g => ({ ...g, photo: assetUrl(g.photo) })), [server?.guests]);
   const room = inside ? { region: visit.region, number: visit.number, count: guests.length + 1 } : entryRoom;
-  const barTheme = themeForBar(room);
+  const roomTheme = barOperations.roomThemes.find(item => item.region === room?.region && item.number === room?.number);
+  const barTheme = barThemes.find(theme => theme.id === roomTheme?.theme) ?? themeForBar(room);
   const rooms = useMemo(() => {
     const grouped = Object.fromEntries(REGIONS.map(r => [r, []]));
     for (const r of server?.rooms || []) (grouped[r.region] ||= []).push({ number: r.number, count: r.count, hasReportedGuest: !!r.hasReportedGuest });
@@ -682,6 +687,14 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
   }, [screen === 'bar']);
   useEffect(() => { getConfig().then(setConfig).catch(() => setConfig({})); }, []);
   useEffect(() => {
+    if (import.meta.env.VITE_QUICK_SEARCH_QA === '1' || !['lobby','bar'].includes(screen)) return;
+    const controller = new AbortController();
+    getBarOperations(controller.signal).then(settings => {
+      if (!controller.signal.aborted && settings) setBarOperations(settings);
+    }).catch(() => {});
+    return () => controller.abort();
+  }, [screen, room?.region, room?.number]);
+  useEffect(() => {
     if(screen==='bar' && !hasVoiceConsent) { setPendingEntry(null);setSheetState('voice-consent'); }
   },[screen,hasVoiceConsent]);
   useEffect(() => {
@@ -780,7 +793,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
     });
   }, [prepareCueAudio]);
 
-  const {start:startAmbience,pause:pauseAmbience} = useBarAmbience({ level:bgmLevel,
+  const {start:startAmbience,pause:pauseAmbience} = useBarAmbience({ level:bgmLevel, tracks:barOperations.tracks,
     active:screen === 'bar' && inside, soundOn:soundOn && bgmLevel > 0, prepareAudio:prepareCueAudio,
     talking:localSpeaking || mesh.talking.some(id => gains[id] > .035),
   });
@@ -1910,6 +1923,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
         </div>
       </> : <>
         <div className="quick-home-hero"><img src="/honsulbar-logo.png" alt=""/><h1>마음 가는 곳에서 잠시 머물러요</h1><p>선호 지역에서 대화할 자리를 먼저 찾아요.</p></div>
+        {barOperations.lobbyNotice && <p className="quick-home-card" style={{overflowWrap:'anywhere'}}>{barOperations.lobbyNotice}</p>}
         <div className="quick-home-card"><strong>선호 지역</strong><Button size="small" variant="weak" onClick={()=>open('quick-region')}>{region}<ChevronDown size={16}/></Button></div>
         {returnRoom && <div className="quick-home-card leftover-card">
           <div>

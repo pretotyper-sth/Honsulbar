@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { API_BASE, getConfig } from './api';
 import {adminSessionExpiresAt} from './admin-session';
+import { AdminBarOperations } from './AdminBarOperations';
 
 const TOKEN_KEY = 'honsulbar:admin-token:v1';
 const RECOVERY_KEY = 'honsulbar:admin-recovery:v1';
@@ -241,6 +242,7 @@ export function AdminPage() {
       <h1>문의·신고</h1>
       <div style={{display:'flex',gap:8,alignItems:'center'}}><button style={styles.weak} onClick={()=>{setPassword('');setPasswordAgain('');setMessage('');setRecovery(true);try{sessionStorage.setItem(RECOVERY_KEY,'1');}catch{}}}>비밀번호 변경</button><button style={styles.weak} onClick={logout}>로그아웃</button></div>
     </div>
+    <AdminBarOperations token={token} request={adminCall} styles={styles}/>
     {data?.stats && <section style={{ ...styles.card, background: stats.overdue ? '#fff5f5' : '#f9fafb' }}>
       <p style={{ margin: 0, fontWeight: 700 }}>미처리 신고 {stats.openReports ?? 0} · 미처리 문의 {stats.openInquiries ?? 0} · <span style={{ color: stats.overdue ? '#de3412' : undefined }}>24시간 초과 {stats.overdue ?? 0}</span> · 제한 중 {stats.banned ?? 0}</p>
       <p style={{ ...styles.meta, margin: '8px 0 0' }}>오늘 {['signup', 'login', 'enter', 'report', 'purchase', 'subscribe', 'ad-claim', 'restrict'].map(name => `${DAY_LABELS[name]} ${day[name] || 0}`).join(' · ')}</p>

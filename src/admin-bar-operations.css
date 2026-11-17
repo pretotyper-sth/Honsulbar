@@ -1,0 +1,16 @@
+.bar-ops-fields { border:0; padding:0; margin:0; min-inline-size:0; }
+.bar-ops-table { width:100%; table-layout:fixed; border-collapse:collapse; text-align:left; font-size:14px; }
+.bar-ops-table :is(th, td) { padding:10px 6px; vertical-align:top; border-bottom:1px solid #e5e8eb; }
+.bar-ops-table th:first-child { width:36%; }
+.bar-ops-table thead { background:#f2f4f6; }
+.bar-ops-table small { display:block; margin-top:4px; font-weight:400; color:#6b7684; word-break:keep-all; }
+.bar-ops-tracks summary { cursor:pointer; }
+.bar-ops-tracks label { display:flex; align-items:center; gap:6px; margin-top:6px; min-height:28px; }
+.bar-ops-table :is(select, textarea, input[type=number]) {
+  min-width:0; width:100%; min-height:36px; border:1px solid #d1d6db; border-radius:8px;
+  padding:6px; background:#fff; color:inherit; font:inherit;
+}
+.bar-ops-volume { display:flex; gap:6px; align-items:center; max-width:100px; }
+.bar-ops-room { display:grid; grid-template-columns:1fr 1fr; gap:5px; margin-bottom:8px; }
+.bar-ops-room button { justify-self:start; }
+.bar-ops-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }

@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef } from 'react';
 import { shuffleBarMusic } from './bar-music';
 import { normalizeBarMusic } from './bar-music-level';
 
-export function useBarAmbience({ active, soundOn, talking, prepareAudio, level=1 }) {
+export function useBarAmbience({ active, soundOn, talking, prepareAudio, level=1, tracks }) {
   const music = useRef(null);
+  const playlistKey = tracks?.join(',');
   const volume = active && soundOn ? level * (talking ? 0.0015 : 0.012) : 0;
   const latestVolume = useRef(volume);
   latestVolume.current = volume;
@@ -38,7 +39,7 @@ export function useBarAmbience({ active, soundOn, talking, prepareAudio, level=1
         const item = { element, output };
         let queue = [], previousTrack;
         const selectNext = () => {
-          if (!queue.length) queue = shuffleBarMusic(previousTrack);
+          if (!queue.length) queue = shuffleBarMusic(previousTrack, playlistKey?.split(','));
           previousTrack = queue.shift();
           element.src = `${import.meta.env.BASE_URL}audio/lounge/${previousTrack.file}.m4a`;
         };
@@ -53,9 +54,20 @@ export function useBarAmbience({ active, soundOn, talking, prepareAudio, level=1
       }
     }
     play(music.current);
-  }, [play, prepareAudio]);
+  }, [play, prepareAudio, playlistKey]);
 
   const pause = useCallback(() => music.current?.element.pause(), []);
+
+  useEffect(() => () => {
+    const item = music.current;
+    if (!item) return;
+    item.element.onended = null;
+    item.element.pause();
+    item.element.removeAttribute('src');
+    item.element.load();
+    item.output.close();
+    music.current = null;
+  }, [playlistKey]);
 
   useEffect(() => {
     const syncPlayback = () => {
@@ -71,17 +83,6 @@ export function useBarAmbience({ active, soundOn, talking, prepareAudio, level=1
     const item = music.current;
     if (item) item.output.setVolume(volume, talking ? 0.08 : 0.32);
   }, [volume, talking]);
-
-  useEffect(() => () => {
-    const item = music.current;
-    if (!item) return;
-    item.element.onended = null;
-    item.element.pause();
-    item.element.removeAttribute('src');
-    item.element.load();
-    item.output.close();
-    music.current = null;
-  }, []);
 
   return { start, pause };
 }

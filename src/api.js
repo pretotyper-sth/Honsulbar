@@ -92,6 +92,12 @@ async function request(body, method = 'POST', {signal} = {}) {
 }
 
 export const getConfig = () => serviceRequest(null, 'GET');
+export async function getBarOperations(signal) {
+  const response = await fetch(`${API_BASE}/api/service?barOperations=1`, {signal});
+  if (!response.ok) throw new ApiError('운영 설정을 불러오지 못했어요.',response.status);
+  return (await response.json()).settings;
+}
+
 export const call = (action, data, extra = {}, options = {}) => serviceRequest({ action, data, ...extra }, 'POST', options);
 
 export async function login(config, accountTransferCode) {

@@ -11,12 +11,12 @@ export const barMusic = [
   { title: 'Backed Vibes (clean)', file: 'backed-vibes-clean', isrc: 'USUAN1100479' },
 ];
 
-export function shuffleBarMusic(previousTrack) {
-  const queue = [...barMusic];
+export function shuffleBarMusic(previousTrack, tracks) {
+  const queue = tracks ? barMusic.filter(track => tracks.includes(track.file)) : [...barMusic];
   for (let i = queue.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [queue[i], queue[j]] = [queue[j], queue[i]];
   }
-  if (queue[0] === previousTrack) [queue[0], queue[1]] = [queue[1], queue[0]];
+  if (queue.length > 1 && queue[0] === previousTrack) [queue[0], queue[1]] = [queue[1], queue[0]];
   return queue;
 }
