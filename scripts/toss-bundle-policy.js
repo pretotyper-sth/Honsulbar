@@ -27,6 +27,9 @@ export function assertTossEntry(name,bytes) {
  if(!isTossPublicAsset(path))throw new Error(`앱인토스 번들에 AOS 전용 파일이 포함됐습니다: ${name}`);
  if(/\.(?:html?|[cm]?js|json|css|txt|map)$/i.test(path)) {
   const text=Buffer.from(bytes).toString('utf8');
+  if (/음성 테스트방 입장|QA 테스트|qa-scenarios/.test(text)) {
+   throw new Error(`앱인토스 번들에 QA 진입점이 포함됐습니다: ${name}`);
+  }
   const forbidden=/portone|iamport|IMP\.request_pay|IMP\.init|requestIdentityVerification|com\.honsulbar\.app|(?:cdn|api)\.iamport\.kr|com\.google\.android\.gms\.ads|pagead2\.googlesyndication\.com|com\.android\.billingclient|@capacitor\//i;
   const hit=forbidden.exec(text);
   if(hit)throw new Error(`앱인토스에서 지원하지 않는 SDK/경로가 포함됐습니다: ${name} (${hit[0]})`);

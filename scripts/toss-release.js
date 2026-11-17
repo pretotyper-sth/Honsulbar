@@ -15,6 +15,7 @@ function loadEnv(name) {
 }
 loadEnv('.env.local');
 loadEnv('.env');
+process.env.VITE_QUICK_SEARCH_QA = '0';
 const ait = resolve(root, 'node_modules/.bin/ait');
 const vite = resolve(root, 'node_modules/.bin/vite');
 const bundle = resolve(root, 'honsulbar.ait');

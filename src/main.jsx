@@ -1977,7 +1977,6 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
             : <Button size="small" variant="weak" disabled={server?.safetyPaused || busy}
                 onClick={() => requestEntry(returnRoom, { confirm: true })}>다시 입장</Button>}
         </div>}
-        {pilotBuild && pilotRoom && <Button className="quick-guide" size="small" variant="weak" onClick={()=>requestEntry(pilotRoom)}>음성 테스트방 입장</Button>}
         <Button className="quick-guide" size="small" variant="weak" onClick={()=>open('quick-safety')}>안전한 대화 가이드</Button>
         <div className="lobby-footer">
           <p className="entry-benefit">{server?.safetyPaused ? '안전 점검 중이에요. 잠시 후 다시 이용해 주세요.' : '입장 시 포인트가 차감돼요.'}</p>
