@@ -39,6 +39,12 @@ export function warmPhotoVerifier(){
 }
 export async function verifyPhoto(photo,frames,motion){
  if(!Array.isArray(frames)||frames.length!==2||!['near','far'].includes(motion))throw new AppError('얼굴 확인을 다시 시작해 주세요.');
+ return runPhotoJob({photo,frames,motion});
+}
+export function checkProfilePhoto(photo){
+ return runPhotoJob({photo,profileOnly:true});
+}
+async function runPhotoJob(job){
  if(waiting>=2)throw new AppError('검사가 몰리고 있어요. 잠시 후 다시 시도해 주세요.',503);
  waiting++;
  const work=queue.then(async()=>{
@@ -46,7 +52,7 @@ export async function verifyPhoto(photo,frames,motion){
   return new Promise((resolve,reject)=>{
    const id=++nextId;
    const timer=setTimeout(()=>reset('검사 시간이 길어졌어요. 다시 시도해 주세요.'),45000);
-   pending.set(id,{resolve,reject,timer});worker.ref();worker.postMessage({id,photo,frames,motion});
+   pending.set(id,{resolve,reject,timer});worker.ref();worker.postMessage({id,...job});
   });
  });
  queue=work.catch(()=>{});

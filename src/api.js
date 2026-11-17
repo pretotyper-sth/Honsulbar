@@ -69,7 +69,7 @@ async function request(body, method = 'POST', {signal} = {}) {
   const cancel=()=>controller?.abort();
   signal?.addEventListener('abort',cancel,{once:true});
   if(signal?.aborted)cancel();
-  const timer=controller?setTimeout(cancel,body.action==='photo-verify'?50000:20000):null;
+  const timer=controller?setTimeout(cancel,['photo-verify','photo-screen'].includes(body.action)?50000:20000):null;
   try {
     const response = await fetch(`${API_BASE}/api/service`, {
       method,

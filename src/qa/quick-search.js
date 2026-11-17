@@ -1,4 +1,4 @@
-import { CAPACITY, DRINKS } from '../model';
+import { CAPACITY, DRINKS, BASE_DRINK_MINUTES } from '../model';
 import photo1 from '../../scripts/local-guests/1.jpg?inline';
 import photo2 from '../../scripts/local-guests/2.jpg?inline';
 import photo3 from '../../scripts/local-guests/3.jpg?inline';
@@ -9,7 +9,7 @@ const room = (number, count, region = '서울', hasReportedGuest = false) => ({r
 const makeGuest = (seat, index = 0) => ({
   id:`qa-guest-${index}`, nickname:`${['느긋한 토끼','포근한 구름','조용한 여우','반짝이는 달'][index % 4]}${index >= 4 ? index+1 : ''}`,
   gender:index % 2 ? 'female' : 'male', photo:photos[index % photos.length], seat,
-  drinkId:DRINKS[index % DRINKS.length].id, seconds:1800 - 32 * index, mic:index % 2 === 0,
+  drinkId:DRINKS[index % DRINKS.length].id, seconds:DRINKS[index % DRINKS.length].minutes * 60 - 32 * index, mic:index % 2 === 0,
 });
 const quickGuest = makeGuest(1);
 const scenarios = [
@@ -33,11 +33,13 @@ const scenarios = [
     ['empty','빈 방 대기'], ['match','자동 매칭'], ['decline','상대가 거절'], ['expired','시간 초과'],
     ['unverified','프로필 미등록'], ['visit-expired','이용시간 초과'], ['bar-rejoin','남은 시간으로 재입장'],
     ['bar-camera','촬영 가이드','내 프로필 → 얼굴 확인하기'],
+    ['home-camera-retry-photo','촬영 재시도 · 등록 사진'],
+    ['home-camera-retry-lighting','촬영 재시도 · 조명과 얼굴 위치'],
   ]],
   ['바 화면과 이용 시간', [
     ['view-guide','첫 입장 시점 안내','홈에서 혼술바에 입장해 확인'],
     ['bar-third','기본 3D·옷 색·소리 방향'], ['bar-first','1인칭'], ['bar-flat','2D'], ['bar-full','12석 만석'],
-    ['bar-remote-facing','다른 손님 의자 회전·퇴장'], ['bar-solo','혼자 대기 · 30:00'], ['bar-arrival','5초 뒤 손님 입장'], ['bar-departure','5초 뒤 손님 퇴장'],
+    ['bar-remote-facing','다른 손님 의자 회전·퇴장'], ['bar-solo','혼자 대기 · 20:00'], ['bar-arrival','5초 뒤 손님 입장'], ['bar-departure','5초 뒤 손님 퇴장'],
     ['bar-low','5분 미만 경고'], ['bar-ended','이용 시간 종료'], ['bar-order','한 잔 더 주문'], ['bar-held-drink','손에 든 잔 · 잔량과 이동'],
     ['bar-host','사장 자리 · 시간 제한 없음'],
   ]],
@@ -87,7 +89,7 @@ export function setScenario(next) {
     filtered:[room(1,12),room(2,4,'서울',true),room(3,3)],
   };
   state={
-    member:{id:'qa-member',nickname:'테스트 손님',adult:true,photoChecked:!['unverified','bar-camera'].includes(next),gender:next==='unverified'?null:'female',photo:next==='unverified'?null:photo2,balance:10000},
+    member:{id:'qa-member',nickname:'테스트 손님',adult:true,photoChecked:!['unverified','bar-camera'].includes(next) && !next.startsWith('home-camera-retry-'),gender:next==='unverified'?null:'female',photo:next==='unverified'?null:photo2,balance:10000},
     rooms:rooms[next]||[], visit:null, guests:[], requests:[], partners:{}, declinedSwapIds:[], waitlist:[], notifications:[], seatNeutralClock:next!=='bar-host', safetyPaused:next==='paused',
   };
   if (next.startsWith('home-')) {
@@ -121,7 +123,7 @@ export function setScenario(next) {
   if (!next.startsWith('bar-') || next === 'bar-camera') return;
 
   const mine = {'bar-host':11,'bar-swap-wait':8,'bar-focus-right-end':10,'bar-move-blocked':4}[next] ?? 0;
-  const time = {'bar-low':240,'bar-ended':0,'bar-order':810,'bar-held-drink':810,'bar-rejoin':1240}[next] ?? 1800;
+  const time = {'bar-low':240,'bar-ended':0,'bar-order':810,'bar-held-drink':810,'bar-rejoin':1040}[next] ?? BASE_DRINK_MINUTES*60;
   const away = next === 'bar-rejoin';
   const solo = ['bar-solo','bar-arrival'].includes(next);
   const guestsAt = {
@@ -330,7 +332,13 @@ export function qaRequest(body,method) {
     state.requests=[];
     state.partners={};
   }
-  return {state:structuredClone(state),result};
+  const output=structuredClone(state);
+  if(output.visit){
+    output.clockSampleMs=Date.now();
+    const paused=output.safetyPaused||(!output.visit.away&&(output.visit.soloPaused||(output.visit.seat===11&&!output.seatNeutralClock)));
+    output.visit.clockEndMs=paused?null:lastTick+output.visit.seconds*1000;
+  }
+  return {state:output,result};
 }
 
 function spendPoints(amount) {

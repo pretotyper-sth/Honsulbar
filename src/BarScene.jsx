@@ -9,6 +9,8 @@ const views = [
   ['first', '3D 1인칭', '화면을 끌어서 듣고 싶은 쪽을 봐요.'],
   ['flat', '2D', '위에서 내려다보며 자리를 한눈에 봐요.'],
 ];
+const MIN_FRAME_MS = 32;
+const liquidTime = seconds => Math.ceil(Math.max(0,seconds)/5)*5;
 
 export function BarViewOptions({ view, onChange }) {
   return <div className="bar-view-options" role="group" aria-label="시점 선택">
@@ -21,7 +23,7 @@ export function BarViewOptions({ view, onChange }) {
   </div>;
 }
 
-export function BarScene({ view, seat, memberId, gender, facing, partners, drinkId, seconds, elapsed, seatNeutralClock, guests, renderSeat, onUnavailable, onOpenSeats, onFacingChange, moving, onMotionChange, seatPickerRef, onCue }) {
+export function BarScene({ view, seat, memberId, gender, facing, partners, drinkId, seconds, elapsed, seatNeutralClock, guests, renderSeat, onUnavailable, onOpenSeats, onFacingChange, moving, onMotionChange, seatPickerRef, onCue, children }) {
   const canvas = useRef(null);
   const depthCanvas = useRef(null);
   const depth = useRef(null);
@@ -30,6 +32,12 @@ export function BarScene({ view, seat, memberId, gender, facing, partners, drink
   const moves = useRef(new Map());
   const [pitch, setPitch] = useState(FIRST_PERSON_PITCH);
   const drag = useRef(null);
+  const lastDraw = useRef(-Infinity);
+  const liquidSeconds = liquidTime(seconds);
+  const visibleGuests = JSON.stringify(guests.map(({id,seat,gender,facing,drinkId,seconds}) => ({
+    id,seat,gender,facing,drinkId,seconds:liquidTime(seat===11&&!seatNeutralClock ? seconds : seconds-elapsed),
+  })).sort((a,b)=>a.id.localeCompare(b.id)));
+  const visiblePartners = JSON.stringify(Object.entries(partners).sort());
 
   function turnBy(degrees) {
     onFacingChange(value => wrapFacing(value + degrees));
@@ -88,19 +96,17 @@ export function BarScene({ view, seat, memberId, gender, facing, partners, drink
     if (!context) { onUnavailable('flat'); return; }
     const buttons = [...markers.current.children];
     const myId = memberId || 'me';
+    const scenePartners = Object.fromEntries(JSON.parse(visiblePartners));
     const people = [
-      {id:myId, seat, mine:true, gender, facing, drinkId, seconds, unlimited:seat===11&&!seatNeutralClock},
-      ...guests.map(person => {
-        const unlimited = person.seat === 11 && !seatNeutralClock;
-        return {...person, unlimited, seconds:unlimited ? person.seconds : Math.max(0,person.seconds-elapsed)};
-      }),
+      {id:myId, seat, mine:true, gender, facing, drinkId, seconds:liquidSeconds, unlimited:seat===11&&!seatNeutralClock},
+      ...JSON.parse(visibleGuests).map(person=>({...person,unlimited:person.seat===11&&!seatNeutralClock})),
     ];
     const updated = new Map(people.map(person => [person.id, person.seat]));
     const changedAt = performance.now();
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     for (const id of rotations.current.keys()) if (!updated.has(id)) rotations.current.delete(id);
     for (const person of people) {
-      const partner = partners[person.mine ? 'me' : person.id];
+      const partner = scenePartners[person.mine ? 'me' : person.id];
       const partnerSeat = updated.get(partner === 'me' ? myId : partner);
       const reported = person.facing || 0;
       let turn = rotations.current.get(person.id);
@@ -167,9 +173,13 @@ export function BarScene({ view, seat, memberId, gender, facing, partners, drink
 
     let frame;
     function draw(now) {
+      frame = undefined;
+      if (document.hidden) return;
+      if (now-lastDraw.current < MIN_FRAME_MS) { redraw(); return; }
       const {clientWidth:width, clientHeight:height} = scene;
       if (!width || !height) return;
-      const scale = Math.min(2, window.devicePixelRatio || 1);
+      lastDraw.current = now;
+      const scale = Math.min(1.5, window.devicePixelRatio || 1);
       const pixelsWide = Math.round(width * scale);
       const pixelsHigh = Math.round(height * scale);
       if (scene.width !== pixelsWide || scene.height !== pixelsHigh) {
@@ -227,17 +237,17 @@ export function BarScene({ view, seat, memberId, gender, facing, partners, drink
         marker.style.setProperty('--spot-y', `${point.top}px`);
         marker.style.zIndex = Math.max(1, Math.floor(1000 - point.depth * 35));
       });
-      if (moves.current.size || turning) frame = requestAnimationFrame(draw);
+      if (moves.current.size || turning) redraw();
     }
     function redraw() {
-      cancelAnimationFrame(frame);
-      draw(performance.now());
+      if (frame === undefined && !document.hidden) frame = requestAnimationFrame(draw);
     }
     const observer = new ResizeObserver(redraw);
     observer.observe(scene);
     redraw();
-    return () => { observer.disconnect(); cancelAnimationFrame(frame); };
-  }, [view, seat, memberId, gender, facing, partners, drinkId, seconds, elapsed, seatNeutralClock, guests, pitch, onUnavailable, onMotionChange, onCue]);
+    document.addEventListener('visibilitychange', redraw);
+    return () => { observer.disconnect(); cancelAnimationFrame(frame); document.removeEventListener('visibilitychange', redraw); };
+  }, [view, seat, memberId, gender, facing, visiblePartners, drinkId, liquidSeconds, seatNeutralClock, visibleGuests, pitch, onUnavailable, onMotionChange, onCue]);
 
   const first = view === 'first';
   return <>
@@ -253,6 +263,7 @@ export function BarScene({ view, seat, memberId, gender, facing, partners, drink
       <div className="bar-scene-markers" ref={markers}>
         {Array.from({length:12}, (_, i) => renderSeat(i, false, moving))}
       </div>
+      {children}
     </div>
     {first && <div className="bar-first-controls">
       <button type="button" aria-label="왼쪽 보기" disabled={moving} onClick={() => turnBy(-45)}><ArrowLeft size={17}/></button>

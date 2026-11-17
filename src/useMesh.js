@@ -4,6 +4,8 @@ import { createVoiceBuffer, evidencePayload } from './voice-evidence';
 
 const GATHER_TIMEOUT = 3000;
 const RETRY_MS = 15000;
+const DISCONNECT_GRACE_MS = 1800;
+const isConnectionLost = pc => ['disconnected', 'failed'].includes(pc.connectionState);
 
 function waitForIce(pc) {
   if (pc.iceGatheringState === 'complete') return Promise.resolve();
@@ -23,16 +25,27 @@ export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains, p
   const recording = useRef(null);
   const [recordingStream,setRecordingStream] = useState(null);
   const track = useRef(null);
+  const localStream = useRef(null);
   const gainValues = useRef({});
   const panValues = useRef({});
   const active = useRef(enabled);
   const wantedPeers = useRef(new Set(peerIds));
+  const incomingSignals = useRef(new Map());
   wantedPeers.current = new Set(peerIds);
   const [talking, setTalking] = useState([]);
-  track.current = stream?.getAudioTracks()[0] || null;
+  const [reconnecting, setReconnecting] = useState([]);
+  track.current = stream?.getAudioTracks().find(item => item.readyState === 'live') || null;
+  localStream.current = stream;
   gainValues.current = gains;
   panValues.current = pans;
   active.current = enabled;
+
+  const flushCandidates = useCallback(peer => {
+    const ice = peer.lateIce;
+    if (!ice?.announced || !ice.pending.length || !active.current ||
+        peers.current.get(peer.id) !== peer || !wantedPeers.current.has(peer.id)) return;
+    call('signal', {targetId:peer.id,signal:{type:'ice-candidates',session:peer.session,candidates:ice.pending.splice(0)}}).catch(() => {});
+  }, []);
 
   const audio = useCallback(() => {
     if (!context.current) {
@@ -44,7 +57,7 @@ export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains, p
       recording.current = context.current.createMediaStreamDestination();
       setRecordingStream(recording.current.stream);
     }
-    if (context.current.state === 'suspended') context.current.resume().catch(() => {});
+    if (context.current.state === 'suspended' || context.current.state === 'interrupted') context.current.resume().catch(() => {});
     return context.current;
   }, []);
 
@@ -52,7 +65,7 @@ export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains, p
     const peer = peers.current.get(id);
     if (!peer) return;
     clearTimeout(peer.retry);
-    peer.pc.ontrack = null; peer.pc.onconnectionstatechange = null;
+    peer.pc.ontrack = null; peer.pc.onconnectionstatechange = null; peer.pc.onicecandidate = null;
     peer.pc.close();
     if (peer.capture) { peer.capture.onaudioprocess = null; peer.capture.disconnect(); }
     peer.evidence?.clear();
@@ -64,9 +77,34 @@ export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains, p
   const create = useCallback((id, initiator) => {
     const pc = new RTCPeerConnection({ iceServers });
     const peer = { id, pc, initiator };
-    if (initiator) peer.transceiver = pc.addTransceiver('audio', { direction: 'sendrecv' });
+    if (!initiator) {
+      const requestRestart = async () => {
+        if (!active.current || peers.current.get(id) !== peer ||
+            !wantedPeers.current.has(id) || !isConnectionLost(pc)) return;
+        await call('signal', {targetId:id, signal:{type:'restart-ice', session:peer.session}}).catch(() => {});
+        if (peers.current.get(id) === peer && isConnectionLost(pc)) {
+          clearTimeout(peer.retry);
+          peer.retry = setTimeout(requestRestart, RETRY_MS);
+        }
+      };
+      pc.onconnectionstatechange = () => {
+        clearTimeout(peer.retry);
+        if (isConnectionLost(pc)) {
+          peer.retry = setTimeout(requestRestart, pc.connectionState === 'failed' ? 500 : DISCONNECT_GRACE_MS + 500);
+        }
+      };
+    }
+    if (initiator) peer.transceiver = pc.addTransceiver(track.current ?? 'audio', {
+      direction: 'sendrecv',
+      ...(track.current ? {streams: [localStream.current]} : {}),
+    });
+    pc.onicecandidate = event => {
+      if (!event.candidate || !peer.lateIce) return;
+      peer.lateIce.pending.push(event.candidate.toJSON());
+      flushCandidates(peer);
+    };
     pc.ontrack = event => {
-      const remote = event.streams[0] || new MediaStream([event.track]);
+      const remote = new MediaStream([event.track]);
       const ctx = audio();
       peer.element = new Audio();
       peer.element.muted = true;
@@ -101,53 +139,129 @@ export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains, p
     };
     peers.current.set(id, peer);
     return peer;
-  }, [iceServers, audio, evidenceEnabled]);
+  }, [iceServers, audio, evidenceEnabled, flushCandidates]);
 
   const describe = useCallback(async peer => {
     await waitForIce(peer.pc);
     if (!active.current || !wantedPeers.current.has(peer.id) || peers.current.get(peer.id) !== peer || !peer.pc.localDescription) return;
     const { type, sdp } = peer.pc.localDescription;
+    const ice = {announced:false,pending:[]};
+    peer.lateIce = ice;
     await call('signal', { targetId: peer.id, signal: { type, sdp, session: peer.session } });
-  }, []);
+    ice.announced = true;
+    if (peer.lateIce === ice) flushCandidates(peer);
+  }, [flushCandidates]);
 
-  const offer = useCallback(async id => {
+  const offer = useCallback((id, recoveredOffer = false) => {
     close(id);
     if (!active.current || !wantedPeers.current.has(id)) return;
     const peer = create(id, true);
+    peer.recoveredOffer = recoveredOffer;
     peer.session = crypto.randomUUID();
-    try {
-      await peer.transceiver.sender.replaceTrack(track.current);
-      await peer.pc.setLocalDescription(await peer.pc.createOffer());
-      await describe(peer);
-    } catch {}
-    peer.retry = setTimeout(() => {
-      if (peers.current.get(id) === peer && peer.pc.connectionState !== 'connected') offer(id);
-    }, RETRY_MS);
-    peer.pc.onconnectionstatechange = () => {
-      if (peer.pc.connectionState === 'failed' && peers.current.get(id) === peer) offer(id);
+    const isCurrent = () => active.current && wantedPeers.current.has(id) && peers.current.get(id) === peer;
+    const schedule = (delay = RETRY_MS) => {
+      clearTimeout(peer.retry);
+      if (!isCurrent() || peer.pc.connectionState === 'connected') return;
+      peer.retry = setTimeout(() => sendOffer(true), delay);
     };
+    async function sendOffer(iceRestart, requestedByPeer = false) {
+      if (!isCurrent() || peer.offering) return;
+      if (iceRestart && !requestedByPeer && peer.pc.connectionState === 'connected') return;
+      peer.offering = true;
+      try {
+        if (peer.pc.signalingState === 'stable') {
+          peer.lateIce = null;
+          await peer.pc.setLocalDescription(await peer.pc.createOffer(iceRestart ? {iceRestart:true} : undefined));
+        }
+        await describe(peer);
+      } catch {}
+      finally { peer.offering = false; schedule(); }
+    }
+    peer.pc.onconnectionstatechange = () => {
+      const state = peer.pc.connectionState;
+      schedule(state === 'failed' ? 200 : state === 'disconnected' ? DISCONNECT_GRACE_MS : RETRY_MS);
+    };
+    peer.scheduleRetry = schedule;
+    peer.restartIce = () => sendOffer(true, true);
+    return sendOffer(false);
   }, [close, create, describe]);
 
-  const receive = useCallback(async signals => {
-    for (const { sender, data } of signals || []) {
-      if (!active.current || !wantedPeers.current.has(sender) || !data?.sdp) continue;
+  const restoreAudio = useCallback(peer => {
+    if (!track.current || !active.current || !wantedPeers.current.has(peer.id) ||
+        peers.current.get(peer.id) !== peer || peer.audioRecovery) return;
+    peer.audioRecovery = true;
+    if (peer.initiator && !peer.recoveredOffer) offer(peer.id, true);
+    else if (!peer.initiator) {
+      call('signal', {targetId: peer.id, signal: {type: 'retry-audio', session: peer.session}}).catch(() => {
+        peer.audioRecovery = false;
+      });
+    }
+  }, [offer]);
+
+  const syncAudioTrack = useCallback(async peer => {
+    const transceiver = peer.transceiver;
+    if (!transceiver || peers.current.get(peer.id) !== peer) return;
+    const next = track.current;
+    try {
+      if (transceiver.sender.track !== next) await transceiver.sender.replaceTrack(next);
+      if (next !== track.current || !next) return;
+      if (peer.pc.signalingState === 'stable' &&
+          (transceiver.currentDirection === 'recvonly' || transceiver.currentDirection === 'inactive')) restoreAudio(peer);
+    } catch {
+      if (next === track.current) restoreAudio(peer);
+    }
+  }, [restoreAudio]);
+
+  const receive = useCallback(signals => Promise.all((signals || []).map(({ sender, data }) => {
+    const queues = incomingSignals.current;
+    const work = (queues.get(sender) ?? Promise.resolve()).then(async () => {
+      if (!active.current || !wantedPeers.current.has(sender) || !data) return;
+      let peer = peers.current.get(sender);
+      if (data.type === 'restart-ice') {
+        if (peer?.initiator && peer.session === data.session) await peer.restartIce();
+        return;
+      }
+      if (data.type === 'retry-audio') {
+        if (peer?.initiator && peer.session === data.session && !peer.recoveredOffer) offer(sender, true);
+        return;
+      }
+      if (data.type === 'ice-candidates') {
+        if (peer?.session === data.session && peer.pc.remoteDescription && Array.isArray(data.candidates)) {
+          for (const candidate of data.candidates.slice(0,12)) {
+            try { await peer.pc.addIceCandidate(candidate); } catch {}
+          }
+        }
+        return;
+      }
+      if (!data.sdp) return;
       try {
         if (data.type === 'offer') {
-          close(sender);
-          const peer = create(sender, false);
-          peer.session = data.session;
+          if (!peer || peer.initiator || peer.session !== data.session) {
+            close(sender);
+            peer = create(sender, false);
+            peer.session = data.session;
+          }
           await peer.pc.setRemoteDescription({ type: 'offer', sdp: data.sdp });
-          peer.transceiver = peer.pc.getTransceivers()[0];
-          if (peer.transceiver) { peer.transceiver.direction = 'sendrecv'; await peer.transceiver.sender.replaceTrack(track.current); }
+          peer.transceiver = peer.pc.getTransceivers().find(item => item.receiver.track.kind === 'audio');
+          if (peer.transceiver) {
+            peer.transceiver.direction = 'sendrecv';
+            await syncAudioTrack(peer);
+          }
+          peer.lateIce = null;
           await peer.pc.setLocalDescription(await peer.pc.createAnswer());
           await describe(peer);
-        } else if (data.type === 'answer') {
-          const peer = peers.current.get(sender);
-          if (peer?.session === data.session && peer.pc.signalingState === 'have-local-offer') await peer.pc.setRemoteDescription({ type: 'answer', sdp: data.sdp });
+          await syncAudioTrack(peer);
+        } else if (data.type === 'answer' && peer?.session === data.session && peer.pc.signalingState === 'have-local-offer') {
+          await peer.pc.setRemoteDescription({ type: 'answer', sdp: data.sdp });
+          await syncAudioTrack(peer);
         }
       } catch {}
-    }
-  }, [close, create, describe]);
+    }).finally(() => {
+      if (queues.get(sender) === work) queues.delete(sender);
+    });
+    queues.set(sender, work);
+    return work;
+  })), [close, create, describe, offer, syncAudioTrack]);
 
   const peerKey = [...peerIds].sort().join(',');
   useEffect(() => {
@@ -166,8 +280,17 @@ export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains, p
   useEffect(() => () => { [...peers.current.keys()].forEach(close); context.current?.close().catch(() => {}); }, [close]);
 
   useEffect(() => {
-    for (const peer of peers.current.values()) peer.transceiver?.sender.replaceTrack(track.current).catch(() => {});
-  }, [stream]);
+    for (const peer of peers.current.values()) syncAudioTrack(peer);
+  }, [stream, syncAudioTrack]);
+
+  useEffect(() => {
+    for (const peer of peers.current.values()) {
+      try {
+        peer.pc.setConfiguration({...peer.pc.getConfiguration(),iceServers});
+        if (peer.pc.connectionState !== 'connected' && peer.pc.signalingState === 'stable') peer.scheduleRetry?.(200);
+      } catch {}
+    }
+  }, [iceServers]);
 
   useEffect(() => {
     const ctx = context.current;
@@ -179,18 +302,31 @@ export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains, p
   }, [JSON.stringify(gains), JSON.stringify(pans)]);
 
   useEffect(() => {
-    if (!enabled) { setTalking([]); return undefined; }
+    if (!enabled) { setTalking([]);setReconnecting([]);return undefined; }
     const buffer = new Float32Array(512);
     const timer = setInterval(() => {
+      if (document.hidden) return;
       const next = [];
+      const recovering = [];
+      const now = Date.now();
       for (const [id, peer] of peers.current) {
+        if (peer.pc.connectionState === 'connected') peer.wasConnected = true;
+        else if (peer.wasConnected && ['disconnected','failed','connecting'].includes(peer.pc.connectionState)) recovering.push(id);
         if (!peer.analyser) continue;
+        const sampleInterval = gainValues.current[id] > 0 ? 250 : 500;
+        if (now - (peer.lastVoiceSample ?? 0) < sampleInterval - 20) {
+          if (now - (peer.lastVoiceAt ?? 0) < 550) next.push(id);
+          continue;
+        }
+        peer.lastVoiceSample = now;
         peer.analyser.getFloatTimeDomainData(buffer);
         const rms = Math.sqrt(buffer.reduce((sum, value) => sum + value * value, 0) / buffer.length);
-        if (rms > 0.02) next.push(id);
+        if (rms > 0.014) peer.lastVoiceAt = now;
+        if (now - (peer.lastVoiceAt ?? 0) < 550) next.push(id);
       }
       setTalking(previous => (previous.join() === next.join() ? previous : next));
-    }, 200);
+      setReconnecting(previous => (previous.join() === recovering.join() ? previous : recovering));
+    }, 250);
     return () => clearInterval(timer);
   }, [enabled]);
 
@@ -199,5 +335,5 @@ export function useMesh({ enabled, selfId, peerIds, stream, iceServers, gains, p
     if(document.hidden || !enabled || !evidenceEnabled || !(gains[id]>0) || !peer?.lastSampleAt || Date.now()-peer.lastSampleAt>2000)return null;
     return evidencePayload(peer.evidence);
   };
-  return { receive, talking, resume: audio, evidenceFor, recordingStream };
+  return { receive, talking, reconnecting, resume: audio, evidenceFor, recordingStream };
 }

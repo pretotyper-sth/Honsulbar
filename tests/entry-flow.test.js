@@ -16,7 +16,7 @@ test('a registered picture is not treated as a verified picture; adult and profi
 });
 function fixture(run){
  const changes=[];
- const env={busy:false,orderLock:{current:false},entering:{current:false},isWelcome:true,room:{region:'서울',number:1},selection:'highball',chosen:{name:'하이볼',minutes:30},run,resetConversation(){},setWaveSent(){},setSpeaker(){},setSoundOn(){},setMutedGuests(){},mesh:{resume(){}},setBusy(v){env.busy=v;},setError(v){changes.push(['error',v]);},setToast(v){changes.push(['toast',v]);},setSheet(v){changes.push(['sheet',v]);},setScreen(v){changes.push(['screen',v]);},setServer(){throw new Error('optimistic balance/visit must not be fabricated');}};
+ const env={busy:false,orderLock:{current:false},entering:{current:false},isWelcome:true,room:{region:'서울',number:1},selection:'highball',chosen:{name:'하이볼',minutes:20},DRINK_DURATION_VERSION:'20-40',startAmbience(){},pauseAmbience(){},run,resetConversation(){},setWaveSent(){},setSpeaker(){},setSoundOn(){},setMutedGuests(){},mesh:{resume(){}},setBusy(v){env.busy=v;},setError(v){changes.push(['error',v]);},setToast(v){changes.push(['toast',v]);},setSheet(v){changes.push(['sheet',v]);},setScreen(v){changes.push(['screen',v]);},setServer(){throw new Error('optimistic balance/visit must not be fabricated');}};
  vm.createContext(env);vm.runInContext(orderSource,env);return {env,changes};
 }
 test('failed entry keeps the drink sheet and does not flash a bar or invent a point deduction',async()=>{
@@ -44,10 +44,10 @@ test('registered but unverified profile is sent to verification before the drink
  vm.createContext(env);vm.runInContext(gateSource,env);env.proceedEntry({number:1});
  assert.deepEqual(calls,['profile']);
 });
-test('existing unverified pictures are loaded for the same camera verification instead of requiring reupload',async()=>{
+test('existing unverified Toss pictures are screened again without requiring reupload',async()=>{
  const code=source.slice(source.indexOf('  async function openProfileEditor('),source.indexOf('  async function saveProfile()'));
  const calls=[],drafts=[];
- const env={member:{photo:'/signed-picture',photoChecked:false,nickname:'테스트',gender:'male'},photoInspect:{current:0},assetUrl:value=>value,randomNickname:()=> '랜덤',setProfile:()=>{},setPhotoDraft:value=>drafts.push(value),setDraftVerified:value=>calls.push(['verified',value]),setPhotoProof:()=>{},changeFaceConsent:()=>{},setPhotoCheck:value=>calls.push(['check',value]),open:()=>{},setToast:()=>{},setError:()=>{},fetch:async()=>({ok:true,blob:async()=>({})}),resizePhoto:async()=> 'data:image/jpeg;base64,existing-picture'};
+ const env={SCREEN_PROFILE_PHOTO_ONLY:true,member:{photo:'/signed-picture',photoChecked:false,nickname:'테스트',gender:'male'},photoInspect:{current:0},assetUrl:value=>value,randomNickname:()=> '랜덤',setProfile:()=>{},setPhotoDraft:value=>drafts.push(value),setDraftVerified:value=>calls.push(['verified',value]),setPhotoProof:()=>{},setPhotoRetryHint:()=>{},setPhotoSelectionError:()=>{},call:async()=>({result:{accepted:true}}),changeFaceConsent:()=>{},setPhotoCheck:value=>calls.push(['check',value]),open:()=>{},setToast:()=>{},setError:()=>{},fetch:async()=>({ok:true,blob:async()=>({})}),resizePhoto:async()=> 'data:image/jpeg;base64,existing-picture'};
  vm.createContext(env);vm.runInContext(code,env);await env.openProfileEditor();
  assert.equal(drafts.at(-1),'data:image/jpeg;base64,existing-picture');
  assert.ok(calls.some(([type,value])=>type==='check'&&value==='ok'));

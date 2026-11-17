@@ -1,4 +1,4 @@
-import { proximity } from './model.js';
+import { proximity, BASE_DRINK_MINUTES } from './model.js';
 
 export const SEATS = [[17,12],[17,29],[17,46],[20,64],[32,79],[50,85],[68,79],[80,64],[83,46],[83,29],[83,12],[50,44]];
 export const POINT_PACKS = [
@@ -13,7 +13,7 @@ export const adjacent = (a,b) => a !== 11 && b !== 11 && Math.abs(a-b) === 1;
 export function voicePeerIds(guests, partners, blocked = new Set()) {
   return guests.filter(g => !blocked.has(g.id) && (!partners.me || partners.me === g.id) && (!partners[g.id] || partners[g.id] === 'me')).map(g => g.id);
 }
-export function drinkLevel(seconds, host = false, duration = 1800) {
+export function drinkLevel(seconds, host = false, duration = BASE_DRINK_MINUTES * 60) {
   return { fill:host ? 1 : Math.max(0,Math.min(1,seconds/duration)), low:!host && seconds > 0 && seconds <= 60 };
 }
 export function directionGain(listener, speaker, angle) {

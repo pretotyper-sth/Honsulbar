@@ -1,6 +1,6 @@
 import {randomInt} from 'node:crypto';
 
-// Trusted operator-only, expiring allowance. Ordinary accounts retain the SQL limit.
+// The caller grants unlimited retries only to authenticated Toss sessions.
 export async function newPhotoChallenge(member, {database, rpc, now = Date.now(), unlimited = false}) {
   try { return await rpc('hb_new_photo_challenge', {p_member: member}); }
   catch (error) {

@@ -28,17 +28,19 @@ export function decodePhoto(value){
  }catch{throw new AppError('얼굴이 잘 보이는 사진을 다시 촬영해 주세요.');}
 }
 
-export async function analyzeFace(image,capture=false){
+export async function analyzeFace(image,capture=false,profileOnly=false){
  await ready;
  const pixels=new Float32Array(image.width*image.height*3);
  for(let i=0,j=0;i<image.data.length;i+=4){pixels[j++]=image.data[i];pixels[j++]=image.data[i+1];pixels[j++]=image.data[i+2];}
  const tensor=tf.tensor3d(pixels,[image.height,image.width,3]);
  let result;
  try{
-  result=await human.detect(tensor);
+  const config={face:{description:{enabled:!profileOnly},liveness:{enabled:capture}}};
+  result=await human.detect(tensor,config);
   if(result.error)throw new Error('inference');
-  const error=faceQualityError(result,image,{capture});
+  const error=faceQualityError(result,image,{capture,profileOnly});
   if(error)throw new AppError(error);
+  if(profileOnly)return true;
   const item=result.face[0];
   return {embedding:[...item.embedding],scale:Math.abs(item.mesh[454][0]-item.mesh[234][0])/image.width};
  }finally{
@@ -69,10 +71,25 @@ export async function verifyImages(profile,frames,motion){
   for(const result of results)result.embedding.fill(0);
  }
 }
+async function checkImage(photo){
+ let image;
+ try{
+  image=decodePhoto(photo);
+  return await analyzeFace(image,false,true);
+ }catch(error){
+  if(!(error instanceof AppError))throw error;
+  if(!image)throw new AppError('사진을 읽지 못했어요. 다시 골라 주세요.');
+  if(error.message==='혼자 화면에 맞춰 주세요.')throw new AppError('혼자 나온 사진을 골라 주세요.');
+  throw new AppError('얼굴이 잘 보이는 사진을 골라 주세요.');
+ }finally{image?.data.fill(0);}
+}
 if(parentPort){
  ready.then(()=>parentPort.postMessage({ready:true})).catch(()=>parentPort.postMessage({initError:true}));
  parentPort.on('message',async job=>{
-  try{parentPort.postMessage({id:job.id,result:await verifyImages(job.photo,job.frames,job.motion)});}
+  try{
+   const result=job.profileOnly?await checkImage(job.photo):await verifyImages(job.photo,job.frames,job.motion);
+   parentPort.postMessage({id:job.id,result});
+  }
   catch(error){parentPort.postMessage({id:job.id,error:error instanceof AppError?error.message:'검사를 마치지 못했어요. 다시 해주세요.'});}
   finally{job.photo=null;job.frames?.fill(null);}
  });

@@ -315,6 +315,32 @@ test('server proof binds account, photo, consent and expiry and is consumed once
   await db.close();
 });
 
+test('Toss sessions can register and replace screened photos without capture proof', async () => {
+  const {db,login,action,one,snapshot}=await setup();
+  try {
+    await db.exec(sql('20261102_android_ads.sql'));
+    await db.exec(sql('20261115_zzz_toss_profile_photo_update.sql'));
+    await db.exec(sql('20261116_z_toss_profile_photo_screening.sql'));
+    const member=await login('81003'), other=await login('81004');
+    await db.query("insert into hb_sessions(token_hash,member_id,platform) values('toss-token',$1,'toss'),('android-token',$1,'android'),('other-token',$2,'toss')",[member,other]);
+    const data={nickname:'새로운 사진',gender:'female',photo:'data:image/jpeg;base64,BBBB'};
+    const update=(id,session,profile=data)=>one('select hb_update_toss_profile_photo($1,$2,$3::jsonb)',[id,session,JSON.stringify(profile)]);
+    assert.equal((await snapshot(member)).member.photoChecked,false);
+    await assert.rejects(update(member,'android-token'),/토스 로그인/);
+    await assert.rejects(update(member,'other-token'),/토스 로그인/);
+    await assert.rejects(action(member,'profile',{...data,photoChecked:true}),/동의/);
+    await assert.rejects(update(member,'toss-token',{...data,photo:null}),/사진을 다시 선택/);
+    await update(member,'toss-token');
+    const {photo,photoChecked,nickname}=(await snapshot(member)).member;
+    assert.ok(photo);
+    const replacement='data:image/jpeg;base64,CCCC';
+    await update(member,'toss-token',{...data,photo:replacement});
+    assert.equal((await one('select photo from hb_members where id=$1',[member])).photo,replacement);
+    assert.equal(photoChecked,true);
+    assert.equal(nickname,data.nickname);
+  } finally { await db.close(); }
+});
+
 test('a single report protects both directions, cancels connections and refuses entry before spending', async () => {
   const {db,login,ready,action,snapshot,one}=await setup();
   const a=await login('82001'),b=await login('82002');

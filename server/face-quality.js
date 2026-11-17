@@ -8,7 +8,7 @@ function patch(image,cx,cy,w,h){
  }
  return {mean:sum/n,std:Math.sqrt(Math.max(0,sq/n-(sum/n)**2)),edge:edge/n,n};
 }
-export function faceQualityError(result,image,{capture=false}={}){
+export function faceQualityError(result,image,{capture=false,profileOnly=false}={}){
  if(!Array.isArray(result?.face)||result.face.length===0)return '얼굴을 찾지 못했어요.';
  if(result.face.length!==1)return '혼자 화면에 맞춰 주세요.';
  const face=result.face[0],box=face.box;
@@ -33,7 +33,7 @@ export function faceQualityError(result,image,{capture=false}={}){
   if(stats.std<(capture?9:6)||stats.edge<(capture?2.2:1.5))return '눈·입을 가리지 말고 찍어 주세요.';
  }
  if(capture&&(!Number.isFinite(face.live)||face.live<FACE_RULES.live))return '실제 얼굴을 다시 찍어 주세요.';
- if(!Array.isArray(face.embedding)||face.embedding.length!==1024||!face.embedding.every(Number.isFinite)||!face.embedding.some(v=>v!==0))return '밝은 곳에서 얼굴을 보여 주세요.';
+ if(!profileOnly&&(!Array.isArray(face.embedding)||face.embedding.length!==1024||!face.embedding.every(Number.isFinite)||!face.embedding.some(v=>v!==0)))return '밝은 곳에서 얼굴을 보여 주세요.';
  return null;
 }
 export function comparisonError(results,similarity,motion,alternateProfile=null){

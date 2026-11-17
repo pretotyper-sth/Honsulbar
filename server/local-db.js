@@ -43,6 +43,10 @@ const MIGRATIONS = [
   '20261115_preserve_solo_seat_time.sql',
   '20261115_z_bar_orientation.sql',
   '20261115_zz_photo_retry_window.sql',
+  '20261115_zzz_toss_profile_photo_update.sql',
+  '20261115_zzzz_toss_drink_duration.sql',
+  '20261116_visit_clock_snapshot.sql',
+  '20261116_z_toss_profile_photo_screening.sql',
 ];
 const TABLES = new Set([
   'hb_safety_ops', 'hb_voice_evidence', 'hb_voice_consents', 'hb_push_devices', 'hb_android_ad_claims', 'hb_account_transfers', 'hb_auth_cleanup',

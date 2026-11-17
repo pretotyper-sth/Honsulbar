@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
-import {visibleCheck,captureFacePair,profileCanSave} from '../src/photo-verification.js';
+import {visibleCheck,captureFacePair,profileCanSave,PhotoCaptureError,PHOTO_RETRY_HINTS} from '../src/photo-verification.js';
 const source=readFileSync(new URL('../src/main.jsx',import.meta.url),'utf8');
 const helpers=source.slice(source.indexOf('function faceBox('),source.indexOf('function resizePhoto('));
 const face={topLeft:[120,100],bottomRight:[320,360],probability:[.99],landmarks:[[175,190],[265,190],[220,245],[220,290]]};
@@ -21,6 +21,7 @@ test('photo changes need current consent, verification and proof even after a pr
  const state={changed:true,consent:true,verified:true,proof:'proof'};assert.equal(profileCanSave(state),true);
  for(const change of [{consent:false},{verified:false},{proof:null}])assert.equal(profileCanSave({...state,...change}),false);
  assert.equal(profileCanSave({changed:false}),true);
+ assert.equal(profileCanSave({changed:true,accountVerified:true}),true);
 });
 function captureEnv(sizes){
  let time=0,frame=0,active=true;const cleared=[];
@@ -37,13 +38,49 @@ test('no face, wrong movement, cancellation and camera disconnect do not produce
  const cancelled=captureEnv([200]);cancelled.options.wait=async()=>cancelled.cancel();await assert.rejects(captureFacePair(cancelled.options),/취소/);
  const disconnected=captureEnv([200]);disconnected.options.video.readyState=0;await assert.rejects(captureFacePair(disconnected.options),/카메라/);
 });
+function verificationFixture({run, capture = async()=>['frame1','frame2']}) {
+ const results=[],sheets=[],hints=[];
+ const env={document:{createElement:()=>({})},AbortController,PhotoCaptureError,PHOTO_RETRY_HINTS,verificationController:{current:null},setVerificationStartedAt(){},setVerificationGuide(){},faceConsentRef:{current:true},verificationAttempt:{current:0},verificationFailures:{current:0},captureLock:{current:false},verificationState:'ready',cameraVideo:{current:{}},cameraStream:{current:{getVideoTracks:()=>[{readyState:'live'}]}},photoDraft:'photo',loadFaceModel:async()=>({}),visibleCheck:task=>task(),captureFacePair:capture,run,setPhotoProof:p=>results.push(p),setDraftVerified:v=>results.push(v),setVerificationState(){},setVerificationMessage(){},setSheet:sheet=>sheets.push(sheet),setPhotoRetryHint:hint=>hints.push(hint)};
+ vm.createContext(env);
+ const start=source.indexOf('  async function captureVerification('),end=source.indexOf("\n  if (screen === 'onboarding')",start);
+ vm.runInContext(source.slice(start,end),env);
+ return {env,results,sheets,hints};
+}
+
 test('revoking consent while the server is checking cannot revive verification',async()=>{
- let release;const response=new Promise(resolve=>{release=resolve;});const results=[];
- const env={document:{createElement:()=>({})},AbortController,verificationController:{current:null},setVerificationStartedAt(){},setVerificationGuide(){},faceConsentRef:{current:true},verificationAttempt:{current:0},captureLock:{current:false},verificationState:'ready',cameraVideo:{current:{}},cameraCanvas:{current:{}},cameraStream:{current:{getVideoTracks:()=>[{readyState:'live'}]}},photoDraft:'photo',loadFaceModel:async()=>({}),visibleCheck:task=>task(),captureFacePair:async()=>['frame1','frame2'],run:async action=>action==='photo-challenge'?{id:'id',motion:'near'}:response,setPhotoProof:p=>results.push(p),setDraftVerified:v=>results.push(v),setVerificationState(){},setVerificationMessage(){}};
- vm.createContext(env);const a=source.indexOf('  async function captureVerification('),b=source.indexOf("\n  if (screen === 'onboarding')",a);vm.runInContext(source.slice(a,b),env);
+ let release;
+ const response=new Promise(resolve=>{release=resolve;});
+ const {env,results}=verificationFixture({run:async action=>action==='photo-challenge'?{id:'id',motion:'near'}:response});
  const work=env.captureVerification();await new Promise(resolve=>setImmediate(resolve));
  env.faceConsentRef.current=false;env.verificationAttempt.current++;release({proof:'late-proof'});await work;
  assert.ok(!results.includes('late-proof'));assert.ok(!results.includes(true));
+});
+
+test('three capture failures return to the intact profile and infrastructure errors do not count',async()=>{
+ let next;
+ const {env,sheets,hints}=verificationFixture({
+  run:async action=>{
+   if(action==='photo-challenge'){
+    if(next?.status===503)throw next;
+    return {id:'id',motion:'near'};
+   }
+   throw next;
+  },
+  capture:async()=>{
+   if(next instanceof PhotoCaptureError)throw next;
+   return ['frame1','frame2'];
+  },
+ });
+ for(const error of [new PhotoCaptureError('얼굴 위치'),Object.assign(new Error('네트워크'),{status:503}),Object.assign(new Error('등록 사진과 달라요.'),{status:400})]){
+  next=error;
+  await env.captureVerification();
+  assert.deepEqual(sheets,[]);
+ }
+ await env.captureVerification();
+ assert.deepEqual(sheets,['profile']);
+ assert.deepEqual(hints,[PHOTO_RETRY_HINTS.photo]);
+ assert.equal(env.photoDraft,'photo');
+ assert.equal(env.captureLock.current,false);
 });
 
 test('capture recovers from a briefly missing face and gives measurable movement feedback',async()=>{
@@ -91,11 +128,18 @@ test('framing allows clipped outlines but requires visible eye, nose and mouth l
 });
 
 test('profile upload preserves the chosen photograph for server verification',async()=>{
- const drafts=[],checks=[];
- const env={photoInspect:{current:0},verificationAttempt:{current:0},setPhotoProof(){},changeFaceConsent(){},setError(){},setDraftVerified(){},setPhotoDraft:value=>drafts.push(value),setPhotoCheck:value=>checks.push(value),setProfile(){},resizePhoto:async()=> 'photo'};
+ const drafts=[],checks=[],errors=[];
+ let rejected=false;
+ const env={photoInspect:{current:0},verificationAttempt:{current:0},setPhotoProof(){},setPhotoRetryHint(){},setPhotoSelectionError:value=>errors.push(value),changeFaceConsent(){},setError(){},setPhotoDraft:value=>drafts.push(value),setPhotoCheck:value=>checks.push(value),setProfile(){},photoDraft:null,resizePhoto:async()=> 'photo',call:async()=>{if(rejected)throw new Error('얼굴이 잘 보이는 사진을 골라 주세요.');}};
  vm.createContext(env);
  vm.runInContext(source.slice(source.indexOf('  async function choosePhoto('),source.indexOf('  function seatsAreLocked(')),env);
  await env.choosePhoto({target:{files:[{type:'image/jpeg',size:500}]}});
- assert.deepEqual(drafts,[null,'photo']);
+ assert.deepEqual(drafts,['photo']);
  assert.deepEqual(checks,['checking','ok']);
+ rejected=true;
+ env.photoDraft='photo';
+ await env.choosePhoto({target:{files:[{type:'image/jpeg',size:500}]}});
+ assert.equal(errors.at(-1),'얼굴이 잘 보이는 사진을 골라 주세요.');
+ assert.deepEqual(drafts,['photo']);
+ assert.equal(checks.at(-1),'ok');
 });

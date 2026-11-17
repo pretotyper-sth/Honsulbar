@@ -31,8 +31,8 @@ test('busy neighbors cannot join a second pair',()=>{
   assert.deepEqual(validPartners(people,[['a','b'],['b','c']]),{a:'b',b:'a'});
 });
 test('drink fill caps at thirty minutes; warning only in final minute',()=>{
-  assert.deepEqual(drinkLevel(1800),{fill:1,low:false});
-  assert.equal(drinkLevel(3600).fill,1);assert.equal(drinkLevel(900).fill,.5);
+  assert.deepEqual(drinkLevel(1200),{fill:1,low:false});
+  assert.equal(drinkLevel(2400).fill,1);assert.equal(drinkLevel(600).fill,.5);
   assert.equal(drinkLevel(61).low,false);assert.equal(drinkLevel(60).low,true);
   assert.equal(drinkLevel(0).fill,0);assert.equal(drinkLevel(-20).fill,0);
   assert.deepEqual(drinkLevel(10,true),{fill:1,low:false});

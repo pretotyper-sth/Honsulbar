@@ -47,7 +47,7 @@ export function FaceCaptureConsent({ retry, onCapture }) {
 
 export function CameraVerificationStatus({ guide, message, state, elapsed }) {
   const waiting=(guide.stage==='prepare'||guide.stage==='compare')&&(state==='starting'||state==='checking');
-  const hint=guide.stage==='compare'?(elapsed>=8?'확인 중이에요. 잠시 기다려 주세요.':'움직이지 않아도 돼요.'):guide.stage==='ready'?'눈·코·입이 화면에 보이면 돼요.':'';
+  const hint=guide.stage==='compare'?(elapsed>=8?'확인 중이에요. 잠시 기다려 주세요.':'움직이지 않아도 돼요.'):guide.stage==='ready'?'휴대폰을 눈높이에서 팔 길이만큼 띄워 주세요.':'';
   return <div className={`camera-feedback${guide.stage==='error'||state==='unavailable'?' is-error':''}`}>
     {waiting&&<span className="camera-spinner" aria-hidden="true"/>}
     <div role="status" aria-live="polite" aria-atomic="true"><strong>{message}</strong>{hint&&<small>{hint}</small>}</div>
