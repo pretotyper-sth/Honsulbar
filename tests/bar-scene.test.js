@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { avatarOutfit, avatarPose, barSeats, cameraPitch, firstPersonWalk, firstPersonVoice, paintBar, partnerFacing, seatWalk, swapWalk, walkCue, wrapFacing } from '../src/bar-scene.js';
+import { barThemes } from '../src/bar-themes.js';
+import { avatarOutfit, avatarPose, barSeats, cameraPitch, flatFacingIndicator, firstPersonWalk, barVoice, paintBar, partnerFacing, seatWalk, swapWalk, walkCue, wrapFacing } from '../src/bar-scene.js';
 
 test('walking sounds follow the steps and play one impact on sitting', () => {
   const walk = seatWalk(0, 5);
@@ -36,17 +37,19 @@ test('seated avatars use the listener angle and distinct outfit palettes', () =>
   assert.notDeepEqual(avatarOutfit('my-id', 'female'), avatarOutfit('my-id', 'male'));
 });
 
-test('first-person rotation wraps and moves voice gain and balance with the listener', () => {
+const voiceAt = (from, to, degrees) => barVoice({id:'me',seat:from},{id:'guest',seat:to},degrees);
+
+test('rotation wraps and moves voice gain and balance with the shared heading', () => {
   assert.equal(wrapFacing(190), -170);
   assert.equal(wrapFacing(-190), 170);
   assert.equal(cameraPitch(-1), -.58);
   assert.equal(cameraPitch(1), .14);
-  const left = firstPersonVoice(5,4,0);
-  const right = firstPersonVoice(5,6,0);
+  const left = voiceAt(5,4,0);
+  const right = voiceAt(5,6,0);
   assert.ok(left.pan < 0);
   assert.ok(right.pan > 0);
-  assert.ok(firstPersonVoice(5,6,60).gain > firstPersonVoice(5,6,-60).gain);
-  assert.ok(firstPersonVoice(5,4,-60).gain > firstPersonVoice(5,4,60).gain);
+  assert.ok(voiceAt(5,6,60).gain > voiceAt(5,6,-60).gain);
+  assert.ok(voiceAt(5,4,-60).gain > voiceAt(5,4,60).gain);
 });
 
 test('third-person rows stay aligned with equal spacing whether their seats are occupied or empty', () => {
@@ -64,6 +67,46 @@ test('third-person rows stay aligned with equal spacing whether their seats are 
       if (i > 0) assert.ok(Math.abs(points[i].top - points[i-1].top - gap) < 1e-8);
     }
     assert.ok(points[0].depth > points[5].depth);
+  }
+});
+
+test('the host arrow points toward the louder seat in 2D and the third-person projection', () => {
+  const gradient = {addColorStop(){}};
+  const context = {createLinearGradient:()=>gradient,createRadialGradient:()=>gradient,fillRect(){},beginPath(){},moveTo(){},lineTo(){},closePath(){},fill(){}};
+  assert.equal(voiceAt(11,3,0).gain, voiceAt(11,7,0).gain);
+  for (const [degrees, near, far] of [[60,3,7],[-60,7,3]]) {
+    const pose = avatarPose(11,undefined,0,-degrees * Math.PI / 180);
+    const points = paintBar(context,343,350,'third',[{id:'me',mine:true,seat:11,pose}],pose);
+    const direction = Math.sign(points[near].left - points[11].left);
+    assert.equal(Math.sign(Math.sin(points[11].facingAngle * Math.PI / 180)),direction);
+    assert.equal(Math.sign(Math.sin(flatFacingIndicator(11,degrees) * Math.PI / 180)),direction);
+    assert.ok(voiceAt(11,near,degrees).gain > voiceAt(11,far,degrees).gain * 4);
+    assert.ok(voiceAt(11,far,degrees).gain < .2);
+  }
+});
+
+test('bar themes add distinct decor and ambient motion without moving seat markers', () => {
+  const context = {canvas:{width:343,height:350},clearRect(){},fillRect(){},createRadialGradient:()=>({addColorStop(){}})};
+  const pose = avatarPose(0);
+  const sceneFor = (theme, time = 0) => {
+    let geometry;
+    const renderer = {draw(faces){ geometry = faces.map(face=>face.points); return true; }};
+    const points = paintBar(context,343,350,'third',[{id:'me',mine:true,seat:0,pose}],pose,undefined,renderer,theme,time);
+    return {geometry, points};
+  };
+  const original = sceneFor(barThemes[0]);
+  const settings = barThemes.slice(1).map(theme=>sceneFor(theme));
+  for (const setting of settings) {
+    assert.deepEqual(setting.points,original.points);
+    assert.notDeepEqual(setting.geometry,original.geometry);
+  }
+  assert.equal(new Set(settings.map(setting=>JSON.stringify(setting.geometry))).size,settings.length);
+  for (const theme of barThemes) {
+    const before = sceneFor(theme);
+    const after = sceneFor(theme,1900);
+    assert.deepEqual(before.points,after.points);
+    if (theme.id === 'holiday') assert.notDeepEqual(before.geometry,after.geometry);
+    else assert.deepEqual(before.geometry,after.geometry);
   }
 });
 

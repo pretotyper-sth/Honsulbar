@@ -16,18 +16,11 @@ export function voicePeerIds(guests, partners, blocked = new Set()) {
 export function drinkLevel(seconds, host = false, duration = BASE_DRINK_MINUTES * 60) {
   return { fill:host ? 1 : Math.max(0,Math.min(1,seconds/duration)), low:!host && seconds > 0 && seconds <= 60 };
 }
-export function directionGain(listener, speaker, angle) {
-  const base = proximity(listener,speaker);
-  if (speaker === 11 || angle === 0) return base;
-  const side = Math.sign(speaker-listener);
-  const turn = Math.max(-90,Math.min(90,angle));
-  return base * (side === Math.sign(turn) ? 1 : 1 - .95 * Math.abs(turn)/90);
-}
-export function audioGain(listener,speaker,angle=0,partners={},muted=[]) {
+export function audioGain(listener,speaker,partners={},muted=[]) {
   if (muted.includes(speaker.id)) return 0;
   if (partners[listener.id] && partners[listener.id] !== speaker.id) return 0;
   if (partners[speaker.id] && partners[speaker.id] !== listener.id) return 0;
-  return directionGain(listener.seat,speaker.seat,partners[listener.id] === speaker.id ? 0 : angle);
+  return speaker.speaker && !partners[listener.id] ? 1 : proximity(listener.seat,speaker.seat);
 }
 export function validPartners(people,pairs) {
   const result = {};

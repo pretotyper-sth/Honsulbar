@@ -25,7 +25,8 @@ void main() { gl_FragColor = vec4(v_color, 1.0); }
 `;
 
 export function createBarRenderer(canvas) {
-  const gl = canvas.getContext('webgl', { alpha:true, antialias:true, depth:true });
+  // Keep the scene visible between draws when the bar is idle.
+  const gl = canvas.getContext('webgl', { alpha:true, antialias:true, depth:true, preserveDrawingBuffer:true });
   if (!gl) return null;
 
   function compile(type, source) {

@@ -10,6 +10,7 @@ const views = [
   ['flat', '2D', '위에서 내려다보며 자리를 한눈에 봐요.'],
 ];
 const MIN_FRAME_MS = 32;
+const AMBIENT_FRAME_MS = 160;
 const liquidTime = seconds => Math.ceil(Math.max(0,seconds)/5)*5;
 
 export function BarViewOptions({ view, onChange }) {
@@ -45,7 +46,8 @@ export function BarScene({ view, seat, memberId, gender, facing, partners, drink
   }
 
   function startLook(event) {
-    if (moving || drag.current || (event.button !== 2 && (event.button !== 0 || event.target.closest('button')))) return;
+    if (moving || drag.current || event.target.closest('button, .bar-music')) return;
+    if (event.button !== 0 && event.button !== 2) return;
     event.preventDefault();
     drag.current = {id:event.pointerId, x:event.clientX, y:event.clientY};
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -172,9 +174,11 @@ export function BarScene({ view, seat, memberId, gender, facing, partners, drink
     } else if (changing.some(person => person.mine)) onCue('sit');
     previous.current = updated;
 
-    let frame;
+    let frame, ambientTimer;
+    const animateDecor = !reduceMotion && theme?.id === 'holiday';
     function draw(now) {
       frame = undefined;
+      clearTimeout(ambientTimer);
       if (document.hidden) return;
       if (now-lastDraw.current < MIN_FRAME_MS) { redraw(); return; }
       const {clientWidth:width, clientHeight:height} = scene;
@@ -215,7 +219,7 @@ export function BarScene({ view, seat, memberId, gender, facing, partners, drink
         }
         return { ...person, chairAngle, pose };
       });
-      const points = paintBar(context, width, height, view, poses, poses[0].pose, pitch, depth.current, theme);
+      const points = paintBar(context, width, height, view, poses, poses[0].pose, pitch, depth.current, theme, animateDecor ? now : 0);
       const visiblePoints = view !== 'first' ? points : points.map(point =>
         point && !points.some(other => other && other.depth < point.depth
           && Math.hypot(point.left - other.left, point.top - other.top) < 24) ? point : null
@@ -238,12 +242,14 @@ export function BarScene({ view, seat, memberId, gender, facing, partners, drink
         marker.style.setProperty('--portrait-size', `${diameter}px`);
         marker.style.setProperty('--spot-x', `${point.left}px`);
         marker.style.setProperty('--spot-y', `${point.top}px`);
+        if (point.facingAngle !== undefined) marker.style.setProperty('--projected-facing', `${point.facingAngle}deg`);
         reaction.style.setProperty('--portrait-size', `${diameter}px`);
         reaction.style.setProperty('--spot-x', `${point.left}px`);
         reaction.style.setProperty('--spot-y', `${point.top}px`);
         marker.style.zIndex = Math.max(1, Math.floor(1000 - point.depth * 35));
       });
       if (moves.current.size || turning) redraw();
+      else if (animateDecor) ambientTimer = window.setTimeout(redraw, AMBIENT_FRAME_MS);
     }
     function redraw() {
       if (frame === undefined && !document.hidden) frame = requestAnimationFrame(draw);
@@ -252,7 +258,7 @@ export function BarScene({ view, seat, memberId, gender, facing, partners, drink
     observer.observe(scene);
     redraw();
     document.addEventListener('visibilitychange', redraw);
-    return () => { observer.disconnect(); cancelAnimationFrame(frame); document.removeEventListener('visibilitychange', redraw); };
+    return () => { observer.disconnect(); cancelAnimationFrame(frame); clearTimeout(ambientTimer); document.removeEventListener('visibilitychange', redraw); };
   }, [view, seat, memberId, gender, facing, visiblePartners, drinkId, liquidSeconds, seatNeutralClock, visibleGuests, pitch, theme, onUnavailable, onMotionChange, onCue]);
 
   const first = view === 'first';

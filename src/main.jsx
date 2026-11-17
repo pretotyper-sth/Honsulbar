@@ -5,7 +5,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client';
 import { IAP, loadFullScreenAd, showFullScreenAd, SafeAreaInsets, NavigationBar, graniteEvent, Screen } from '@apps-in-toss/web-framework';
 import { Button, BottomSheet, Badge, FaceCaptureNotice, FaceCaptureConsent, CameraVerificationStatus } from './ui';
-import { ArrowLeft, ArrowRight, Bell, Camera, Check, ChevronDown, Clock3, DoorOpen, Coins, MessageCircleMore, Mic, MicOff, Music2, Plus, Smile, Volume2, VolumeX, Speaker, Wine, X, ZoomIn, Flag, Wallet, Eye, LockKeyhole, ArrowLeftRight, Settings, UserRound } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Bell, Camera, Check, ChevronDown, Clock3, DoorOpen, Coins, MessageCircleMore, Mic, MicOff, Plus, Smile, Volume2, VolumeX, Speaker, Wine, X, ZoomIn, Flag, Wallet, Eye, LockKeyhole, ArrowLeftRight, Settings, UserRound } from 'lucide-react';
 import { REGIONS, CAPACITY, DRINKS, BASE_DRINK_MINUTES, DRINK_DURATION_VERSION } from './model';
 import { findAvailableBars } from './quick-match';
 import { useVoice } from './useVoice';
@@ -24,8 +24,8 @@ import { Glass } from './Glass';
 import { BarMusic } from './BarMusic';
 import { themeForBar } from './bar-themes';
 import { BarScene, BarViewOptions } from './BarScene';
-import { firstPersonVoice, partnerFacing } from './bar-scene';
-import { SEATS as positions, POINT_PACKS, SUBSCRIPTIONS, adjacent, audioGain } from './social';
+import { barVoice, flatFacingIndicator, partnerFacing } from './bar-scene';
+import { SEATS as positions, POINT_PACKS, SUBSCRIPTIONS, adjacent } from './social';
 import { AdminPage } from './admin';
 import './style.css';
 
@@ -153,11 +153,11 @@ const DEFAULT_ICE = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.goog
 
 const WAITLIST_ALERT_KEY = 'honsulbar:alerts:waitlist:v1';
 const PUSH_AGREED_KEY = 'honsulbar:push-agreed:v1';
-const BGM_MUTED_KEY = 'honsulbar:bgm-muted:v1';
+const BGM_LEVEL_KEY = 'honsulbar:bgm-volume';
 function storageFlag(key) { try { return localStorage.getItem(key) === '1'; } catch { return false; } }
 function setStorageFlag(key, on) { try { on ? localStorage.setItem(key, '1') : localStorage.removeItem(key); } catch {} }
 
-function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
+function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectionAudio} = {}) {
   const [waitlistAlerts, setWaitlistAlerts] = useState(() => storageFlag(WAITLIST_ALERT_KEY));
   const [pushAgreed, setPushAgreed] = useState(() => storageFlag(PUSH_AGREED_KEY));
   const waitlistAction = useRef(false);
@@ -181,7 +181,6 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
   const historyLimitRef = useRef(10);
   historyLimitRef.current = historyLimit;
   const [facing, setFacing] = useState(0);
-  const [audioFacing, setAudioFacing] = useState(0);
   const [waveSent, setWaveSent] = useState([]);
   const [focusSubscription, setFocusSubscription] = useState(false);
   const [region, setRegion] = useState('서울');
@@ -233,8 +232,13 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
   const [selection, setSelection] = useState('highball');
   const [speaker, setSpeaker] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
-  const [bgmMuted, setBgmMuted] = useState(() => storageFlag(BGM_MUTED_KEY));
-  const [bgmLevel, setBgmLevel] = useState(1);
+  const [bgmLevel, setBgmLevel] = useState(() => {
+    try {
+      const saved = localStorage.getItem(BGM_LEVEL_KEY);
+      if (saved !== null && /^\d{1,3}$/.test(saved)) return Math.min(100, Number(saved)) / 100;
+    } catch {}
+    return storageFlag('honsulbar:bgm-muted:v1') ? 0 : 1;
+  });
   const [voiceVolume, setVoiceVolume] = useState(() => {
     try {
       const saved = localStorage.getItem('honsulbar:voice-volume');
@@ -433,23 +437,18 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
     ? (member.subAutoRenew === false ? (member.subExpiresAt || null) : null)
     : (devSubscription?.cancelAt ? (devSubscription.expiresAt || null) : null);
   const firstPerson = barView === 'first';
-  const facingLimit = firstPerson ? 180 : 90;
-  const heardAngle = firstPerson ? facing : audioFacing;
-  const {gains, pans} = useMemo(() => {
-    const gains = {}, pans = {};
+  const facingLimit = 180;
+  const {gains, pans, focusGains} = useMemo(() => {
+    const gains = {}, pans = {}, focusGains = {};
     const volume = (voiceVolume / 100) ** 2;
     for (const guest of guests) {
-      if (!soundOn || reportedIds.has(guest.id) || mutedGuests.includes(guest.id)) { gains[guest.id] = 0; continue; }
-      const broadcast = guest.speaker && !partners.me && !partners[guest.id];
-      const gain = broadcast ? 1 : audioGain({id:'me', seat}, guest, firstPerson ? 0 : heardAngle, partners, mutedGuests);
-      if (firstPerson && gain > 0 && !broadcast && !partners.me) {
-        const spatial = firstPersonVoice(seat, guest.seat, heardAngle);
-        gains[guest.id] = spatial.gain * volume;
-        pans[guest.id] = spatial.pan;
-      } else gains[guest.id] = gain * volume;
+      const spatial = barVoice({id:'me', seat}, guest, facing, partners, mutedGuests);
+      focusGains[guest.id] = spatial.gain;
+      gains[guest.id] = soundOn && !reportedIds.has(guest.id) ? spatial.gain * volume : 0;
+      pans[guest.id] = spatial.pan;
     }
-    return {gains,pans};
-  }, [guests, soundOn, voiceVolume, reportedIds, mutedGuests, partners, seat, firstPerson, heardAngle]);
+    return {gains, pans, focusGains};
+  }, [guests, soundOn, voiceVolume, reportedIds, mutedGuests, partners, seat, facing]);
   const [relay, setRelay] = useState(null);
   useEffect(() => {
     if (!inside || !me || import.meta.env.VITE_QUICK_SEARCH_QA === '1') return;
@@ -549,15 +548,11 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
     setReactionMenu(false);
     reactionTrigger.current?.focus({preventScroll:true});
   }}>
-    <button className="bar-stage-button bar-bgm-toggle" type="button" aria-label="배경음악" aria-pressed={!bgmMuted}
-      onClick={() => {
-        const muted = !bgmMuted;
-        if (!muted) prepareCueAudio();
-        setBgmMuted(muted);
-        setStorageFlag(BGM_MUTED_KEY, muted);
-        setReactionMenu(false);
-      }}><Music2 size={20} aria-hidden="true"/></button>
-    <BarMusic volume={bgmLevel} onChange={setBgmLevel}/>
+    <BarMusic volume={bgmLevel} onChange={value => {
+      const level = value <= .02 ? 0 : value;
+      setBgmLevel(level);
+      try { localStorage.setItem(BGM_LEVEL_KEY, String(Math.round(level * 100))); } catch {}
+    }} onOpen={() => { prepareCueAudio(); setReactionMenu(false); }}/>
     <button ref={reactionTrigger} className="bar-stage-button" type="button"
       aria-label="이모지 반응" aria-expanded={reactionMenu} aria-controls={reactionMenu ? 'bar-reaction-options' : undefined}
       onClick={() => setReactionMenu(value => !value)}><Smile size={20} aria-hidden="true"/></button>
@@ -786,7 +781,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
   }, [prepareCueAudio]);
 
   const {start:startAmbience,pause:pauseAmbience} = useBarAmbience({ level:bgmLevel,
-    active:screen === 'bar' && inside, soundOn:soundOn && !bgmMuted, prepareAudio:prepareCueAudio,
+    active:screen === 'bar' && inside, soundOn:soundOn && bgmLevel > 0, prepareAudio:prepareCueAudio,
     talking:localSpeaking || mesh.talking.some(id => gains[id] > .035),
   });
   const observedGuests = useRef(null);
@@ -798,7 +793,6 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
     if (!document.hidden && previous?.visitId === visit.id && [...ids].some(id => !previous.ids.has(id))) playCue('arrival');
   }, [screen, inside, visit?.id, guests, reportedIds, playCue]);
 
-  useEffect(() => { const timer=setTimeout(()=>setAudioFacing(facing),150); return ()=>clearTimeout(timer); },[facing]);
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [screen]);
   useEffect(() => {
     let id = 0;
@@ -1067,7 +1061,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
     }
     setSheet(null);
   }
-  function resetConversation() { setFacing(0); setAudioFacing(0); }
+  function resetConversation() { setFacing(0); }
   async function requestFocus(target) {
     if (!target || !adjacent(seat, target.seat) || partners[target.id] || mutedGuests.includes(target.id) || seconds === 0 || focusRequest || activeFocus) return;
     try { await run('request', { targetId: target.id, kind: 'focus' }); setSheet(null); setToast('옆자리와 대화를 요청했어요.'); }
@@ -1751,7 +1745,6 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
   const guestSeconds = person => tick(person.seconds, person.seat === 11 && !server?.seatNeutralClock);
 
   const selectBarView = useCallback(view => {
-    if (view !== 'first' && !activeFocus) setFacing(angle => Math.max(-90, Math.min(90, angle)));
     setBarView(view);
   }, [activeFocus]);
 
@@ -1781,8 +1774,8 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
     const personDrink = mine ? wallet.drinkId : person?.drinkId;
     const leftTime=mine?seconds:person?guestSeconds(person):0;
     const paired=partners[mine?'me':person?.id];
-    const rotation=(i===11?180:Math.atan2(50-y,50-x)*180/Math.PI+90)+(mine?facing:0);
-    return <div key={i} className={`seat-wrap ${i === 11 ? 'host-wrap' : ''} ${talking ? 'is-speaking' : ''} ${mine ? 'my-wrap' : ''} ${paired?'paired-seat':''}`} style={{...(flat ? {left:`${x}%`,top:`${y}%`} : {}),'--voice':mine ? voice.level : .7,'--facing':`${rotation}deg`}}>
+    const rotation = flat && mine ? flatFacingIndicator(i, facing) : undefined;
+    return <div key={i} className={`seat-wrap ${i === 11 ? 'host-wrap' : ''} ${talking ? 'is-speaking' : ''} ${mine ? 'my-wrap' : ''} ${paired?'paired-seat':''}`} style={{...(flat ? {left:`${x}%`,top:`${y}%`} : {}),'--voice':mine ? voice.level : .7,'--facing':rotation === undefined ? undefined : `${rotation}deg`}}>
       {flat && renderReaction(mine ? me : person?.id)}
       {mine&&<span className="facing-indicator" aria-hidden="true"/>}
       <button className={`seat ${occupied ? `occupied ${mine ? profile.gender : person.gender}` : 'empty'} ${mine ? 'mine' : ''} ${talking ? 'speaking' : ''}`} aria-label={mine ? '내 자리' : person ? `${i+1}번 손님 프로필` : i === 11 ? '빈 사장 자리로 이동' : `${i+1}번 빈자리로 이동`} disabled={!occupied && (seatFrozen || moving)} onClick={() => selectBarSeat(i)}>{photo ? <img src={photo} alt={mine ? '내 얼굴' : '손님 얼굴'}/> : occupied ? <UserRound size={18} aria-hidden="true"/> : <Plus size={18}/>}</button>
@@ -1971,9 +1964,10 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
       </div>
       <div className="conversation-status" role={voiceRecovering ? 'status' : undefined}>{voiceRecovering?'음성 연결을 다시 확인하고 있어요':activeFocus?'1:1 대화 중 · 다른 사람에게는 들리지 않아요':localSpeaking?'지금 이야기하고 있어요':guestsTalking&&partners[guest?.id]?'두 손님이 1:1로 대화하고 있어요':guestsTalking?(audible?'가까운 자리에서 이야기하고 있어요':'저쪽 자리에서 이야기하고 있어요'):'빈자리를 누르면 옮길 수 있어요'}</div>
       <div className="direction-control">
+        {QaDirectionAudio && <QaDirectionAudio guests={guests} gains={gains} pans={pans} prepareAudio={prepareCueAudio}/>}
         {activeFocus?<div className="focus-active"><MessageCircleMore size={17}/><span>1:1 대화 중 · 다른 사람에게는 들리지 않아요</span><button onClick={endFocus}>전체 대화로</button></div>:focusRequest?<div className="focus-active"><span>대화 요청에 답을 기다려요</span><button onClick={cancelFocus}>취소</button></div>:incomingFocus?<div className="focus-active"><MessageCircleMore size={17}/><span>옆자리 손님이 둘만의 대화를 요청했어요</span><button onClick={()=>respondFocus(false)}>거절</button><button onClick={()=>respondFocus(true)}>수락</button></div>:<>
           <div className="direction-label"><span>소리 집중 방향</span><output>{Math.round(facing)===0?'양쪽 고르게':`${facing<0?'왼쪽':'오른쪽'}으로 ${Math.round(Math.abs(facing))}°`}</output></div>
-          <div className="direction-presets"><button className={facing < -15 ? 'active' : ''} onClick={()=>setFacing(-60)}>왼쪽</button><button className={Math.abs(facing) <= 15 ? 'active' : ''} onClick={()=>setFacing(0)}>양쪽</button><button className={facing > 15 ? 'active' : ''} onClick={()=>setFacing(60)}>오른쪽</button></div><div className="direction-slider"><span aria-hidden="true">왼쪽</span><input type="range" aria-label="대화 방향 각도" min={-facingLimit} max={facingLimit} step={firstPerson ? 1 : 15} value={Math.round(facing)} style={{'--range-progress':`${((facing + facingLimit) / (2 * facingLimit)) * 100}%`}} onChange={e=>setFacing(Number(e.target.value))}/><span aria-hidden="true">오른쪽</span></div>
+          <div className="direction-presets"><button className={facing < -15 ? 'active' : ''} onClick={()=>setFacing(-60)}>왼쪽</button><button className={Math.abs(facing) <= 15 ? 'active' : ''} onClick={()=>setFacing(0)}>양쪽</button><button className={facing > 15 ? 'active' : ''} onClick={()=>setFacing(60)}>오른쪽</button></div><div className="direction-slider"><span aria-hidden="true">왼쪽</span><input type="range" aria-label="대화 방향 각도" min={-facingLimit} max={facingLimit} step={1} value={Math.round(facing)} style={{'--range-progress':`${((facing + facingLimit) / (2 * facingLimit)) * 100}%`}} onChange={e=>setFacing(Number(e.target.value))}/><span aria-hidden="true">오른쪽</span></div>
           {neighbors.length>0&&<div className="neighbor-actions">{neighbors.map(g=><button key={g.id} onClick={()=>{setSelectedGuest(g);open('guest');}}><ArrowLeftRight size={13}/>{g.seat<seat?'왼쪽':'오른쪽'} 옆자리{partners[g.id]?' · 대화 중':'와만 대화'}</button>)}</div>}
         </>}
         <div className="bar-volume-control">
@@ -2128,7 +2122,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
               </button>
             </div>
           </dialog>
-        </> : <UserRound size={32} aria-hidden="true"/>}<Glass id={selectedGuest.drinkId}/></div><h2 id="sheet-title">{selectedGuest.nickname || '혼술 친구'}</h2><p className="guest-meta"><span>{DRINKS.find(d => d.id === selectedGuest.drinkId)?.name} 마시는 중</span><span aria-hidden="true">·</span><span>{partners[selectedGuest.id]&&partners[selectedGuest.id]!=='me'?'옆자리와 대화 중':mutedGuests.includes(selectedGuest.id)?(reportedIds.has(selectedGuest.id)?'이용자 보호로 연결되지 않아요':'음소거되어 들리지 않아요'):guests.find(guest=>guest.id===selectedGuest.id)?.mic===false&&!mesh.talking.includes(selectedGuest.id)?'마이크가 꺼져 있어요':`내 자리에서 ${Math.round(audioGain({id:'me',seat},selectedGuest,facing,partners,mutedGuests)*100)}%로 들려요`}</span></p>
+        </> : <UserRound size={32} aria-hidden="true"/>}<Glass id={selectedGuest.drinkId}/></div><h2 id="sheet-title">{selectedGuest.nickname || '혼술 친구'}</h2><p className="guest-meta"><span>{DRINKS.find(d => d.id === selectedGuest.drinkId)?.name} 마시는 중</span><span aria-hidden="true">·</span><span>{partners[selectedGuest.id]&&partners[selectedGuest.id]!=='me'?'옆자리와 대화 중':mutedGuests.includes(selectedGuest.id)?(reportedIds.has(selectedGuest.id)?'이용자 보호로 연결되지 않아요':'음소거되어 들리지 않아요'):guests.find(guest=>guest.id===selectedGuest.id)?.mic===false&&!mesh.talking.includes(selectedGuest.id)?'마이크가 꺼져 있어요':`내 자리에서 ${Math.round((focusGains[selectedGuest.id] || 0)*100)}%로 들려요`}</span></p>
         {partners[selectedGuest.id]&&partners[selectedGuest.id]!=='me'?<div className="guest-focus-panel"><MessageCircleMore size={18}/><p>지금 1:1로 대화하고 있어요.<br/>다른 사람에게는 목소리가 들리지 않아요.</p><Button size="large" variant="weak" disabled={waveSent.includes(selectedGuest.id)} onClick={()=>sendWave(selectedGuest)}>{waveSent.includes(selectedGuest.id)?'인사를 남겼어요':'손 흔들기'}</Button></div>:activeFocus===selectedGuest.id?<Button display="block" variant="weak" onClick={()=>{endFocus();setSheet(null);}}>전체 대화로 돌아가기</Button>:<div className="guest-focus-panel"><Button size="large" display="block" disabled={!adjacent(seat,selectedGuest.seat)||!!activeFocus||!!focusRequest||mutedGuests.includes(selectedGuest.id)||seconds===0} onClick={()=>requestFocus(selectedGuest)}>이 옆자리와만 대화하기</Button><p>{!adjacent(seat,selectedGuest.seat)?'바로 옆에 앉아 있을 때 이용할 수 있어요.':'수락하면 둘만 들리고, 자리를 옮기면 전체 대화로 돌아가요.'}</p></div>}
         {!reportedIds.has(selectedGuest.id) && <Button className="guest-seat-request" size="large" display="block"
           disabled={!!outgoingGift} onClick={() => {setSelection('highball'); open('gift-send');}}>

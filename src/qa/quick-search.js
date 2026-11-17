@@ -41,7 +41,17 @@ const scenarios = [
     ['bar-third','기본 3D·옷 색·소리 방향'], ['bar-first','1인칭'], ['bar-flat','2D'], ['bar-full','12석 만석'],
     ['bar-remote-facing','다른 손님 의자 회전·퇴장'], ['bar-solo','혼자 대기 · 20:00'], ['bar-arrival','5초 뒤 손님 입장'], ['bar-departure','5초 뒤 손님 퇴장'],
     ['bar-low','5분 미만 경고'], ['bar-ended','이용 시간 종료'], ['bar-order','한 잔 더 주문'], ['bar-held-drink','손에 든 잔 · 잔량과 이동'],
-    ['bar-host','사장 자리 · 시간 제한 없음'], ['bar-gift-incoming','한 잔 받기'],
+    ['bar-host','사장 자리 · 시간 제한 없음'],
+    ['bar-bgm-volume','BGM 한 버튼 · 음소거','배경음악 버튼 → 음량을 0%까지 내리기'],
+    ['bar-reaction-layer','이모지와 빈자리 버튼','이모지를 눌러 빈자리 버튼 위에 표시되는지 확인'],
+    ['bar-gift-incoming','한 잔 받기'],
+    ['bar-gift-outgoing','먼 자리 손님에게 한 잔 보내기','10번 손님에게 보내면 3초 뒤 수락'],
+  ]],
+  ['바 테마', [
+    ['bar-theme-original','클래식 바'],
+    ['bar-theme-izakaya','일본 이자카야','종이등과 사케 선반'],
+    ['bar-theme-speakeasy','미국 재즈 바 · 레코드와 황동 장식'],
+    ['bar-theme-holiday','크리스마스 바','트리와 반짝이는 전구'],
   ]],
   ['자리 이동과 맞교환', [
     ['bar-move','빈자리 이동·내 발소리'], ['bar-move-near','옆자리 인사 후 이동'], ['bar-move-host','사장 자리로 이동'],
@@ -52,8 +62,11 @@ const scenarios = [
     ['bar-swap-out','보낸 요청을 상대가 수락','4번 손님 프로필에서 자리 양보를 부탁해 보세요.'],
     ['bar-swap-no','보낸 요청을 상대가 거절','4번 손님 프로필에서 자리 양보를 부탁해 보세요.'],
     ['bar-swap-expire','받은 맞교환 요청 만료'],
+    ['bar-swap-auto','현재 자리에서 자동 거절','자동 거절 후 빈자리로 옮기면 다음 요청이 와요.'],
   ]],
   ['대화와 손님', [
+    ['bar-host-direction','사장석 · 화살표와 소리 방향','4번 낮은음과 8번 높은음을 시점별로 비교'],
+    ['bar-guest-direction','일반석 · 화살표와 소리 방향','10번 낮은음과 8번 높은음을 시점별로 비교'],
     ['bar-focus-request','옆자리 1:1 대화 요청'], ['bar-focus','옆자리와 1:1 대화 중'],
     ['bar-focus-right-end','오른쪽 끝자리 1:1 요청'],
     ['bar-profiles','손님 프로필·음소거·신고'],
@@ -65,9 +78,9 @@ export { scenarios };
 
 const incomingSwaps = {
   'bar-swap-near':1, 'bar-swap-far':9, 'bar-swap-host':11,
-  'bar-swap-first':4, 'bar-swap-wait':3, 'bar-swap-decline':4, 'bar-swap-expire':4,
+  'bar-swap-first':4, 'bar-swap-wait':3, 'bar-swap-decline':4, 'bar-swap-expire':4, 'bar-swap-auto':4,
 };
-let scenario, state, matchingSince, startedAt, lastTick, replyAt, scripted, offerFinished;
+let scenario, state, matchingSince, startedAt, lastTick, replyAt, swapRetryAt, giftReplyAt, scripted, offerFinished;
 const vacancyAt = new Map();
 const kstDate = new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'});
 
@@ -76,7 +89,7 @@ export function setScenario(next) {
   matchingSince=0;
   offerFinished=false;
   vacancyAt.clear();
-  replyAt=0;
+  replyAt=swapRetryAt=giftReplyAt=0;
   scripted=false;
   lastTick=startedAt=Date.now();
   const rooms = {
@@ -122,11 +135,13 @@ export function setScenario(next) {
   }
   if (!next.startsWith('bar-') || next === 'bar-camera') return;
 
-  const mine = {'bar-host':11,'bar-swap-wait':8,'bar-focus-right-end':10,'bar-move-blocked':4}[next] ?? 0;
+  const mine = {'bar-host-direction':11,'bar-guest-direction':8,'bar-reaction-layer':5,'bar-host':11,'bar-swap-wait':8,'bar-focus-right-end':10,'bar-move-blocked':4}[next] ?? 0;
   const time = {'bar-low':240,'bar-ended':0,'bar-order':810,'bar-held-drink':810,'bar-rejoin':1040}[next] ?? BASE_DRINK_MINUTES*60;
   const away = next === 'bar-rejoin';
   const solo = ['bar-solo','bar-arrival'].includes(next);
   const guestsAt = {
+    'bar-host-direction':[3,7], 'bar-guest-direction':[9,7],
+    'bar-reaction-layer':[0,2,8,10], 'bar-gift-outgoing':[9,3],
     'bar-held-drink':[3,9],
     'bar-remote-facing':[5], 'bar-departure':[5], 'bar-move':[3,8], 'bar-move-near':[1,7], 'bar-move-host':[3,8], 'bar-move-fail':[3,8],
     'bar-guest-move':[2,8], 'bar-swap-out':[3,7], 'bar-swap-no':[3,7],
@@ -140,8 +155,9 @@ export function setScenario(next) {
   state.guests = solo || away ? [] : (next === 'bar-full'
     ? Array.from({length:CAPACITY - 1}, (_, i) => makeGuest(i+1,i))
     : layout.map(makeGuest));
-  state.visit={id:'qa-visit',region:'서울',number:1,seat:away?null:mine,drinkId:'highball',seconds:time,away,soloPaused:solo};
-  state.rooms=[room(1,state.guests.length+(away?0:1)), room(2,0)];
+  const branch = {'bar-theme-holiday':1,'bar-theme-original':3,'bar-theme-speakeasy':4,'bar-theme-izakaya':17}[next] ?? 3;
+  state.visit={id:'qa-visit',region:'서울',number:branch,seat:away?null:mine,drinkId:'highball',seconds:time,away,soloPaused:solo};
+  state.rooms=[room(branch,state.guests.length+(away?0:1)), room(2,0)];
   if (swapSeat != null) {
     state.requests=[request('swap','qa-guest-0',state.member.id, next === 'bar-swap-expire' ? 9000 : 300000)];
   }
@@ -211,6 +227,25 @@ function tick(now) {
     if (offer) respondToSwap(offer,scenario!=='bar-swap-no');
     replyAt=0;
   }
+  if (swapRetryAt && now >= swapRetryAt) {
+    swapRetryAt=0;
+    if (!state.visit?.away && !state.visit.autoDeclineSwaps) {
+      state.requests.push(request('swap','qa-guest-1',state.member.id));
+    }
+  }
+  if (giftReplyAt && now >= giftReplyAt) {
+    giftReplyAt=0;
+    const offer=state.requests.find(item=>item.kind==='drink-gift' && item.sender===state.member.id);
+    const guest=state.guests.find(item=>item.id===offer?.receiver);
+    const drink=DRINKS.find(item=>item.id===offer?.gift_drink_id);
+    if (guest && drink && state.member.balance >= drink.price) {
+      spendPoints(drink.price);
+      guest.drinkId=drink.id;
+      guest.seconds+=drink.minutes*60;
+      state.notifications.push({id:offer.id,kind:'drink-gift',title:'손님이 한 잔을 받았어요.',read_at:null});
+      state.requests=state.requests.filter(item=>item.id!==offer.id);
+    }
+  }
   state.requests=state.requests.filter(item=>Date.parse(item.expires_at)>now);
   if (state.visit?.away && state.visit.seconds===0) state.visit=null;
 }
@@ -272,7 +307,7 @@ export function qaRequest(body,method) {
   }
   if(action==='enter'){
     if (state.visit?.away && state.visit.region===data.region && state.visit.number===data.number && !data.drinkId) {
-      Object.assign(state.visit,{away:false,seat:0});
+      Object.assign(state.visit,{away:false,seat:0,autoDeclineSwaps:false});
     } else {
       const drink=DRINKS.find(item=>item.id===data.drinkId)||DRINKS[0];
       const target = state.rooms.find(room => room.region===data.region && room.number===data.number);
@@ -289,6 +324,10 @@ export function qaRequest(body,method) {
   if(action==='move' && state.visit){
     if(scenario==='bar-move-fail')throw new Error('다른 손님이 먼저 앉았어요.');
     if(state.guests.some(guest=>guest.seat===data.seat))throw new Error('이미 손님이 앉아 있어요.');
+    if (state.visit.seat !== data.seat && state.visit.autoDeclineSwaps) {
+      state.visit.autoDeclineSwaps=false;
+      swapRetryAt=Date.now()+4000;
+    }
     state.visit.seat=data.seat;
     state.partners={};
     syncRoom();
@@ -304,7 +343,10 @@ export function qaRequest(body,method) {
     if(state.reportedIds?.includes(data.targetId))throw new Error('이용자 보호를 위해 연결할 수 없어요.');
     const offer=request(data.kind,state.member.id,data.targetId);
     if (data.kind==='drink-gift') offer.gift_drink_id=data.drinkId;
-    if (data.kind==='drink-gift') state.requests.push(offer);
+    if (data.kind==='drink-gift') {
+      state.requests.push(offer);
+      if (scenario==='bar-gift-outgoing') giftReplyAt=Date.now()+3000;
+    }
     else state.requests=[...state.requests.filter(item=>item.kind==='drink-gift'),offer];
     result={id:offer.id};
     if(data.kind==='swap')replyAt=Date.now()+2700;
@@ -312,7 +354,15 @@ export function qaRequest(body,method) {
   if(action==='respond'){
     const offer=state.requests.find(item=>item.id===data.id);
     if (!offer) throw new Error('요청 시간이 끝났어요.');
-    if(offer.kind==='swap')respondToSwap(offer,data.accept);
+    if(offer.kind==='swap') {
+      respondToSwap(offer,data.accept);
+      if (!data.accept && data.autoDecline) {
+        state.visit.autoDeclineSwaps=true;
+        state.requests=state.requests.filter(item=>item.kind!=='swap' || item.receiver!==state.member.id);
+        result={autoDeclined:true};
+        if (scenario==='bar-swap-auto') swapRetryAt=Date.now()+4000;
+      }
+    }
     else if (offer.kind==='drink-gift') {
       const drink=DRINKS.find(item=>item.id===offer.gift_drink_id);
       if (data.accept && drink) {
@@ -344,7 +394,7 @@ export function qaRequest(body,method) {
   if(action==='leave' && state.visit){
     const restricted=state.guests.some(guest=>state.reportedIds?.includes(guest.id));
     state.rooms=[room(state.visit.number,state.guests.length,state.visit.region,restricted),room(2,0)];
-    Object.assign(state.visit,{seat:null,away:true,soloPaused:false});
+    Object.assign(state.visit,{seat:null,away:true,soloPaused:false,autoDeclineSwaps:false});
     state.guests=[];
     state.requests=[];
     state.partners={};

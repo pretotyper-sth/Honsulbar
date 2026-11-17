@@ -1,5 +1,5 @@
-import { SEATS, drinkLevel } from './social.js';
-import { DRINKS, proximity } from './model.js';
+import { SEATS, audioGain, drinkLevel } from './social.js';
+import { DRINKS } from './model.js';
 import { barMaterials, barThemes } from './bar-themes.js';
 
 const THIRD_EYE = [0, 10.4, 12.7];
@@ -51,12 +51,25 @@ export function partnerFacing(seat, otherSeat) {
   return 45 * Math.sign(wrapFacing((facingBar(from) - toward) * 180 / Math.PI));
 }
 
-export function firstPersonVoice(listener, speaker, degrees) {
-  const from = barSeats[listener], to = barSeats[speaker];
-  if (!from || !to || listener === speaker) return {gain:0, pan:0};
-  const relative = facingYaw(from,degrees) - Math.atan2(to[0]-from[0],to[1]-from[1]);
-  const focus = (1 + Math.cos(relative)) / 2;
-  return {gain: proximity(listener,speaker) * (.22 + .78 * focus), pan: .8 * Math.sin(relative)};
+export function facingIndicatorAngle(dx, dz) {
+  return Math.atan2(dx, -dz) * 180 / Math.PI;
+}
+
+export function flatFacingIndicator(seat, degrees) {
+  const yaw = facingYaw(barSeats[seat], degrees);
+  return facingIndicatorAngle(Math.sin(yaw), Math.cos(yaw));
+}
+
+export function barVoice(listener, speaker, degrees, partners, muted) {
+  const from = barSeats[listener.seat], to = barSeats[speaker.seat];
+  if (!from || !to || listener.seat === speaker.seat) return {gain:0, pan:0};
+  const gain = audioGain(listener, speaker, partners, muted);
+  if (!gain || speaker.speaker || partners?.[listener.id] === speaker.id) return {gain, pan:0};
+
+  const relative = facingYaw(from, degrees) - Math.atan2(to[0] - from[0], to[1] - from[1]);
+  const focus = ((1 + Math.cos(relative)) / 2) ** 2;
+  const strength = Math.min(1, Math.abs(wrapFacing(degrees)) / 45);
+  return {gain:gain * mix(1, .05 + .95 * focus, strength), pan:.8 * Math.sin(relative)};
 }
 
 const outerSeat = index => {
@@ -299,17 +312,132 @@ for (let row = -4; row <= 4; row++) {
 }
 box(walls, 0, 1.65, -6.55, 13.1, 3.3, .16, barMaterials.rearWall);
 box(room, 0, .28, -6.39, 13.1, .56, .16, trim);
-box(room, 0, 1.13, -6.24, 8.4, .16, .44, wood);
-box(room, 0, 2.05, -6.35, 8.4, .15, .48, wood);
-for (let shelf = 0; shelf < 2; shelf++) {
-  for (let i = 0; i < 12; i++) {
-    const x = (i - 5.5) * .62;
-    const base = shelf ? 2.13 : 1.22;
-    const palette = [olive, brass, barMaterials.bottles][(i + shelf) % 3];
-    box(room, x, base + .14, -6.15, .22, .28, .20, palette);
-    box(room, x, base + .32, -6.15, .10, .12, .10, palette);
-  }
+const linen = ['#f9dcb0', '#e8b779', '#bf8859'];
+const cherry = ['#c96350', '#9c4139', '#69302a'];
+const bronze = ['#edc58b', '#ac824f', '#795935'];
+const walnut = ['#72513e', '#53382d', '#392922'];
+const evergreen = ['#64825c', '#476849', '#304d3a'];
+const charcoal = ['#42383c', '#292427', '#221e21'];
+
+const holidayBulbs = [
+  ['#89583c', '#da9b63', '#ffd28f', '#fff1c4', '#fff9e8'],
+  ['#884745', '#d97a6e', '#ffa598', '#ffccc2', '#fff0e4'],
+  ['#596b65', '#81a59a', '#b8dbcc', '#e3f3d4', '#fbf9e8'],
+];
+
+function star(faces, x, y, z, radius, light, shade, tips = 4) {
+  const center = [x,y,z + radius * .09];
+  const rim = Array.from({length:tips * 2}, (_, i) => {
+    const angle = i * Math.PI / tips;
+    const r = i % 2 ? radius * .31 : radius;
+    return [x + Math.sin(angle) * r, y + Math.cos(angle) * r, z];
+  });
+  rim.forEach((point,i) => faces.push({
+    points:[center,point,rim[(i + 1) % rim.length]],
+    color:i % 2 ? shade : light,
+  }));
 }
+
+const holidayLights = [];
+for (let i = -9; i <= 9; i++) {
+  const x = i * .51;
+  const y = 2.78 + .24 * (Math.abs(i) % 5 / 4) ** 2;
+  holidayLights.push([x,y,-6.055,.087]);
+}
+holidayLights.push(
+  [-.72,1.28,-5.52,.11],[.57,1.43,-5.53,.105],[-.28,1.52,-5.54,.075],
+  [-.58,1.83,-5.54,.105],[.31,1.93,-5.56,.10],[.49,2.14,-5.55,.081],
+  [-.36,2.33,-5.61,.106],[.22,2.47,-5.61,.09],[-.13,2.72,-5.64,.075],
+  [-1.11,2.44,-6.03,.13],[1.11,2.44,-6.03,.13],
+);
+
+function backbar(theme) {
+  const faces = [];
+  const classic = theme === 'original';
+  for (let shelf = 0; shelf < 2; shelf++) {
+    const base = shelf ? 2.13 : 1.22;
+    for (const x of classic ? [0] : [-2.88,2.88]) {
+      box(faces, x, shelf ? 2.05 : 1.13, shelf ? -6.35 : -6.24, classic ? 8.4 : 2.64, shelf ? .15 : .16, shelf ? .48 : .44, wood);
+    }
+    for (let i = 0; i < 12; i++) {
+      const x = (i - 5.5) * .62;
+      if (!classic && Math.abs(x) < 1.75) continue;
+      const palette = [olive, brass, barMaterials.bottles][(i + shelf) % 3];
+      if (theme === 'izakaya') {
+        const sake = i % 2 ? linen : evergreen;
+        rounded(faces, x, base + .19, -6.12, .30, .38, .26, sake);
+        box(faces, x, base + .39, -6.12, .09, .13, .09, walnut);
+        box(faces, x, base + .16, -5.99, .105, .15, .026, i % 2 ? cherry : linen);
+      } else {
+        box(faces, x, base + .14, -6.15, .22, .28, .20, palette);
+        box(faces, x, base + .32, -6.15, .10, .12, .10, palette);
+      }
+    }
+  }
+
+  if (theme === 'izakaya') {
+    box(faces, 0, 1.65, -6.39, 2.8, 2.38, .10, walnut);
+    for (const x of [-.67,.67]) {
+      box(faces, x, 1.65, -6.29, 1.24, 2.18, .14, linen);
+      for (const offset of [-.41,0,.41]) box(faces, x + offset, 1.65, -6.19, .035, 2.18, .06, walnut);
+    }
+    for (const y of [.99,1.43,1.87,2.31]) box(faces, 0, y, -6.19, 2.6, .035, .06, walnut);
+    for (const x of [-2.1,0,2.1]) {
+      const y = x ? 2.72 : 2.89;
+      box(faces, x, y + .30, -5.89, .031, .38, .031, walnut);
+      rounded(faces, x, y, -5.89, .50, .58, .43, x ? cherry : linen);
+      for (const offset of [-.19,.18]) box(faces, x, y + offset, -5.89, .32, .032, .33, walnut);
+    }
+  } else if (theme === 'speakeasy') {
+    box(faces, 0, 1.8, -6.36, 3, 2.36, .10, charcoal);
+    for (const side of [-1,1]) {
+      for (let i = 0; i < 4; i++) {
+        const height = 1.94 - i * .32;
+        box(faces, side * (.91 + i * .16), .68 + height / 2, -6.25, .045, height, .05, bronze);
+      }
+    }
+    function record(radius, z, color) {
+      const points = Array.from({length:24}, (_, i) => {
+        const angle = i * TAU / 24;
+        return [radius * Math.cos(angle), 1.93 + radius * Math.sin(angle), z];
+      });
+      faces.push({points,color});
+    }
+    record(.83, -6.23, bronze[0]);
+    record(.77, -6.21, charcoal[1]);
+    record(.52, -6.19, '#504349');
+    record(.48, -6.17, charcoal[1]);
+    record(.23, -6.15, cherry[0]);
+    record(.045, -6.13, linen[0]);
+    box(faces, 0, .76, -6.07, 1.44, .23, .47, walnut);
+    box(faces, 0, .88, -6.07, 1.38, .06, .41, bronze);
+  } else if (theme === 'holiday') {
+    box(faces, 0, .74, -6.05, .76, .32, .62, bronze);
+    for (const [y,radius] of [[.86,.96],[1.37,.79],[1.86,.60],[2.28,.42]]) {
+      for (let i = 0; i < 8; i++) {
+        const point = angle => [radius * Math.cos(angle), y, -5.99 + radius * .36 * Math.sin(angle)];
+        faces.push({points:[[0,y+.79,-5.99],point(i * TAU / 8),point((i + 1) * TAU / 8)],color:evergreen[i % evergreen.length]});
+      }
+    }
+    star(faces, 0, 3.06, -5.91, .235, '#fff3c1', '#e8ac58', 5);
+    for (const [i,[x,y]] of [[-.66,1.06],[.64,1.13],[.13,1.28],[-.46,1.52],[.46,1.61],[-.29,1.99],[.24,2.11],[.05,2.56]].entries()) {
+      rounded(faces, x, y, -5.62, .18, .19, .16, i % 2 ? cherry : bronze);
+    }
+    for (const [x,y,w,h] of [[-1.11,.73,.39,.35],[.98,.67,.43,.25],[1.34,.70,.31,.30]]) {
+      box(faces, x, y, -5.88, w, h, .40, x<0 ? cherry : evergreen);
+      box(faces, x, y, -5.87, .06, h + .015, .42, linen);
+    }
+    for (const [i,[x,y,z,radius]] of holidayLights.entries()) {
+      if (i < 19) box(faces, x, y + .055, z - .065, .54, .064, .055, evergreen);
+      const color = holidayBulbs[i % holidayBulbs.length];
+      const size = radius * .95;
+      rounded(faces, x, y, z - .014, size, size * 1.23, size, [color[3],color[2],color[1]]);
+    }
+  }
+  return faces;
+}
+
+const themedBackbars = Object.fromEntries(barThemes.map(({id}) => [id, backbar(id)]));
 
 function counter(x, z, width, depth) {
   box(room, x, .59, z, width - .13, 1.18, depth - .13, trim);
@@ -441,14 +569,14 @@ function clip(points) {
   });
 }
 
-export function paintBar(context, width, height, view, people, ownPose, pitch = FIRST_PERSON_PITCH, depthRenderer = null, theme = barThemes[0]) {
+export function paintBar(context, width, height, view, people, ownPose, pitch = FIRST_PERSON_PITCH, depthRenderer = null, theme = barThemes[0], ambientTime = 0) {
   const first = view === 'first';
   const [x,z] = ownPose.position;
   const {camera, screen, focal, lens} = first
     ? projection(width, height, [x, 1.76 + ownPose.rise * .05, z], ownPose.yaw, pitch, .67)
     : projection(width, height, THIRD_EYE, Math.PI, THIRD_PITCH, 1.39);
 
-  const faces = [...room];
+  const faces = [...room, ...themedBackbars[theme.id]];
   chairs.forEach((geometry, seat) => {
     const angle = people.find(person => person.seat === seat)?.chairAngle;
     if (angle) chair(faces, seat, angle);
@@ -475,6 +603,15 @@ export function paintBar(context, width, height, view, people, ownPose, pitch = 
     return color ? { ...face, color } : face;
   }));
   const foreground = geometry[3];
+  if (theme.id === 'holiday') {
+    for (const [i,[x,y,z,radius]] of holidayLights.entries()) {
+      const colors = holidayBulbs[i % holidayBulbs.length];
+      const brightness = .5 + .5 * Math.cos(ambientTime * TAU / (2300 + i % 4 * 310) + i * 2.39);
+      const level = Math.round(brightness * 4);
+      star(foreground, x, y, z + .063, radius * (.64 + .66 * brightness), colors[level], colors[Math.max(0,level - 1)]);
+    }
+  }
+
   for (const person of people) {
     if (!first || !person.mine) avatar(foreground, person.pose, avatarOutfit(person.id, person.gender), person);
   }
@@ -521,6 +658,11 @@ export function paintBar(context, width, height, view, people, ownPose, pitch = 
     if (point[2] < .55) return null;
     const [left,top,depth] = screen(point);
     if (left < 20 || left > width - 20 || top < 18 || top > height - 19) return null;
-    return {left, top, depth, portraitSize:first && pose ? AVATAR_BODY_WIDTH * focal / depth : null};
+    let facingAngle;
+    if (!first && person?.mine) {
+      const [aheadX,aheadY] = screen(camera([px + Math.sin(pose.yaw), markerHeight, pz + Math.cos(pose.yaw)]));
+      facingAngle = facingIndicatorAngle(aheadX - left, aheadY - top);
+    }
+    return {left, top, depth, facingAngle, portraitSize:first && pose ? AVATAR_BODY_WIDTH * focal / depth : null};
   });
 }

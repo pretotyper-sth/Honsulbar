@@ -42,3 +42,6 @@
 }
 .app > header .qa-group button[aria-pressed=true] { background:#b6d7ff; color:#152749; }
 .qa-group button small { display:block; margin-top:3px; color:#505c68; line-height:1.35; }
+
+.qa-direction { display:flex; align-items:center; gap:8px; margin-bottom:10px; color:var(--bar-muted); font-size:11px; }
+.qa-direction button { flex:none; min-height:34px; padding:4px 8px; border-radius:8px; background:var(--bar-accent); color:#35251b; font-size:12px; }
