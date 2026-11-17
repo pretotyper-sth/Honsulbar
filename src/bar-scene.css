@@ -75,8 +75,18 @@
   border-radius:10px;
 }
 .bar-scene { isolation:isolate; background:linear-gradient(var(--bar-top,#252c2b),var(--bar-base,#33211e)); }
-.bar-scene-depth,.bar-scene-canvas,.bar-scene-markers { position:absolute; inset:0; width:100%; height:100%; }
-.bar-scene-depth,.bar-scene-markers { pointer-events:none; }
+.bar-scene-depth,.bar-scene-canvas,.bar-scene-markers,.bar-scene-reactions { position:absolute; inset:0; width:100%; height:100%; }
+.bar-scene-depth,.bar-scene-markers,.bar-scene-reactions { pointer-events:none; }
+.bar-scene-markers { z-index:3; }
+.bar-scene-reactions { z-index:5; }
+.bar-scene-reaction-anchor {
+  position:absolute;
+  left:var(--spot-x,-100px);
+  top:var(--spot-y,-100px);
+  width:var(--portrait-size,38px);
+  height:var(--portrait-size,38px);
+  transform:translate(-50%,-50%);
+}
 .bar-scene .seat-wrap {
   --avatar-size:var(--portrait-size,clamp(30px,9.45vw,38px));
   left:var(--spot-x, -100px);
@@ -347,9 +357,7 @@ html.in-toss .ait-gnb-fill:has(+ .app.bar-active) {
 }
 .bar-scene-third .bar-reaction-picker:has(.bar-reaction-options) { z-index:9; }
 .bar-scene-third .bar-reaction-options {
-  position:absolute;
-  inset-inline-start:0;
-  bottom:calc(100% + 10px);
+  z-index:1;
 }
 .bar-reaction-options button:active { background:var(--bar-surface); }
 .bar-reaction-picker button:focus-visible { outline:2px solid var(--bar-accent); outline-offset:-2px; }
@@ -368,7 +376,7 @@ html.in-toss .ait-gnb-fill:has(+ .app.bar-active) {
 .bar-reaction-self {
   position:absolute;
   z-index:8;
-  top:30%;
+  top:50%;
   left:50%;
   pointer-events:none;
 }

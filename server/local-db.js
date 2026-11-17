@@ -48,6 +48,7 @@ const MIGRATIONS = [
   '20261116_visit_clock_snapshot.sql',
   '20261116_z_toss_profile_photo_screening.sql',
   '20261117_z_drink_gifts.sql',
+  '20261117_zz_swap_auto_decline.sql',
 ];
 const TABLES = new Set([
   'hb_safety_ops', 'hb_voice_evidence', 'hb_voice_consents', 'hb_push_devices', 'hb_android_ad_claims', 'hb_account_transfers', 'hb_auth_cleanup',

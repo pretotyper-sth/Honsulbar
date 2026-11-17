@@ -631,3 +631,34 @@ test('declined, expired, and blocked drink gifts do not charge any points', asyn
     await db.close();
   }
 });
+
+test('auto declining swap requests affects the current seat and clears after moving back', async () => {
+  const { db, login, ready, action, snapshot } = await setup();
+  try {
+    await db.exec(sql('20261117_zz_swap_auto_decline.sql'));
+    const [a,b,c,d] = await Promise.all(['721005','721006','721007','721008'].map(login));
+    for (const id of [a,b,c,d]) {
+      await ready(id,'느긋한 구름');
+      await action(id,'enter',{region:'서울',number:1,drinkId:'highball'});
+    }
+    const seat = (await snapshot(b)).visit.seat;
+    const first = await action(a,'request',{kind:'swap',targetId:b});
+    const second = await action(c,'request',{kind:'swap',targetId:b});
+    await action(b,'respond',{id:first.id,accept:false,autoDecline:true});
+    const next = await action(d,'request',{kind:'swap',targetId:b});
+    assert.equal(next.autoDeclined,true);
+    assert.ok(!(await snapshot(b)).requests.some(request=>request.kind==='swap'));
+    const statuses = await db.query('select status from hb_requests where id=any($1::uuid[])',[[first.id,second.id,next.id]]);
+    assert.deepEqual(statuses.rows.map(row=>row.status),['declined','declined','declined']);
+    for (const id of [a,b,c,d]) assert.equal((await snapshot(id)).member.balance,1500);
+    await action(b,'move',{seat:5});
+    await action(b,'move',{seat});
+    assert.equal((await db.query('select auto_decline_swaps from hb_visits where member_id=$1',[b])).rows[0].auto_decline_swaps,false);
+    await db.query("update hb_requests set created_at=now()-interval '11 seconds' where id=$1",[first.id]);
+    await action(b,'move',{seat:5});
+    const afterMove = await action(a,'request',{kind:'swap',targetId:b});
+    assert.notEqual(afterMove.autoDeclined,true);
+  } finally {
+    await db.close();
+  }
+});

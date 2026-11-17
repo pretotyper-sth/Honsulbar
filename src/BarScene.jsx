@@ -23,11 +23,12 @@ export function BarViewOptions({ view, onChange }) {
   </div>;
 }
 
-export function BarScene({ view, seat, memberId, gender, facing, partners, drinkId, seconds, elapsed, seatNeutralClock, guests, renderSeat, onUnavailable, onOpenSeats, onFacingChange, moving, onMotionChange, seatPickerRef, onCue, micOff, theme, children }) {
+export function BarScene({ view, seat, memberId, gender, facing, partners, drinkId, seconds, elapsed, seatNeutralClock, guests, renderSeat, renderSeatReaction, onUnavailable, onOpenSeats, onFacingChange, moving, onMotionChange, seatPickerRef, onCue, micOff, theme, children }) {
   const canvas = useRef(null);
   const depthCanvas = useRef(null);
   const depth = useRef(null);
   const markers = useRef(null);
+  const reactions = useRef(null);
   const previous = useRef(new Map());
   const moves = useRef(new Map());
   const [pitch, setPitch] = useState(FIRST_PERSON_PITCH);
@@ -221,8 +222,10 @@ export function BarScene({ view, seat, memberId, gender, facing, partners, drink
       );
       visiblePoints.forEach((point, i) => {
         const marker = buttons[i];
+        const reaction = reactions.current.children[i];
         const retainFocus = marker.contains(document.activeElement);
         marker.hidden = !point && !retainFocus;
+        reaction.hidden = !point;
         if (!point) {
           if (retainFocus) marker.style.setProperty('--spot-x', '-100px');
           return;
@@ -235,6 +238,9 @@ export function BarScene({ view, seat, memberId, gender, facing, partners, drink
         marker.style.setProperty('--portrait-size', `${diameter}px`);
         marker.style.setProperty('--spot-x', `${point.left}px`);
         marker.style.setProperty('--spot-y', `${point.top}px`);
+        reaction.style.setProperty('--portrait-size', `${diameter}px`);
+        reaction.style.setProperty('--spot-x', `${point.left}px`);
+        reaction.style.setProperty('--spot-y', `${point.top}px`);
         marker.style.zIndex = Math.max(1, Math.floor(1000 - point.depth * 35));
       });
       if (moves.current.size || turning) redraw();
@@ -262,6 +268,9 @@ export function BarScene({ view, seat, memberId, gender, facing, partners, drink
         tabIndex={first ? 0 : undefined} onKeyDown={first ? lookKeys : undefined}/>
       <div className="bar-scene-markers" ref={markers}>
         {Array.from({length:12}, (_, i) => renderSeat(i, false, moving))}
+      </div>
+      <div className="bar-scene-reactions" ref={reactions} aria-hidden="true">
+        {Array.from({length:12}, (_, i) => <div key={i} className="bar-scene-reaction-anchor">{renderSeatReaction(i)}</div>)}
       </div>
       {children}
       {first && micOff && <span className="bar-first-mic-off">

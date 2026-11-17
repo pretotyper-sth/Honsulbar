@@ -1279,22 +1279,29 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
     } catch (e) { setError(e.message); }
     finally { previewLock.current = false; }
   }
-  async function respondSwap(accept) {
-    if (!incoming) return;
+  async function respondSwap(accept, autoDecline = false) {
+    if (!incoming || busy) return;
+    setBusy(true);
     prepareCueAudio();
     try {
-      await run('respond', { id: incoming.id, accept });
+      await run('respond', { id: incoming.id, accept, ...(autoDecline ? { autoDecline:true } : {}) });
       setSheet(null);
-      setToast(accept ? '자리를 양보하고 500P를 받았어요' : '요청을 거절했어요.');
+      setToast(accept ? '자리를 양보하고 500P를 받았어요' : autoDecline ? '이 자리에 있는 동안 자동으로 거절해요.' : '요청을 거절했어요.');
       if (!accept) playCue('declined');
-    } catch (e) { setSheet(null); setToast(e.message); }
+    } catch (e) { setSheet(null); fail(e); }
+    finally { setBusy(false); }
   }
   async function sendSeatRequest() {
     if (outgoing || !selectedGuest || wallet.balance < 500) return;
     if (dailySwapRequests >= DAILY_SWAP_REQUEST_LIMIT) { setToast('오늘은 자리 양보 요청을 더 보낼 수 없어요.'); return; }
     if (seatRequestCounts[`${selectedGuest.id}:${selectedGuest.seat}`]) { setToast('같은 자리에는 한 번만 부탁할 수 있어요.'); return; }
     prepareCueAudio();
-    try { await run('request', { targetId: selectedGuest.id, kind: 'swap' }); setSheet(null); setToast('부탁했고 수락 시 500P가 사용돼요.'); }
+    try {
+      const result = await run('request', { targetId: selectedGuest.id, kind: 'swap' });
+      setSheet(null);
+      setToast(result?.autoDeclined ? '요청이 거절돼 포인트는 그대로예요.' : '부탁했고 수락 시 500P가 사용돼요.');
+      if (result?.autoDeclined) playCue('declined');
+    }
     catch (e) { setError(e.message); }
   }
   async function sendDrinkGift() {
@@ -1776,7 +1783,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
     const paired=partners[mine?'me':person?.id];
     const rotation=(i===11?180:Math.atan2(50-y,50-x)*180/Math.PI+90)+(mine?facing:0);
     return <div key={i} className={`seat-wrap ${i === 11 ? 'host-wrap' : ''} ${talking ? 'is-speaking' : ''} ${mine ? 'my-wrap' : ''} ${paired?'paired-seat':''}`} style={{...(flat ? {left:`${x}%`,top:`${y}%`} : {}),'--voice':mine ? voice.level : .7,'--facing':`${rotation}deg`}}>
-      {renderReaction(mine ? me : person?.id)}
+      {flat && renderReaction(mine ? me : person?.id)}
       {mine&&<span className="facing-indicator" aria-hidden="true"/>}
       <button className={`seat ${occupied ? `occupied ${mine ? profile.gender : person.gender}` : 'empty'} ${mine ? 'mine' : ''} ${talking ? 'speaking' : ''}`} aria-label={mine ? '내 자리' : person ? `${i+1}번 손님 프로필` : i === 11 ? '빈 사장 자리로 이동' : `${i+1}번 빈자리로 이동`} disabled={!occupied && (seatFrozen || moving)} onClick={() => selectBarSeat(i)}>{photo ? <img src={photo} alt={mine ? '내 얼굴' : '손님 얼굴'}/> : occupied ? <UserRound size={18} aria-hidden="true"/> : <Plus size={18}/>}</button>
       {occupied && <span className="seat-drink" title={DRINKS.find(d => d.id === personDrink)?.name}><Glass id={personDrink} seconds={leftTime} host={i===11&&!server?.seatNeutralClock}/><span className="sr-only">{DRINKS.find(d => d.id === personDrink)?.name}, {i===11&&!server?.seatNeutralClock?'시간 제한 없음':`${Math.ceil(leftTime/60)}분 남음`}</span></span>}
@@ -1953,7 +1960,9 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
           {positions.map((_, i) => renderBarSeat(i, true))}
         </div>{reactionPicker}</div> : <BarScene key={visit?.id} view={barView} seat={seat} memberId={member?.id} gender={member?.gender} facing={facing}
           partners={partners} drinkId={ wallet.drinkId } seconds={seconds} elapsed={elapsed} seatNeutralClock={server?.seatNeutralClock}
-          guests={guests} renderSeat={renderBarSeat} onUnavailable={selectBarView}
+          guests={guests} renderSeat={renderBarSeat}
+          renderSeatReaction={i => i === seat ? (firstPerson ? null : renderReaction(me)) : renderReaction(guests.find(guest => guest.seat === i)?.id)}
+          onUnavailable={selectBarView}
           onOpenSeats={() => open('bar-seats')} onFacingChange={setFacing} moving={sceneMoving}
           onMotionChange={setSceneMoving} seatPickerRef={seatPickerTrigger} onCue={playCue} micOff={!micSending} theme={barTheme}>
           {reactionPicker}
@@ -2028,7 +2037,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry} = {}) {
       </>}
       {(sheet === 'welcome' || sheet === 'menu') && <><p className="eyebrow">{isWelcome ? (room?.firstGuest ? `${room.region} · 첫 손님으로 입장` : `${room?.region} ${room?.number}호점 입장`) : '메뉴판'}</p><h2 id="sheet-title">{isWelcome ? '어떤 음료로 시작할까요?' : '한 잔 더 하고 갈까요?'}</h2><p className="sheet-description">{isWelcome ? (subscription ? '구독 중이면 입장에 포인트가 차감되지 않아요.' : '입장 시 포인트가 차감돼요.') : '주문한 잔은 내 사진 옆에 놓여요.'}</p><div className="menu">{DRINKS.filter(item => !isWelcome || item.minutes === BASE_DRINK_MINUTES).map(item => <button className={selection === item.id ? 'chosen' : ''} key={item.id} aria-pressed={selection === item.id} onClick={() => {setSelection(item.id);setError('');}}><div className="drink-illustration"><Glass id={item.id}/></div><span><strong>{item.name}</strong><small>{item.note}</small><em>{`+${item.minutes}분`}</em></span><span className="menu-price">{isWelcome ? `입장 ${item.price.toLocaleString()}P` : `${item.price.toLocaleString()} P`}{selection === item.id && <Check size={16}/>}</span></button>)}</div><div className="order-summary"><span>보유 포인트<b>{wallet.balance.toLocaleString()} P</b></span><span>{subscription ? '구독 이용' : (isWelcome ? '입장 후 남는 포인트' : '주문 후 남는 포인트')}<strong>{subscription ? '0 P' : `${Math.max(0,wallet.balance-price).toLocaleString()} P`}</strong></span></div><p className="digital-note">음료는 취향을 표현하는 아이템이에요.</p>{!subscription && wallet.balance<price?<><div className="insufficient-state"><strong>{(price-wallet.balance).toLocaleString()}P가 더 필요해요</strong><span>충전 후 {isWelcome ? '입장' : '주문'}할 수 있어요.</span></div><Button className="sheet-recharge-cta" size="xlarge" display="block" onClick={()=>open('shop')}>포인트 충전하기</Button><p className="footnote">충전 후 선택한 음료로 이용해요.</p></>:<div className="sheet-inline-cta"><Button size="xlarge" display="block" disabled={busy} onClick={confirmOrder}>{subscription ? (isWelcome ? `${chosen.minutes}분 입장하기` : `주문 · ${chosen.minutes}분 연장`) : (isWelcome ? `${price.toLocaleString()} 포인트로 ${chosen.minutes}분 입장하기` : `${price.toLocaleString()} 포인트로 주문 · ${chosen.minutes}분 연장`)}</Button><p className="footnote">{subscription ? '구독 기간에는 입장·연장에 포인트가 차감되지 않아요.' : (isWelcome ? (leftover ? '다른 호점에 입장하면 남은 이용시간은 끝나요.' : '바를 나가도 이 호점 이용시간은 이어져요.') : '주문을 누르면 포인트가 차감되고 이용시간이 늘어나요.')}</p></div>}</>}
       {sheet === 'preview' && previewRoom && <><p className="eyebrow">{previewRoom.region} {previewRoom.number}호점</p><h2 id="sheet-title">{previewGuests ? '지금 이 바의 손님들' : previewRoom.quickOfferId ? '입장 가능한 자리가 없어졌어요' : '들어가기 전에 살짝 볼까요?'}</h2>{previewGuests ? <><p className="sheet-description">미리보기 시점에 확인된 손님들이에요. 입장할 때는 달라질 수 있어요.</p><div className="preview-portraits">{previewGuests.map(g => <div key={g.id} className={g.gender}><img src={g.photo} alt={previewOffer ? g.nickname : '미리보기 손님'}/></div>)}</div>{previewOffer && <p className="sheet-description">{previewOffer.guest.nickname}</p>}{rooms[previewRoom.region].find(r => r.number === previewRoom.number)?.count === CAPACITY ? <Button size="xlarge" display="block" disabled={server?.safetyPaused} onClick={()=>requestWaitlist(previewRoom)}>{waitlistLabel(previewRoom)}</Button> : <Button size="xlarge" display="block" onClick={() => requestEntry(previewRoom)}>이 바에 입장하기</Button>}</> : previewRoom.quickOfferId ? <Button display="block" onClick={closeSheet}>닫기</Button> : <><div className="locked-preview"><LockKeyhole size={29}/><span>미리보기로 손님 사진을 확인해요.</span></div><p className="sheet-description">입장·자리 예약은 포함되지 않아요.</p><div className="order-summary"><span>보유 포인트<b>{wallet.balance.toLocaleString()} P</b></span><span>{subscription ? '구독 이용' : '구매 후 남는 포인트'}<strong>{subscription ? '0 P' : `${Math.max(0,wallet.balance-500).toLocaleString()} P`}</strong></span></div><Button size="xlarge" display="block" disabled={!subscription && wallet.balance < 500} onClick={buyPreview}>{subscription ? '미리보기' : '500P로 미리보기'}</Button></>}</>}
-      {sheet === 'incoming' && incoming && <><p className="eyebrow">자리 양보 요청</p><h2 id="sheet-title">자리 바꿔주실래요?</h2><p className="sheet-description">다른 손님이 지금 내 자리를 부탁했어요.<br/>{incomingSeconds}초 안에 수락하면 500P를 받아요.<br/>오늘 남은 보상 {Math.max(0,DAILY_SWAP_REWARD_LIMIT-dailySwapRewards)}회</p><div className="swap-reward"><ArrowLeftRight size={24}/><strong>+500 P</strong><span>수락과 동시에 적립</span></div><div className="actions"><Button color="dark" variant="weak" onClick={() => respondSwap(false)}>거절하기</Button><Button size="xlarge" disabled={dailySwapRewards >= DAILY_SWAP_REWARD_LIMIT} onClick={() => respondSwap(true)}>{dailySwapRewards >= DAILY_SWAP_REWARD_LIMIT ? '오늘 보상 한도에 도달했어요' : '양보하고 500P 받기'}</Button></div></>}
+      {sheet === 'incoming' && incoming && <><p className="eyebrow">자리 양보 요청</p><h2 id="sheet-title">자리 바꿔주실래요?</h2><p className="sheet-description">다른 손님이 지금 내 자리를 부탁했어요.<br/>{incomingSeconds}초 안에 수락하면 500P를 받아요.<br/>오늘 남은 보상 {Math.max(0,DAILY_SWAP_REWARD_LIMIT-dailySwapRewards)}회</p><div className="swap-reward"><ArrowLeftRight size={24}/><strong>+500 P</strong><span>수락과 동시에 적립</span></div><div className="actions"><Button color="dark" variant="weak" disabled={busy} onClick={() => respondSwap(false)}>거절하기</Button><Button size="xlarge" disabled={busy || dailySwapRewards >= DAILY_SWAP_REWARD_LIMIT} onClick={() => respondSwap(true)}>{dailySwapRewards >= DAILY_SWAP_REWARD_LIMIT ? '오늘 보상 한도에 도달했어요' : '양보하고 500P 받기'}</Button></div><div className="sheet-inline-cta"><Button display="block" color="dark" variant="weak" disabled={busy} onClick={() => respondSwap(false,true)}>이 자리에서는 자동 거절</Button></div></>}
       {sheet === 'gift-send' && selectedGuest && chosen && <>
         <p className="eyebrow">한 잔 보내기</p>
         <h2 id="sheet-title">{selectedGuest.nickname || '손님'}님께 어떤 한 잔을 보낼까요?</h2>
