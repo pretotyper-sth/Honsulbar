@@ -9,6 +9,7 @@ function writeMicPref(on) {
 export function useVoice(enabled, onError, live = true) {
   const [mic, setMic] = useState(false);
   const [pending, setPending] = useState(false);
+  const [interrupted, setInterrupted] = useState(false);
   const [level, setLevel] = useState(0);
   const [stream, setStream] = useState(null);
   const resources = useRef(null);
@@ -20,12 +21,15 @@ export function useVoice(enabled, onError, live = true) {
     const value = resources.current;
     if (value) {
       cancelAnimationFrame(value.frame);
-      value.stream.getTracks().forEach(track => track.stop());
-      value.source.disconnect();
-      value.context.close().catch(() => {});
+      value.stream.getTracks().forEach(track => {
+        track.onended = track.onmute = track.onunmute = null;
+        track.stop();
+      });
+      value.source?.disconnect();
+      value.context?.close().catch(() => {});
       resources.current = null;
     }
-    setMic(false); setLevel(0); setPending(false); setStream(null);
+    setMic(false); setLevel(0); setPending(false); setStream(null);setInterrupted(false);
   }, []);
   const start = useCallback(async () => {
     if (resources.current || acquiring.current || !enabled) return;
@@ -34,29 +38,60 @@ export function useVoice(enabled, onError, live = true) {
     acquiring.current = true; setPending(true);
     let stream, context;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-      if (token !== generation.current) { stream.getTracks().forEach(track => track.stop()); return; }
-      context = new (window.AudioContext || window.webkitAudioContext)();
-      await context.resume();
-      if (token !== generation.current) { stream.getTracks().forEach(track => track.stop()); await context.close(); return; }
-      const source = context.createMediaStreamSource(stream);
-      const analyser = context.createAnalyser(); analyser.fftSize = 1024;
-      source.connect(analyser);
-      const values = new Float32Array(analyser.fftSize);
-      const resource = { stream, context, source, frame: 0 }; resources.current = resource;
-      let last = 0;
-      const sample = now => {
+      const capture = navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      // Unlock the meter from the tap while the microphone permission request is pending.
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        context = new AudioContext();
+        context.resume().catch(() => {});
+      } catch {}
+      stream = await capture;
+      if (token !== generation.current) {
+        stream.getTracks().forEach(track => track.stop());
+        context?.close().catch(() => {});
+        return;
+      }
+      const micTrack = stream.getAudioTracks().find(track => track.readyState === 'live');
+      if (!micTrack) throw new Error('Microphone capture returned no live track');
+      const resource = { stream, context, frame: 0 };
+      resources.current = resource;
+      let level = 0;
+      const updateInterruption = () => {
         if (resources.current !== resource) return;
-        if (now - last > 65) {
-          analyser.getFloatTimeDomainData(values);
-          const rms = Math.sqrt(values.reduce((sum, value) => sum + value * value, 0) / values.length);
-          setLevel(Math.min(1, Math.max(0, (rms - .012) * 14))); last = now;
-        }
-        resource.frame = requestAnimationFrame(sample);
+        setInterrupted(micTrack.muted);
+        if (micTrack.muted) { level = 0; setLevel(0); }
+        else resource.context?.resume().catch(() => {});
       };
-      resource.frame = requestAnimationFrame(sample);
-      stream.getAudioTracks()[0].onended = stop;
+      micTrack.onended = stop;
+      micTrack.onmute = micTrack.onunmute = updateInterruption;
+      updateInterruption();
       setMic(true); setStream(stream);
+      try {
+        if (!context) return;
+        resource.source = context.createMediaStreamSource(stream);
+        const analyser = context.createAnalyser();
+        analyser.fftSize = 1024;
+        resource.source.connect(analyser);
+        const values = new Float32Array(analyser.fftSize);
+        let last = 0;
+        const sample = now => {
+          if (resources.current !== resource) return;
+          if (!micTrack.muted && now - last > 90) {
+            analyser.getFloatTimeDomainData(values);
+            const rms = Math.sqrt(values.reduce((sum, value) => sum + value * value, 0) / values.length);
+            level = Math.max(level * 0.72, Math.min(1, Math.max(0, (rms - .01) * 14)));
+            setLevel(Math.round(level*20)/20);
+            last = now;
+          }
+          resource.frame = requestAnimationFrame(sample);
+        };
+        resource.frame = requestAnimationFrame(sample);
+      } catch {
+        // The level meter is optional. Keep the live track available for WebRTC.
+        resource.source?.disconnect();
+        resource.context?.close().catch(() => {});
+        resource.source = resource.context = null;
+      }
     } catch (error) {
       stream?.getTracks().forEach(track => track.stop());
       context?.close().catch(() => {});
@@ -76,5 +111,5 @@ export function useVoice(enabled, onError, live = true) {
   }, [start, stop]);
   useEffect(() => { if (!enabled) stop(); return stop; }, [enabled, stop]);
   useEffect(() => { if (enabled && !live) stop(); }, [enabled, live, stop]);
-  return { mic, pending, level, stream, toggle, stop };
+  return { mic, pending, interrupted, level, stream, toggle, stop };
 }

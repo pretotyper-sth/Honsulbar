@@ -6,7 +6,7 @@ import { PGlite } from '@electric-sql/pglite';
 
 const sql = name => readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8');
 
-async function setup() {
+async function setup({ soloClock = false, drinkGifts = false } = {}) {
   const db = new PGlite();
   await db.exec(`create role anon; create role authenticated; create role service_role;`);
   await db.exec(sql('20260924_toss_login_disconnect.sql'));
@@ -17,6 +17,11 @@ async function setup() {
   await db.exec(sql('20261014_report_triage.sql'));
   await db.exec(sql('20261016_face_verification.sql'));
   await db.exec(sql('20261025_scoped_safety_cleanup.sql'));
+  if (soloClock) {
+    await db.exec(sql('20261108_solo_visit_clock.sql'));
+    await db.exec(sql('20261115_preserve_solo_seat_time.sql'));
+  }
+  if (drinkGifts) await db.exec(sql('20261117_z_drink_gifts.sql'));
   const one = async (query, params) => (await db.query(query, params)).rows[0];
   const action = async (member, name, data = {}) => (await one('select hb_action($1,$2,$3::jsonb) as r', [member, name, JSON.stringify(data)])).r;
   const snapshot = async member => (await one('select hb_snapshot($1) as s', [member])).s;
@@ -311,6 +316,32 @@ test('server proof binds account, photo, consent and expiry and is consumed once
   await db.close();
 });
 
+test('Toss sessions can register and replace screened photos without capture proof', async () => {
+  const {db,login,action,one,snapshot}=await setup();
+  try {
+    await db.exec(sql('20261102_android_ads.sql'));
+    await db.exec(sql('20261115_zzz_toss_profile_photo_update.sql'));
+    await db.exec(sql('20261116_z_toss_profile_photo_screening.sql'));
+    const member=await login('81003'), other=await login('81004');
+    await db.query("insert into hb_sessions(token_hash,member_id,platform) values('toss-token',$1,'toss'),('android-token',$1,'android'),('other-token',$2,'toss')",[member,other]);
+    const data={nickname:'새로운 사진',gender:'female',photo:'data:image/jpeg;base64,BBBB'};
+    const update=(id,session,profile=data)=>one('select hb_update_toss_profile_photo($1,$2,$3::jsonb)',[id,session,JSON.stringify(profile)]);
+    assert.equal((await snapshot(member)).member.photoChecked,false);
+    await assert.rejects(update(member,'android-token'),/토스 로그인/);
+    await assert.rejects(update(member,'other-token'),/토스 로그인/);
+    await assert.rejects(action(member,'profile',{...data,photoChecked:true}),/동의/);
+    await assert.rejects(update(member,'toss-token',{...data,photo:null}),/사진을 다시 선택/);
+    await update(member,'toss-token');
+    const {photo,photoChecked,nickname}=(await snapshot(member)).member;
+    assert.ok(photo);
+    const replacement='data:image/jpeg;base64,CCCC';
+    await update(member,'toss-token',{...data,photo:replacement});
+    assert.equal((await one('select photo from hb_members where id=$1',[member])).photo,replacement);
+    assert.equal(photoChecked,true);
+    assert.equal(nickname,data.nickname);
+  } finally { await db.close(); }
+});
+
 test('a single report protects both directions, cancels connections and refuses entry before spending', async () => {
   const {db,login,ready,action,snapshot,one}=await setup();
   const a=await login('82001'),b=await login('82002');
@@ -382,6 +413,27 @@ test('capture challenges expire, belong to their member and cannot be reused', a
   await db.query("update hb_photo_challenges set created_at=now()-interval '4 minutes' where id=$1",[expired.id]);
   await assert.rejects(one('select hb_use_photo_challenge($1,$2)',[a,expired.id]),/다시 시작/);
   await db.close();
+});
+
+test('photo capture allows ten attempts per account and frees a slot after three minutes', async () => {
+  const {db,login,one}=await setup();
+  try {
+    await db.exec(sql('20261115_zz_photo_retry_window.sql'));
+    const member=await login('84003');
+    const otherMember=await login('84004');
+    const next=async()=>(await one('select hb_new_photo_challenge($1) as challenge',[member])).challenge;
+    const first=await next();
+    for(let i=1;i<10;i++)await next();
+    await assert.rejects(next(),/시도가 많아요/);
+    assert.ok((await one('select hb_new_photo_challenge($1) as challenge',[otherMember])).challenge.id);
+    await db.query("update hb_photo_challenges set created_at=now()-interval '2 minutes 55 seconds' where id=$1",[first.id]);
+    await assert.rejects(next(),/시도가 많아요/);
+    await db.query("update hb_photo_challenges set created_at=now()-interval '3 minutes 5 seconds' where id=$1",[first.id]);
+    const challenge=await next();
+    assert.equal((await one('select hb_use_photo_challenge($1,$2) as motion',[member,challenge.id])).motion,challenge.motion);
+    await assert.rejects(one('select hb_use_photo_challenge($1,$2)',[member,challenge.id]),/다시 시작/);
+    await assert.rejects(next(),/시도가 많아요/);
+  } finally { await db.close(); }
 });
 
 test('unhandled reports and operator absence pause paid entry without charging', async () => {
@@ -473,4 +525,140 @@ test('restricted members can read their action notice and appeal without regaini
  await assert.rejects(action(member,'enter',{region:'서울',number:1,drinkId:'beer'}),/제한/);
  await assert.rejects(action(member,'ticket',{kind:'report',targetId:member,category:'기타',message:'test'}),/제한/);
  await db.close();
+});
+
+test('a solo guest keeps exactly 30 minutes when changing seats after five seconds', async () => {
+  const {action, db, login, ready, snapshot} = await setup({soloClock:true});
+  try {
+    const me = await login('700001');
+    const guest = await login('700002');
+    await ready(me, '느긋한 토끼');
+    await ready(guest, '조용한 여우');
+    const entry = {region:'서울', number:1, drinkId:'highball'};
+    await action(me, 'enter', entry);
+    assert.equal((await snapshot(me)).visit.seconds, 1800);
+
+    // Simulate five seconds passing while the clock is paused.
+    await db.query(`update hb_visits set solo_since=now()-interval '5 seconds',
+      expires_at=now()+interval '1795 seconds' where member_id=$1`, [me]);
+    await action(me, 'move', {seat:3});
+    let {visit} = await snapshot(me);
+    assert.equal(visit.seat, 3);
+    assert.equal(visit.soloPaused, true);
+    assert.equal(visit.seconds, 1800);
+
+    await action(guest, 'enter', entry);
+    ({visit} = await snapshot(me));
+    assert.equal(visit.soloPaused, false);
+    assert.equal(visit.seconds, 1800);
+    await db.query("update hb_visits set expires_at=expires_at-interval '5 seconds' where member_id=$1", [me]);
+    const expiry = async () => (await db.query(
+      'select expires_at::text as expiry from hb_visits where member_id=$1', [me]
+    )).rows[0].expiry;
+    const beforeMove = await expiry();
+    await action(me, 'move', {seat:4});
+    assert.equal(await expiry(), beforeMove);
+    ({visit} = await snapshot(me));
+    assert.equal(visit.seconds, 1795);
+
+    await action(guest, 'leave');
+    assert.equal((await snapshot(me)).visit.soloPaused, true);
+    await action(me, 'order', {drinkId:'highball'});
+    ({visit} = await snapshot(me));
+    assert.equal(visit.seconds, 3595);
+  } finally {
+    await db.close();
+  }
+});
+
+test('drink gifts only charge the sender once and extend the accepting guest’s visit', async () => {
+  const { action, db, login, ready, snapshot } = await setup({ soloClock:true, drinkGifts:true });
+  try {
+    const sender = await login('721001');
+    const receiver = await login('721002');
+    await ready(sender, '느긋한 토끼');
+    await ready(receiver, '조용한 여우');
+    for (const member of [sender, receiver]) {
+      await action(member, 'enter', { region:'서울', number:1, drinkId:'highball' });
+    }
+    const before = await snapshot(receiver);
+    const {id} = await action(sender, 'request', {kind:'drink-gift', targetId:receiver, drinkId:'wine'});
+    assert.equal((await snapshot(sender)).member.balance, 1500);
+    assert.equal((await snapshot(receiver)).requests.find(request => request.id === id).gift_drink_id, 'wine');
+    await assert.rejects(action(sender, 'respond', {id,accept:true}), /받은 선물/);
+    await action(receiver, 'respond', {id,accept:true});
+    await action(receiver, 'respond', {id,accept:true});
+    const after = await snapshot(receiver);
+    assert.equal(after.member.balance, before.member.balance);
+    assert.equal(after.visit.drinkId, 'wine');
+    assert.ok(after.visit.seconds >= before.visit.seconds + 1198 && after.visit.seconds <= before.visit.seconds + 1200);
+    assert.equal((await snapshot(sender)).member.balance, 1000);
+    const ledger = await db.query("select amount from hb_ledger where reference=$1", ['drink-gift:' + id]);
+    assert.deepEqual(ledger.rows, [{amount:-500}]);
+    await db.query("update hb_requests set created_at=now()-interval '11 seconds' where id=$1", [id]);
+    const premium = await action(sender, 'request', {kind:'drink-gift', targetId:receiver, drinkId:'wine-hour'});
+    await action(receiver, 'respond', {id:premium.id,accept:true});
+    const extended = await snapshot(receiver);
+    assert.ok(extended.visit.seconds >= after.visit.seconds + 2398 && extended.visit.seconds <= after.visit.seconds + 2400);
+    assert.equal((await snapshot(sender)).member.balance, 0);
+  } finally {
+    await db.close();
+  }
+});
+
+test('declined, expired, and blocked drink gifts do not charge any points', async () => {
+  const { action, db, login, ready, snapshot } = await setup({ soloClock:true, drinkGifts:true });
+  try {
+    const sender = await login('721003');
+    const receiver = await login('721004');
+    await ready(sender, '느긋한 토끼');
+    await ready(receiver, '조용한 여우');
+    for (const member of [sender, receiver]) {
+      await action(member, 'enter', { region:'서울', number:1, drinkId:'highball' });
+    }
+    const offer = () => action(sender, 'request', {kind:'drink-gift', targetId:receiver, drinkId:'wine-hour'});
+    const first = await offer();
+    await action(receiver, 'respond', {id:first.id,accept:false});
+    await db.query("update hb_requests set created_at=now()-interval '11 seconds' where id=$1", [first.id]);
+    const second = await offer();
+    await db.query("update hb_requests set expires_at=now()-interval '1 second' where id=$1", [second.id]);
+    await assert.rejects(action(receiver, 'respond', {id:second.id,accept:true}), /이미 끝난/);
+    await action(receiver, 'block', {targetId:sender});
+    await assert.rejects(offer(), /이용자 보호/);
+    assert.equal((await snapshot(sender)).member.balance, 1500);
+    assert.equal((await snapshot(receiver)).visit.drinkId, 'highball');
+  } finally {
+    await db.close();
+  }
+});
+
+test('auto declining swap requests affects the current seat and clears after moving back', async () => {
+  const { db, login, ready, action, snapshot } = await setup();
+  try {
+    await db.exec(sql('20261117_zz_swap_auto_decline.sql'));
+    const [a,b,c,d] = await Promise.all(['721005','721006','721007','721008'].map(login));
+    for (const id of [a,b,c,d]) {
+      await ready(id,'느긋한 구름');
+      await action(id,'enter',{region:'서울',number:1,drinkId:'highball'});
+    }
+    const seat = (await snapshot(b)).visit.seat;
+    const first = await action(a,'request',{kind:'swap',targetId:b});
+    const second = await action(c,'request',{kind:'swap',targetId:b});
+    await action(b,'respond',{id:first.id,accept:false,autoDecline:true});
+    const next = await action(d,'request',{kind:'swap',targetId:b});
+    assert.equal(next.autoDeclined,true);
+    assert.ok(!(await snapshot(b)).requests.some(request=>request.kind==='swap'));
+    const statuses = await db.query('select status from hb_requests where id=any($1::uuid[])',[[first.id,second.id,next.id]]);
+    assert.deepEqual(statuses.rows.map(row=>row.status),['declined','declined','declined']);
+    for (const id of [a,b,c,d]) assert.equal((await snapshot(id)).member.balance,1500);
+    await action(b,'move',{seat:5});
+    await action(b,'move',{seat});
+    assert.equal((await db.query('select auto_decline_swaps from hb_visits where member_id=$1',[b])).rows[0].auto_decline_swaps,false);
+    await db.query("update hb_requests set created_at=now()-interval '11 seconds' where id=$1",[first.id]);
+    await action(b,'move',{seat:5});
+    const afterMove = await action(a,'request',{kind:'swap',targetId:b});
+    assert.notEqual(afterMove.autoDeclined,true);
+  } finally {
+    await db.close();
+  }
 });

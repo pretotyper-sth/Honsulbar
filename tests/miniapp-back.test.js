@@ -34,7 +34,7 @@ test('browser fallback preserves its guard across repeated subscriptions', () =>
   assert.equal(count,1);assert.equal(pushes,2);
 });
 
-test('native layout stays transparent and light while overlays open and close', () => {
-  assert.deepEqual(navigationBarOptions(true), { transparentBackground: true, backgroundColor: null, theme: 'light' });
+test('native layout stays transparent and uses the bar theme only inside the bar', () => {
+  assert.deepEqual(navigationBarOptions(true), { transparentBackground: true, backgroundColor: null, theme: 'dark' });
   assert.deepEqual(navigationBarOptions(false), { transparentBackground: true, backgroundColor: null, theme: 'light' });
 });

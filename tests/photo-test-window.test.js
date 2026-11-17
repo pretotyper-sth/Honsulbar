@@ -37,3 +37,10 @@ test('unrelated RPC failure is never bypassed',async()=>{
  await assert.rejects(newPhotoChallenge('member',{database,rpc:async()=>{throw new Error('network');},now}),/network/);
  assert.equal(calls.length,0);
 });
+test('Toss test sessions can retry past both limits without a saved nickname or permit',async()=>{
+ const {database,calls}=db({permit:false,count:100});
+ for(let i=0;i<40;i++) assert.equal((await newPhotoChallenge('member',{database,rpc:limited,now,unlimited:true})).id,'fresh');
+ assert.ok(calls.every(([path])=>path.startsWith('hb_members?')||path==='hb_photo_challenges'));
+ const banned=db({banned:true});
+ await assert.rejects(newPhotoChallenge('member',{database:banned.database,rpc:limited,now,unlimited:true}),/시도가 많아요/);
+});

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import jpeg from 'jpeg-js';
-import {verifyPhoto} from '../server/photo-verification.js';
+import {checkProfilePhoto,verifyPhoto} from '../server/photo-verification.js';
 function sample(person,size=220,cover=null,variation={}){
  const asset=person===0?'screenshot-faceid.jpg':'screenshot-facematch.jpg';
  const source=jpeg.decode(readFileSync(new URL(`../node_modules/@vladmandic/human/assets/${asset}`,import.meta.url)));
@@ -19,6 +19,9 @@ function sample(person,size=220,cover=null,variation={}){
 }
 test('bundled models accept the same sample with scale change, reject another sample and half-face occlusion',async()=>{
  const profile=sample(0,220),first=sample(0,190),last=sample(0,240);
+ assert.equal(await checkProfilePhoto(sample(0,72)),true);
+ const blank=jpeg.encode({width:320,height:320,data:Buffer.alloc(320*320*4,255)},88).data;
+ await assert.rejects(checkProfilePhoto(`data:image/jpeg;base64,${blank.toString('base64')}`),/얼굴이 잘 보이는 사진/);
  const result=await verifyPhoto(profile,[first,last],'near');assert.equal(result.model,'human-3.3.6-face-v7');assert.equal(result.photoDigest.length,64);
  await assert.rejects(verifyPhoto(sample(1),[first,last],'near'),/등록 사진과 달라/);
  for(const variation of [{mirror:true},{light:true},{mirror:true,light:true}])assert.equal((await verifyPhoto(sample(0,220,null,variation),[first,last],'near')).model,'human-3.3.6-face-v7');

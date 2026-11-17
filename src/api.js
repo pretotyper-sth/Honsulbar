@@ -6,7 +6,7 @@ const WEB_PREVIEW_KEY = 'honsulbar:web-preview:v1';
 const localHost = /(^localhost$|^127\.0\.0\.1$|^192\.168\.|vercel\.app$)/.test(location.hostname);
 export const API_BASE = import.meta.env.VITE_API_BASE ?? (localHost ? '' : 'https://honsulbar-app.vercel.app');
 export const assetUrl = path => (typeof path === 'string' && path.startsWith('/api/') ? API_BASE + path : path);
-export const insideToss = () => typeof window !== 'undefined' && !!window.ReactNativeWebView;
+export const insideToss = () => import.meta.env.VITE_QUICK_SEARCH_QA !== '1' && typeof window !== 'undefined' && !!window.ReactNativeWebView;
 
 function markTossChrome() {
   if (typeof document !== 'undefined' && insideToss()) document.documentElement.classList.add('in-toss');
@@ -50,12 +50,18 @@ let token = null;
 try { token = localStorage.getItem(TOKEN_KEY); } catch {}
 
 export class ApiError extends Error { constructor(message, status) { super(message); this.status = status; } }
-export const hasSession = () => !!token;
+export const hasSession = () => import.meta.env.VITE_QUICK_SEARCH_QA === '1' || !!token;
 function setToken(value) {
   token = value;
   try { value ? localStorage.setItem(TOKEN_KEY, value) : localStorage.removeItem(TOKEN_KEY); } catch {}
 }
-export const clearSession = () => setToken(null);
+export const clearSession = () => {
+  if (import.meta.env.VITE_QUICK_SEARCH_QA !== '1') setToken(null);
+};
+
+const serviceRequest = import.meta.env.VITE_QUICK_SEARCH_QA === '1'
+  ? async (body, method) => (await import('./qa/quick-search')).qaRequest(body, method)
+  : request;
 
 async function request(body, method = 'POST', {signal} = {}) {
   const photoRequest=body?.action?.startsWith('photo-');
@@ -63,7 +69,7 @@ async function request(body, method = 'POST', {signal} = {}) {
   const cancel=()=>controller?.abort();
   signal?.addEventListener('abort',cancel,{once:true});
   if(signal?.aborted)cancel();
-  const timer=controller?setTimeout(cancel,body.action==='photo-verify'?50000:20000):null;
+  const timer=controller?setTimeout(cancel,['photo-verify','photo-screen'].includes(body.action)?50000:20000):null;
   try {
     const response = await fetch(`${API_BASE}/api/service`, {
       method,
@@ -85,10 +91,11 @@ async function request(body, method = 'POST', {signal} = {}) {
   } finally {clearTimeout(timer);signal?.removeEventListener('abort',cancel);}
 }
 
-export const getConfig = () => request(null, 'GET');
-export const call = (action, data, extra = {}, options = {}) => request({ action, data, ...extra }, 'POST', options);
+export const getConfig = () => serviceRequest(null, 'GET');
+export const call = (action, data, extra = {}, options = {}) => serviceRequest({ action, data, ...extra }, 'POST', options);
 
 export async function login(config, accountTransferCode) {
+  if (import.meta.env.VITE_QUICK_SEARCH_QA === '1') return (await call('login')).state;
   let result;
   if (insideToss()) {
     let authorizationCode, referrer;

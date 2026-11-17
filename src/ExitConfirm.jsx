@@ -1,7 +1,12 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useId, useRef } from 'react';
 import { Button } from './ui';
 
-export function ExitConfirm({ open, onClose, onConfirm }) {
+export function ExitConfirm({
+  open, onClose, onConfirm, title = '온라인 혼술바를 종료할까요?', description,
+  cancelLabel = '취소', confirmLabel = '종료하기', centered = false,
+}) {
+  const titleId = useId();
+  const descriptionId = useId();
   const cancel = useRef(null);
   useEffect(() => {
     if (!open) return;
@@ -21,8 +26,8 @@ export function ExitConfirm({ open, onClose, onConfirm }) {
     };
   }, [open]);
   if (!open) return null;
-  return <div className="exit-backdrop" onClick={onClose}>
-    <section className="exit-confirm" role="dialog" aria-modal="true" aria-labelledby="exit-title" onClick={event => event.stopPropagation()} onKeyDown={event => {
+  return <div className={`exit-backdrop${centered ? ' exit-backdrop-centered' : ''}`} onClick={onClose}>
+    <section className="exit-confirm" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={description ? descriptionId : undefined} onClick={event => event.stopPropagation()} onKeyDown={event => {
       if (event.key === 'Escape') { event.stopPropagation(); onClose(); }
       if (event.key === 'Tab') {
         const buttons = event.currentTarget.querySelectorAll('button');
@@ -30,8 +35,9 @@ export function ExitConfirm({ open, onClose, onConfirm }) {
         else if (!event.shiftKey && document.activeElement === buttons[1]) { event.preventDefault(); buttons[0].focus(); }
       }
     }}>
-      <h2 id="exit-title">온라인 혼술바를 종료할까요?</h2>
-      <div className="actions"><button ref={cancel} className="ui-button ui-button-large ui-button-dark ui-button-weak" onClick={onClose}>취소</button><Button onClick={onConfirm}>종료하기</Button></div>
+      <h2 id={titleId}>{title}</h2>
+      {description && <p id={descriptionId}>{description}</p>}
+      <div className="actions"><button ref={cancel} className="ui-button ui-button-large ui-button-dark ui-button-weak" onClick={onClose}>{cancelLabel}</button><Button onClick={onConfirm}>{confirmLabel}</Button></div>
     </section>
   </div>;
 }

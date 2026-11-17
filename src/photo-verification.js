@@ -1,12 +1,18 @@
 export const MIN_CHECK_MS = 1500;
+export const PHOTO_RETRY_HINTS = {
+ photo:'등록 사진을 확인해 주세요.',
+ lighting:'조명과 얼굴 위치를 확인해 주세요.',
+};
 export const pause = ms => new Promise(resolve=>setTimeout(resolve,ms));
 export async function visibleCheck(task,{minimum=MIN_CHECK_MS,now=Date.now,wait=pause}={}){
  const started=now();
  try{return await task();}finally{const remaining=minimum-(now()-started);if(remaining>0)await wait(remaining);}
 }
-export function profileCanSave({changed,consent,verified,proof}){
- return !changed||Boolean(consent&&verified&&proof);
+export function profileCanSave({changed,accountVerified,consent,verified,proof}){
+ return !changed||!!accountVerified||Boolean(consent&&verified&&proof);
 }
+export class PhotoCaptureError extends Error {}
+
 export async function captureFacePair({video,canvas,model,motion,framed,onProgress,current,wait=pause,now=Date.now}){
  const frames=[];
  const near=motion==='near';
@@ -37,7 +43,7 @@ export async function captureFacePair({video,canvas,model,motion,framed,onProgre
    else {previous=sampleResult.size;report('정면을 보고 잠시 멈춰 주세요.','align');}
    await wait(220);
   }
-  if(!first)throw new Error(lastIssue);
+  if(!first)throw new PhotoCaptureError(lastIssue);
   const started=now();let stable=0;
   report(instruction,'move');
   while(now()-started<10000){
@@ -54,7 +60,7 @@ export async function captureFacePair({video,canvas,model,motion,framed,onProgre
    report(message,'move',tooMuch?0:progress);
    if(stable>=2&&now()-started>=500){frames.push(canvas.toDataURL('image/jpeg',.88));return frames;}
   }
-  throw new Error(`${near?'가까이':'멀리'} 움직여 다시 찍어 주세요.`);
+  throw new PhotoCaptureError(`${near?'가까이':'멀리'} 움직여 다시 찍어 주세요.`);
  }catch(error){frames.fill(null);throw error;}
  finally{canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);}
 }

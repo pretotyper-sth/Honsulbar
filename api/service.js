@@ -3,7 +3,7 @@ import {playReviewReady,playReviewMember} from '../server/play-review.js';
 import {newPhotoChallenge} from '../server/photo-test-window.js';
 import {androidVoiceServers} from '../server/android-voice.js';
 import {tossVoiceIce,tossVoiceRelayReady} from '../server/toss-voice.js';
-import {tossSfuPilot,tossSfuSession} from '../server/toss-sfu.js';
+import {tossSfuPilot,tossSfuReady,tossSfuSession} from '../server/toss-sfu.js';
 import {safetySnapshot} from '../server/safety-queue.js';
 import {ageTestReady,startAgeTest,completeAgeTest,ageTestHealth} from '../server/age-verification.js';
 import {playBillingConfiguration,processPlayPurchase,processPlaySubscription} from '../server/play-billing.js';
@@ -53,7 +53,7 @@ export default async function handler(req,res) {
   let body=req.body||{};if(typeof body==='string')body=JSON.parse(body);
   if(JSON.stringify(body).length>1500000)throw new AppError('요청이 너무 커요.',413);
   const action=req.method==='GET'?'config':body.action;
-  if(action==='config')return res.json({tossSfuPilot:!fullVoiceReady()&&!voiceEvidenceReady()?tossSfuPilot():null,tossVoiceRelayReady:tossVoiceRelayReady(),playReviewReady:playReviewReady(),accountTransferReady:process.env.HB_ACCOUNT_TRANSFER_ENABLED==='1',ageTestReady:ageTestReady(),androidPushReady:androidPushReady(),androidAuthReady:process.env.HB_ANDROID_AUTH_ENABLED==='1',voiceEvidenceReady:voiceEvidenceReady()&&!fullVoiceReady(),signupConsentReady:true,fullVoiceReady:fullVoiceReady(),voiceConsentVersion:VOICE_CONSENT_VERSION,apiReady:!!(sbUrl()&&process.env.SUPABASE_SERVICE_ROLE_KEY),loginReady:!!(process.env.TOSS_CLIENT_CERT_BASE64&&process.env.TOSS_CLIENT_KEY_BASE64&&process.env.TOSS_DECRYPTION_KEY&&process.env.TOSS_AAD),devLogin:!isProduction()&&process.env.HB_DEV_LOGIN==='1',supabaseUrl:sbUrl(),supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_ANON_KEY||'',adGroupId:rewardedAdGroupId(),products:skuPoints(),subscriptionSku:subscriptionSku(),pushAvailableTemplate:pushAvailableTemplate(),pushReplyTemplate:pushReplyTemplate(),iceServers:process.env.WEBRTC_ICE_SERVERS?JSON.parse(process.env.WEBRTC_ICE_SERVERS):[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]});
+  if(action==='config')return res.json({tossSfuReady:!fullVoiceReady()&&!voiceEvidenceReady()&&tossSfuReady(),tossSfuPilot:!fullVoiceReady()&&!voiceEvidenceReady()?tossSfuPilot():null,tossVoiceRelayReady:tossVoiceRelayReady(),playReviewReady:playReviewReady(),accountTransferReady:process.env.HB_ACCOUNT_TRANSFER_ENABLED==='1',ageTestReady:ageTestReady(),androidPushReady:androidPushReady(),androidAuthReady:process.env.HB_ANDROID_AUTH_ENABLED==='1',voiceEvidenceReady:voiceEvidenceReady()&&!fullVoiceReady(),signupConsentReady:true,fullVoiceReady:fullVoiceReady(),voiceConsentVersion:VOICE_CONSENT_VERSION,apiReady:!!(sbUrl()&&process.env.SUPABASE_SERVICE_ROLE_KEY),loginReady:!!(process.env.TOSS_CLIENT_CERT_BASE64&&process.env.TOSS_CLIENT_KEY_BASE64&&process.env.TOSS_DECRYPTION_KEY&&process.env.TOSS_AAD),devLogin:!isProduction()&&process.env.HB_DEV_LOGIN==='1',supabaseUrl:sbUrl(),supabaseKey:process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_ANON_KEY||'',adGroupId:rewardedAdGroupId(),products:skuPoints(),subscriptionSku:subscriptionSku(),pushAvailableTemplate:pushAvailableTemplate(),pushReplyTemplate:pushReplyTemplate(),iceServers:process.env.WEBRTC_ICE_SERVERS?JSON.parse(process.env.WEBRTC_ICE_SERVERS):[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302']}]});
   if(action==='login'){
    const code=typeof body.authorizationCode==='string'?body.authorizationCode.trim():'';
    const referrer=String(body.referrer||'').trim().toUpperCase();
@@ -194,7 +194,7 @@ export default async function handler(req,res) {
   }
   const member=await authenticate(req);
   if(action==='voice-sfu'){
-   if(!tossSfuPilot()||fullVoiceReady()||voiceEvidenceReady())throw new AppError('음성 테스트가 아직 열리지 않았어요.',503);
+   if(!tossSfuReady()||fullVoiceReady()||voiceEvidenceReady())throw new AppError('음성 연결을 준비 중이에요.',503);
    const [session]=await database(`hb_sessions?token_hash=eq.${hash(req.headers.authorization.slice(7))}&select=platform`);
    if(session?.platform!=='toss')throw new AppError('토스 로그인 후 이용해 주세요.',403);
    const state=await snapshot({p_member:member});
@@ -315,7 +315,12 @@ export default async function handler(req,res) {
    await checkProfilePhoto(body.data?.photo);
    return res.json({result:{accepted:true}});
   }
-  if(action==='photo-challenge'){ await warmPhotoVerifier(); return res.json({result:await newPhotoChallenge(member,{database,rpc})}); }
+  if(action==='photo-challenge'){
+   await warmPhotoVerifier();
+   const [session]=await database(`hb_sessions?token_hash=eq.${hash(req.headers.authorization.slice(7))}&select=platform`);
+   // Toss retries remain available after the camera sheet offers a break.
+   return res.json({result:await newPhotoChallenge(member,{database,rpc,unlimited:session?.platform==='toss'})});
+  }
   if(action==='photo-verify'){
    const data=body.data||{};
    if(data.consent!==true||!Array.isArray(data.frames)||data.frames.length!==2||typeof data.photo!=='string'||data.frames.some(frame=>typeof frame!=='string'))throw new AppError('얼굴 비교 처리에 동의한 뒤 다시 촬영해 주세요.');
@@ -390,15 +395,19 @@ export default async function handler(req,res) {
    if (eligibility?.adult !== true) throw new AppError('성인 확인을 갱신하려면 토스 로그인을 다시 진행해 주세요.',403);
    if (eligibility.photo_checked !== true) throw new AppError('프로필 사진을 먼저 등록해 주세요.',403);
   }
-  const result=profileUpdate
+  const tossTiming=['enter','order'].includes(action)&&body.data?.durationVersion==='20-40';
+  const result=tossTiming
+   ? await rpc('hb_toss_timed_action',{p_member:member,p_session_hash:hash(req.headers.authorization.slice(7)),p_action:action,p_data:body.data})
+   : profileUpdate
    ? await rpc('hb_update_toss_profile_photo',profileUpdate)
-   : action==='enter' && body.data?.quickOfferId
+   : action==='enter'
    ? await rpc('hb_quick_enter',{p_member:member,p_data:body.data||{}})
    : await rpc('hb_action',{p_member:member,p_action:action,p_data:body.data||{}});
-  if(action==='heartbeat'&&typeof (body.data||{}).mic==='boolean')await rpc('hb_set_mic',{p_member:member,p_mic:!!body.data.mic}).catch(()=>{});
+  if(action==='leave')await rpc('hb_quick_search',{p_member:member,p_command:'cancel',p_region:'서울'}).catch(()=>{});
   if(action==='ticket')await dispatchOutbox().catch(()=>{});
   if(action==='signal')return res.json({ok:true});
-  const state=await snapshot({p_member:member,p_after:Math.max(0,Number(body.after)||0),p_limit:Math.min(100,Math.max(10,Number(body.limit)||10))});
+  let state=await snapshot({p_member:member,p_after:Math.max(0,Number(body.after)||0),p_limit:Math.min(100,Math.max(10,Number(body.limit)||10))});
+  if(action!=='heartbeat')state=await rpc('hb_quick_visible_rooms',{p_state:state});
   return res.json({result:withPhotos(result,member),state:withPhotos(state,member)});
  }catch(error){console.error(error);return res.status(error.status||500).json({error:error instanceof AppError?error.message:'요청을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.'});}
 }

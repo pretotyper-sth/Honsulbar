@@ -22,7 +22,7 @@ test('quality gates accept measurable frontal features and reject incomplete, oc
 test('profile matching tolerates bounded variation but live continuity and selected motion must pass',()=>{
  const results=[{embedding:[1],scale:.4},{embedding:[2],scale:.4},{embedding:[3],scale:.5}];
  assert.equal(comparisonError(results,()=>.8,'near'),null);
- for(const failed of [0,1,2]){let index=0;assert.match(comparisonError(results,()=>index++===failed ? .2 : .8,'near'),/등록 사진과 달라|촬영본이/);}
+ for(const failed of [0,1,2]){let index=0;assert.match(comparisonError(results,()=>index++===failed ? .1 : .8,'near'),/등록 사진과 달라|촬영본이/);}
  assert.match(comparisonError(results,()=>NaN,'near'),/밝은 곳/);
  assert.match(comparisonError(results,()=>.8,'far'),/움직여/);
 });
@@ -31,9 +31,9 @@ test('profile decisions require both scores in one orientation, not a different 
  const results=[{embedding:[1],scale:.4},{embedding:[2],scale:.4},{embedding:[3],scale:.5}],flipped={embedding:[4]};
  const score=values=>(a,b)=>values[`${a[0]}:${b[0]}`]??.8;
  assert.equal(comparisonError(results,score({'1:2':.53,'1:3':.60}),'near'),null);
- assert.match(comparisonError(results,score({'1:2':.29,'1:3':.9}),'near'),/등록 사진과 달라/);
- assert.equal(comparisonError(results,score({'1:2':.2,'1:3':.2,'4:2':.6,'4:3':.58}),'near',flipped),null);
- assert.match(comparisonError(results,score({'1:2':.7,'1:3':.2,'4:2':.2,'4:3':.7}),'near',flipped),/등록 사진과 달라/);
+ assert.match(comparisonError(results,score({'1:2':.14,'1:3':.9}),'near'),/등록 사진과 달라/);
+ assert.equal(comparisonError(results,score({'1:2':.1,'1:3':.1,'4:2':.6,'4:3':.58}),'near',flipped),null);
+ assert.match(comparisonError(results,score({'1:2':.7,'1:3':.1,'4:2':.1,'4:3':.7}),'near',flipped),/등록 사진과 달라/);
  assert.match(comparisonError(results,score({'2:3':.4}),'near',flipped),/촬영본이/);
 });
 test('mirroring preserves pixels and never changes the source image',()=>{
@@ -59,7 +59,7 @@ test('lighting, detail quality and photo mismatch have distinct actionable error
   assert.match(faceQualityError(result,image),message);
  }
  const frames=[{embedding:[1],scale:.4},{embedding:[2],scale:.4},{embedding:[3],scale:.5}];
- const mismatch=comparisonError(frames,(a)=>a[0]===1?.2:.8,'near');
+ const mismatch=comparisonError(frames,(a)=>a[0]===1?.1:.8,'near');
  assert.match(mismatch,/등록 사진과 달라/);
  assert.doesNotMatch(mismatch,/밝은 곳/);
  assert.match(comparisonError(frames,(a)=>a[0]===1?NaN:.8,'near'),/밝은 곳/);
@@ -79,7 +79,7 @@ test('a false hand box cannot reject a clear face; actual missing detail still f
 test('moderate profile variation passes while weak matches still fail',()=>{
  const frames=[{embedding:[1],scale:.4},{embedding:[2],scale:.4},{embedding:[3],scale:.5}];
  assert.equal(comparisonError(frames,(a,b)=>a[0]===1?(b[0]===2?.44:.54):.8,'near'),null);
- assert.match(comparisonError(frames,a=>a[0]===1?.28:.8,'near'),/등록 사진과 달라/);
+ assert.match(comparisonError(frames,a=>a[0]===1?.19:.8,'near'),/등록 사진과 달라/);
 });
 test('profile accepts moderate confidence and angle without loosening capture gates',()=>{
  const {image,result}=fixture();
@@ -87,10 +87,21 @@ test('profile accepts moderate confidence and angle without loosening capture ga
  assert.equal(faceQualityError(result,image),null);
  assert.ok(faceQualityError(result,image,{capture:true}));
 });
+test('a smaller face in a full-body profile is accepted when facial detail is present',()=>{
+ const {image,result}=fixture();
+ const face=result.face[0];
+ face.box=[136,132,48,54];
+ face.mesh=face.mesh.map(([x,y,z])=>[160+(x-160)*.27,160+(y-160)*.27,z]);
+ assert.equal(faceQualityError(result,image),null);
+ assert.match(faceQualityError(result,image,{capture:true}),/가까이/);
+ face.box[2]=39;
+ assert.match(faceQualityError(result,image),/가까이/);
+});
 
 test('relaxed profile matching accepts lower scores with consistent live identity, but not zero similarity',()=>{
  const frames=[{embedding:[1],scale:.4},{embedding:[2],scale:.4},{embedding:[3],scale:.5}];
- assert.equal(comparisonError(frames,(a,b)=>a[0]===1?(b[0]===2?.35:.47):.8,'near'),null);
+ assert.equal(comparisonError(frames,(a,b)=>a[0]===1?(b[0]===2?.17:.59):.8,'near'),null);
+ assert.match(comparisonError(frames,(a,b)=>a[0]===1?(b[0]===2?.34:.38):.8,'near'),/등록 사진과 달라/);
  assert.match(comparisonError(frames,a=>a[0]===1?.1:.8,'near'),/등록 사진과 달라/);
  assert.match(comparisonError(frames,(a,b)=>a[0]===2?.4:.5,'near'),/촬영본이/);
 });

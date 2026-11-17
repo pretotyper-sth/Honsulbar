@@ -94,6 +94,8 @@ export function AdminPage() {
   const [health,setHealth] = useState(null);
   const [liveStats,setLiveStats] = useState(null);
   const [evidence,setEvidence] = useState({});
+  const [recordings,setRecordings] = useState({});
+  const [recordingIndex,setRecordingIndex] = useState({});
   useEffect(()=>{
     if(!token||recovery)return;
     let stopped=false;
@@ -110,12 +112,19 @@ export function AdminPage() {
     return()=>{clearTimeout(timer);window.removeEventListener('focus',expire);document.removeEventListener('visibilitychange',expire);};
   },[token]);
   useEffect(()=>()=>{Object.values(evidence).forEach(url=>URL.revokeObjectURL(url));},[evidence]);
-  async function playEvidence(ticket){
+  async function playEvidence(ticket,index=0){
     try {
-      const {result}=await adminCall(token,'admin-evidence',{id:ticket.id});
+      let result;
+      if(ticket.context?.fullRecording){
+        let list=recordings[ticket.id];
+        if(!list){list=(await adminCall(token,'admin-recordings',{id:ticket.id})).result;setRecordings(current=>({...current,[ticket.id]:list}));}
+        if(!list[index])throw new Error('재생할 녹음이 없거나 보관 기간이 끝났어요.');
+        result=(await adminCall(token,'admin-recording-chunk',{id:ticket.id,chunkId:list[index].id})).result;
+        setRecordingIndex(current=>({...current,[ticket.id]:index}));
+      } else result=(await adminCall(token,'admin-evidence',{id:ticket.id})).result;
       const bytes=Uint8Array.from(atob(result.audio),c=>c.charCodeAt(0));
-      const url=URL.createObjectURL(new Blob([bytes],{type:'audio/wav'}));
-      setEvidence({[ticket.id]:url});
+      const url=URL.createObjectURL(new Blob([bytes],{type:result.mime||'audio/wav'}));
+      setEvidence(previous=>{Object.values(previous).forEach(value=>URL.revokeObjectURL(value));return {[ticket.id]:url};});
     }catch(error){setMessage(error.message);}
   }
   async function testAlert(){
@@ -260,7 +269,7 @@ export function AdminPage() {
         {ctx && <p style={styles.meta}>{ctx}</p>}
         {ticket.kind === 'report' && <><p style={styles.meta}>{ticket.context?.priority === 'urgent' ? '긴급 우선 확인 · ' : ''}{ticket.context?.audioRecorded ? '참여자가 제출한 음성 있음 · 조작 가능성을 포함해 검토하세요.' : '첨부 음성 없음 · 신고 내용은 미확인 주장입니다.'}{summary ? ` 최근 30일 ${summary.reports}건 / 서로 다른 신고자 ${summary.reporters}명` : ''}</p><p style={styles.meta}>신고 횟수만으로 제재하지 마세요. 이용 기록·구체적 설명·기존 확인된 조치를 검토해 주세요.</p><div style={{display:'flex',gap:8,flexWrap:'wrap'}}>{[['추가 설명 요청','신고를 확인하고 있어요. 당시 상대가 한 말과 상황을 기억나는 범위에서 알려주세요. 상대와의 연결 제한은 유지돼요.'],['확인 어려움 안내','현재 설명과 이용 기록만으로 위반 여부를 확정하기 어려워요. 확보된 자료만으로 확인이 어려우며, 상대와의 연결 제한은 유지돼요. 추가 설명은 문의로 보내주세요.'],['검토 결과 안내','신고 내용과 이용 기록을 검토해 필요한 조치를 진행했어요. 상대와의 연결 제한은 유지되며, 상대방의 개인정보와 구체적인 계정 정보는 안내하지 않아요.']].map(([label,text])=><button key={label} style={styles.weak} onClick={()=>setAnswers(v=>({...v,[ticket.id]:text}))}>{label}</button>)}</div><textarea aria-label="조치 근거" style={{...styles.input,marginTop:10}} maxLength={80} placeholder="조치 근거 (제재 전 8자 이상, 신고자 정보 제외)" value={reviewNotes[ticket.id] || ''} onChange={e=>setReviewNotes(v=>({...v,[ticket.id]:e.target.value}))}/></>}
 
-        {ticket.context?.audioRecorded && <div><p style={styles.meta}>음성 보관 종료: {new Date(ticket.context.audioExpiresAt).toLocaleString('ko-KR')} · 진위·화자·맥락이 자동 검증된 자료가 아닙니다.</p>{evidence[ticket.id] ? <audio controls controlsList="nodownload" src={evidence[ticket.id]}/> : <button style={styles.weak} onClick={()=>playEvidence(ticket)}>신고 음성 열람 (접근 기록 남음)</button>}</div>}
+        {ticket.context?.audioRecorded && <div><p style={styles.meta}>음성 보관 종료: {new Date(ticket.context.audioExpiresAt).toLocaleString('ko-KR')} · 진위·화자·맥락이 자동 검증된 자료가 아닙니다.</p>{evidence[ticket.id] ? <><audio controls controlsList="nodownload" src={evidence[ticket.id]}/>{ticket.context?.fullRecording&&<div><span>녹음 {(recordingIndex[ticket.id]||0)+1} / {recordings[ticket.id]?.length||0}</span><button disabled={!recordingIndex[ticket.id]} onClick={()=>playEvidence(ticket,recordingIndex[ticket.id]-1)}>이전</button><button disabled={(recordingIndex[ticket.id]||0)+1>=(recordings[ticket.id]?.length||0)} onClick={()=>playEvidence(ticket,(recordingIndex[ticket.id]||0)+1)}>다음</button></div>}</> : <button style={styles.weak} onClick={()=>playEvidence(ticket)}>신고 음성 열람 (접근 기록 남음)</button>}</div>}
         <p style={{ whiteSpace: 'pre-wrap' }}>{ticket.message}</p>
         <textarea style={{ ...styles.input, minHeight: 90 }} placeholder="답변을 입력하면 이용자에게 알림이 가요." value={answers[ticket.id] ?? ticket.answer ?? ''} onChange={e => setAnswers(v => ({ ...v, [ticket.id]: e.target.value }))} />
         <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>

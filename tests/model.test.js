@@ -9,17 +9,17 @@ test('seat exchange conserves points and rejects insufficient or invalid payment
   assert.throws(() => transferPoints(1000, 1000, -500));
   assert.throws(() => transferPoints(1000, 1000, 0.5));
 });
-test('entry wine charges 500 points and grants thirty minutes', () => {
+test('entry wine charges 500 points and grants twenty minutes', () => {
   const wallet = purchase(initialWallet, 'wine', now, { welcome: true });
   assert.equal(wallet.balance, 500);
   assert.equal(wallet.drinkId, 'wine');
-  assert.equal(remaining(wallet, now), 1800);
+  assert.equal(remaining(wallet, now), 1200);
 });
 test('paid drinks debit exactly once and add to remaining time', () => {
   const welcome = purchase({ ...initialWallet, balance: 2000 }, 'wine-hour', now, { welcome: true });
   const wallet = purchase(welcome, 'highball', now + 60000);
   assert.equal(wallet.balance, 500);
-  assert.equal(remaining(wallet, now + 60000), 5340);
+  assert.equal(remaining(wallet, now + 60000), 3540);
   assert.throws(() => purchase(wallet, 'wine-hour', now), /포인트/);
   assert.equal(wallet.balance, 500);
 });
@@ -27,16 +27,16 @@ test('expired time is not subtracted from a new order', () => {
   const welcome = purchase({ ...initialWallet, balance: 1500 }, 'wine-hour', now, { welcome: true });
   const later = now + 7200000;
   const wallet = purchase(welcome, 'highball', later);
-  assert.equal(remaining(wallet, later), 1800);
+  assert.equal(remaining(wallet, later), 1200);
 });
 test('host time pauses, paid extension is preserved, leaving resumes', () => {
   const welcome = purchase(initialWallet, 'beer', now, { welcome: true });
   let wallet = changeRole(welcome, true, now + 60000);
-  assert.equal(remaining(wallet, now + 900000), 1740);
+  assert.equal(remaining(wallet, now + 900000), 1140);
   wallet = purchase(wallet, 'highball', now + 900000, { host: true });
-  assert.equal(remaining(wallet, now + 900000), 3540);
+  assert.equal(remaining(wallet, now + 900000), 2340);
   wallet = changeRole(wallet, false, now + 900000);
-  assert.equal(remaining(wallet, now + 960000), 3480);
+  assert.equal(remaining(wallet, now + 960000), 2280);
 });
 test('last seat fills and opens exactly one new branch without mutating original', () => {
   const rooms = [{number:1,count:12},{number:2,count:11}];
