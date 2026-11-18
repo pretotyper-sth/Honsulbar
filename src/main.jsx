@@ -1992,7 +1992,7 @@ function App({qaControls, qaView, qaStart, qaViewGuide, qaPhotoRetry, QaDirectio
         </div>
       </>}
     </section> : <section className="bar-screen">
-      <div className="room-heading"><div><h1 className="room-title">{room.region} {room.number}호점</h1></div><span className="occupancy"><i className="green-dot"/>{guests.length+1}<span> / 12</span></span></div>
+      <div className="room-heading"><div className="room-heading-title"><h1 className="room-title">{room.region} {room.number}호점</h1><button type="button" className="icon-button room-leave-button" aria-label="혼술바 나가기" onClick={()=>open('leave')}><DoorOpen size={20}/></button></div><span className="occupancy"><i className="green-dot"/>{guests.length+1}<span> / 12</span></span></div>
       <div className={`time-strip ${seconds < 300 && !unlimitedSeat ? 'time-low' : ''}`}><Clock3 size={16}/><span>{unlimitedSeat ? '사장 자리' : soloPaused ? '혼자 대기 중 · 시간 일시정지' : '남은 시간'}</span><strong>{unlimitedSeat ? '시간 제한 없음' : time}</strong><button aria-label="메뉴판 열고 시간 연장" onClick={() => {setSelection(wallet.drinkId || 'highball'); open('menu');}}><Plus size={18}/></button></div>
       <div className={`bar-stage${showViewGuide ? ' has-view-guide' : ''}`}>
         <button ref={viewTrigger} type="button" className={`bar-view-trigger${showViewGuide ? ' is-guided' : ''}`}

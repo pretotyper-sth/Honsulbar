@@ -109,6 +109,8 @@ h1 { font-size:26px; line-height:1.4; font-weight:700; letter-spacing:-.8px; mar
 
 .bar-screen { padding:16px 20px 20px; }
 .room-heading { display:flex; justify-content:space-between; align-items:center; }
+.room-heading-title { display:flex; align-items:center; gap:8px; min-width:0; }
+.room-leave-button { flex-shrink:0; color:var(--bar-muted,#6b7684); }
 .room-heading .eyebrow { font-size:12px; }
 .room-title { font-size:24px; font-weight:700; letter-spacing:-.6px; line-height:inherit; margin:0; padding:5px 0; }
 .occupancy { font-size:15px; font-weight:600; }
